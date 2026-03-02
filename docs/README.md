@@ -66,22 +66,30 @@ Welcome to the Nineties documentation. This documentation provides comprehensive
 ## Quick Links
 
 ### Getting Started
+
 - [Quick Start Guide](01-overview.md#quick-start)
 - [System Requirements](01-overview.md#system-requirements)
 
 ### Development
+
 - [CLI Commands](03-backend.md#cli-commands)
 - [Development Mode](03-backend.md#development-mode)
 - [Creating New Pages](04-frontend.md#adding-new-pages)
 - [Database Migrations](05-database.md#migrations)
 
 ### Reference
+
 - [API Endpoints](07-api-reference.md)
 - [Database Schema](05-database.md#tables)
 
 ### Maintenance
+
 - [Known Issues](08-problems-and-improvements.md#critical-issues)
 - [Security Recommendations](08-problems-and-improvements.md#security-concerns)
+
+## Organizing this Documentation
+
+This documentation is set to use Docsify, which allows for easy navigation and organization. Each section is designed to be self-contained, providing detailed information on specific aspects of the project. The structure is intended to guide both new contributors and experienced developers through the codebase effectively. It currently use for diagrams this solution that must be present in the current docs directory: https://github.com/firebrikdotcom/diagram-management.
 
 ## Contributing
 

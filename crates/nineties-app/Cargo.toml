@@ -1,0 +1,69 @@
+[package]
+name = "nineties"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "An app starter for traditional web apps."
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "nineties"
+path = "src/main.rs"
+
+[features]
+default = ["sqlite"]
+sqlite = []
+
+[dependencies]
+# Workspace crates
+nineties-core = { path = "../nineties-core" }
+nineties-es-sqlite = { path = "../nineties-es-sqlite" }
+
+# Web framework
+actix-web.workspace = true
+actix-files.workspace = true
+actix-session.workspace = true
+actix-limitation.workspace = true
+actix-web-actors.workspace = true
+actix.workspace = true
+actix-web-lab.workspace = true
+tracing-actix-web.workspace = true
+
+# Database
+diesel.workspace = true
+diesel_migrations.workspace = true
+
+# Async runtime
+tokio.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Templating and web utilities
+tera.workspace = true
+urlencoding.workspace = true
+
+# Security
+jsonwebtoken.workspace = true
+argon2.workspace = true
+validator.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+dotenv.workspace = true
+fs_extra.workspace = true
+rand.workspace = true
+once_cell.workspace = true
+md5.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serial_test.workspace = true

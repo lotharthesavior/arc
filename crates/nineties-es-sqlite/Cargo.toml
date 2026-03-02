@@ -1,0 +1,31 @@
+[package]
+name = "nineties-es-sqlite"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "SQLite EventStore implementation for nineties event sourcing"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Workspace crates
+nineties-core = { path = "../nineties-core" }
+
+# Database
+diesel = { workspace = true, features = ["sqlite", "r2d2"] }
+
+# Core event sourcing dependencies
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+
+# Async runtime
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+
+# Logging
+tracing.workspace = true
+
+[dev-dependencies]
+diesel_migrations = { version = "2.2", features = ["sqlite"] }
