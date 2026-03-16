@@ -72,10 +72,12 @@
 - Add new projections retroactively
 
 **Implementation Requirement**:
-- Projections must be idempotent (can process same event multiple times)
-- Projections must handle events in order (per aggregate)
+- Three-trait separation: `Projector` (stateless handler), `Projection` (composed unit), `ReadModelStore` (persistence)
+- Projectors must be idempotent (can process same event multiple times)
+- Projectors must handle events in order (per aggregate)
 - Projections must be rebuildable from full event stream
 - Projections should handle missing/unknown events gracefully
+- All projection methods take `&self`, not `&mut self` — mutable state lives in the `ReadModelStore`
 
 ### 4. Headless by Default
 
@@ -136,7 +138,7 @@
 **Rationale**: Rust's trait system and composition model align well with event sourcing.
 
 - EventStore is a trait, not a base class
-- Projections are trait objects, not subclasses
+- Projectors, projections, and read model stores are trait objects, not subclasses
 - Aggregates compose behavior via methods, not inheritance hierarchies
 
 ### Async by Default
@@ -451,28 +453,68 @@ pub trait EventHandler: Send + Sync {
 - `InProcessEventBus` is default (same process, no broker needed)
 - Future: `ChannelEventBus` (async channels), `NatsEventBus` (distributed)
 
-### Projection Trait
+### Projection Architecture (Three-Trait Separation)
 
-**Purpose**: Build read models from events.
+**Purpose**: Build read models from events with clear separation of concerns.
 
-**Key Methods**:
+The monolithic `Projection` trait has been split into three focused traits:
+
+#### Projector Trait — Stateless Event Handler
+
+**Purpose**: Contains the pure event-handling logic. Stateless — takes `&self`.
+
+```rust
+#[async_trait]
+pub trait Projector: Send + Sync {
+    /// Unique name identifying this projector
+    fn name(&self) -> &str;
+
+    /// Event types this projector handles
+    fn handles(&self) -> Vec<String>;
+
+    /// Apply a single event to the read model via the store (idempotent)
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()>;
+
+    /// Initialize the read model schema (CREATE TABLE IF NOT EXISTS, etc.)
+    async fn init(&self, _store: &dyn ReadModelStore) -> ProjectionResult<()> {
+        Ok(())
+    }
+}
+```
+
+#### ReadModelStore Trait — Persistence Layer
+
+**Purpose**: Backend-agnostic storage for projection read models. Defined in `read_model_store.rs`.
+
+```rust
+#[async_trait]
+pub trait ReadModelStore: Send + Sync {
+    /// Execute a write operation (INSERT, UPDATE, DELETE)
+    async fn execute(&self, sql: &str, params: Vec<serde_json::Value>) -> ReadModelResult<()>;
+
+    /// Execute a query and return rows
+    async fn query(&self, sql: &str, params: Vec<serde_json::Value>) -> ReadModelResult<Vec<Row>>;
+
+    /// Truncate/clear a table or collection
+    async fn truncate(&self, table: &str) -> ReadModelResult<()>;
+}
+```
+
+`InMemoryReadModelStore` is built into `nineties-core` for testing and ephemeral projections.
+Production backends (SQLite, Postgres, dqlite) live in separate crates.
+
+#### Projection Trait — Composed Read Model Unit
+
+**Purpose**: The assembled unit that ties a projector to its store. Takes `&self`.
+
 ```rust
 #[async_trait]
 pub trait Projection: Send + Sync {
-    /// Projection name
     fn name(&self) -> &str;
-
-    /// Event types this projection handles
     fn handles(&self) -> Vec<String>;
-
-    /// Handle an event
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>>;
-
-    /// Clear projection state
-    async fn clear(&mut self) -> Result<(), Box<dyn Error>>;
-
-    /// Rebuild from scratch (clear and replay all events)
-    async fn rebuild(&mut self, events: Vec<Event>) -> Result<(), Box<dyn Error>> {
+    async fn handle(&self, event: &Event) -> ProjectionResult<()>;
+    async fn clear(&self) -> ProjectionResult<()>;
+    async fn rebuild(&self, events: Vec<Event>) -> ProjectionResult<()> {
         self.clear().await?;
         for event in events {
             if self.handles().contains(&event.event_type) {
@@ -484,47 +526,64 @@ pub trait Projection: Send + Sync {
 }
 ```
 
+#### ProjectionUnit — Standard Composition Glue
+
+`ProjectionUnit` is the standard way to compose a `Projector` + `Arc<dyn ReadModelStore>` + table name into a `Projection`:
+
+```rust
+pub struct ProjectionUnit {
+    projector: Box<dyn Projector>,
+    store: Arc<dyn ReadModelStore>,
+    table: String,
+}
+```
+
+It delegates `handle()` to `projector.apply(event, store)` and `clear()` to `store.truncate(table)`.
+
 **Design Decisions**:
-- `handle()` must be idempotent (can process same event multiple times)
-- `clear()` truncates read model (for rebuild)
-- `rebuild()` has default implementation (clear + replay)
-- Projections own their read model storage (Diesel, in-memory, etc.)
+- **Three-way split**: Handler logic (projector) is separate from storage (read model store) and orchestration (projection engine)
+- **`&self` throughout**: All projection methods take `&self`, not `&mut self`. Mutable state lives in the `ReadModelStore` via interior mutability (connection pools, `Mutex`, etc.)
+- **Projectors are stateless**: Same events + empty store = same read model. Safe to share across threads
+- **`apply()` must be idempotent**: Use UPSERT, check event_id, or make operations naturally idempotent (SET vs INCREMENT)
+- **`init()` for schema setup**: Called once on registration and before rebuilds. Default is no-op
+- **`clear()` delegates to store.truncate()**: Clean separation between the "what to clear" and "how to clear"
+- **Composable backends**: Swap `InMemoryReadModelStore` for `SqliteReadModelStore` without changing projector logic
 
 **Implementation Example**:
 ```rust
-pub struct UserListProjection {
-    pool: diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<SqliteConnection>>,
-}
+struct UserListProjector;
 
-impl Projection for UserListProjection {
+#[async_trait]
+impl Projector for UserListProjector {
     fn name(&self) -> &str { "UserList" }
 
     fn handles(&self) -> Vec<String> {
         vec!["UserCreated".to_string(), "ProfileUpdated".to_string()]
     }
 
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>> {
-        let mut conn = self.pool.get()?;
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
         match event.event_type.as_str() {
             "UserCreated" => {
-                diesel::sql_query("INSERT INTO users_view ...")
-                    .execute(&mut conn)?;
+                store.execute("INSERT OR REPLACE INTO users_view ...", vec![event.payload.clone()]).await
+                    .map_err(|e| ProjectionError::handle_failed("UserList", &event.event_type, &event.event_id.to_string(), e.to_string()))?;
             }
             "ProfileUpdated" => {
-                diesel::sql_query("UPDATE users_view ...")
-                    .execute(&mut conn)?;
+                store.execute("UPDATE users_view ...", vec![event.payload.clone()]).await
+                    .map_err(|e| ProjectionError::handle_failed("UserList", &event.event_type, &event.event_id.to_string(), e.to_string()))?;
             }
             _ => {}
         }
         Ok(())
     }
-
-    async fn clear(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut conn = self.pool.get()?;
-        diesel::sql_query("DELETE FROM users_view").execute(&mut conn)?;
-        Ok(())
-    }
 }
+
+// Compose: projector + store = projection
+let store = Arc::new(InMemoryReadModelStore::new());
+let projection = ProjectionUnit::new(Box::new(UserListProjector), store, "users_view");
+
+// Register with engine
+let mut engine = ProjectionEngine::new(event_store);
+engine.register(Box::new(projection));
 ```
 
 ### Aggregate Trait
@@ -660,7 +719,7 @@ impl<A: Aggregate> CommandBus<A> {
 **Rationale**:
 - Rust doesn't support `async fn` in traits (yet)
 - `async-trait` is stable, widely used, zero runtime cost
-- Allows `EventStore`, `Projection`, etc. to have async methods
+- Allows `EventStore`, `Projector`, `Projection`, `ReadModelStore`, etc. to have async methods
 
 **Trade-offs**:
 - Slight compile-time overhead (macro expansion)
@@ -731,7 +790,7 @@ impl<A: Aggregate> CommandBus<A> {
 1. `Event` type (Week 1)
 2. `EventStore` trait + SQLite implementation (Week 2)
 3. `EventBus` trait + InProcessEventBus (Week 3)
-4. `Projection` trait + ProjectionEngine (Week 4)
+4. `Projector` + `Projection` + `ReadModelStore` traits + ProjectionEngine (Week 4)
 5. `Aggregate` trait (Week 5)
 6. `CommandBus` (Week 6)
 
@@ -760,7 +819,7 @@ impl<A: Aggregate> CommandBus<A> {
 1. Define UserCommand enum (CreateUser, UpdateProfile, ChangePassword)
 2. Define UserEvent enum (UserCreated, ProfileUpdated, PasswordChanged)
 3. Implement UserAggregate (handle, apply, from_events)
-4. Implement UserListProjection (handle UserCreated, ProfileUpdated)
+4. Implement UserListProjector + compose into ProjectionUnit (handle UserCreated, ProfileUpdated)
 5. Write integration tests (command → events → projection → query)
 
 **Key Guidelines**:
@@ -768,8 +827,8 @@ impl<A: Aggregate> CommandBus<A> {
 - Aggregate state is private (not exposed)
 - `handle()` validates and produces events (no side effects)
 - `apply()` updates state (deterministic)
-- Projection is idempotent (can process same event twice)
-- Use Diesel for read models in projection
+- Projector is idempotent (can process same event twice)
+- Use ReadModelStore implementations for read model persistence
 
 **Testing Strategy**:
 - Unit test UserAggregate:
@@ -919,7 +978,7 @@ crates/nineties-core/docs/
 - Dependency direction: Web → App → Core (never reversed)
 
 **Design Patterns**:
-- Use traits for abstractions (EventStore, Projection, Aggregate)
+- Use traits for abstractions (EventStore, Projector, Projection, ReadModelStore, Aggregate)
 - Use enums for domain events (type-safe, exhaustive)
 - Use `thiserror` for error types (derive, zero-cost)
 - Use `async-trait` for async traits
@@ -994,17 +1053,17 @@ impl UserAggregate {
     }
 }
 
-// CORRECT: Aggregate produces event, projection writes
+// CORRECT: Aggregate produces event, projector writes via store
 impl UserAggregate {
     async fn handle(&self, command: CreateUser) -> Result<Vec<Event>, Error> {
         Ok(vec![Event::new(...)])  // Just produce event
     }
 }
 
-impl Projection for UserListProjection {
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>> {
+impl Projector for UserListProjector {
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
         if event.event_type == "UserCreated" {
-            diesel::insert_into(users_view).execute(&mut conn)?; // Projection writes
+            store.execute("INSERT INTO users_view ...", vec![event.payload.clone()]).await?;
         }
         Ok(())
     }
@@ -1054,22 +1113,24 @@ loop {
 **Example**:
 ```rust
 // WRONG: Non-idempotent (increments counter)
-impl Projection for StatsProjection {
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>> {
+impl Projector for StatsProjector {
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
         if event.event_type == "UserCreated" {
-            diesel::sql_query("UPDATE stats SET user_count = user_count + 1")
-                .execute(&mut conn)?; // Replaying will over-count!
+            store.execute("UPDATE stats SET user_count = user_count + 1", vec![]).await?;
+            // Replaying will over-count!
         }
         Ok(())
     }
 }
 
 // CORRECT: Idempotent (set value)
-impl Projection for StatsProjection {
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>> {
+impl Projector for StatsProjector {
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
         if event.event_type == "UserCreated" {
-            diesel::sql_query("INSERT INTO stats (user_id, ...) VALUES (?, ...) ON CONFLICT DO NOTHING")
-                .execute(&mut conn)?; // Replaying is safe
+            store.execute(
+                "INSERT INTO stats (user_id, ...) VALUES (?, ...) ON CONFLICT DO NOTHING",
+                vec![event.payload.clone()],
+            ).await?; // Replaying is safe
         }
         Ok(())
     }
@@ -1165,7 +1226,7 @@ impl EventHandler for EmailNotifier {
 
 ### Architecture Review Points
 - Week 2: Review EventStore trait and SQLite implementation
-- Week 4: Review Projection trait and rebuild capability
+- Week 4: Review Projector/Projection/ReadModelStore traits and rebuild capability
 - Week 6: Review Aggregate trait and CommandBus
 - Week 8: Review first aggregate (User) implementation
 - Week 10: Review dual-write migration strategy

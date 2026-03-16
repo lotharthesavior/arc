@@ -1,65 +1,82 @@
 //! # Projection Module
 //!
-//! Projections build read models from event streams. They consume events and materialize
-//! optimized views for queries.
+//! Three-trait architecture for building read models from event streams:
+//!
+//! - **[`Projector`]** — stateless event handler (the "machine"). Contains the pure
+//!   logic for transforming events into read model writes.
+//! - **[`Projection`]** — composed read model unit (the "output"). Ties a projector
+//!   to its storage backend.
+//! - **[`ReadModelStore`](crate::read_model_store::ReadModelStore)** — persistence
+//!   layer for projections. Backend-agnostic storage (defined in `read_model_store` module).
 //!
 //! ## Design Principles
 //!
-//! - **Event-driven**: Projections react to events, not commands
-//! - **Rebuildable**: Can be rebuilt from scratch by replaying events
+//! - **Separation of concerns**: Handler logic (projector) is separate from storage
+//!   (read model store) and orchestration (projection engine)
+//! - **Stateless projectors**: Projectors take `&self`, not `&mut self`. All mutable
+//!   state lives in the `ReadModelStore` via interior mutability.
+//! - **Rebuildable**: Projections can be rebuilt from scratch by replaying events
 //! - **Idempotent**: Handling the same event multiple times should be safe
-//! - **Query-optimized**: Read models are optimized for specific queries
+//! - **Composable**: One projector per read model concern; swap backends freely
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use nineties_core::projection::{Projection, ProjectionEngine};
+//! use nineties_core::projection::{Projector, Projection, ProjectionUnit, ProjectionEngine};
+//! use nineties_core::read_model_store::{ReadModelStore, InMemoryReadModelStore};
 //! use nineties_core::event::Event;
+//! use std::sync::Arc;
 //!
-//! struct UserListProjection {
-//!     // Database connection, cache, etc.
-//! }
+//! struct UserListProjector;
 //!
 //! #[async_trait]
-//! impl Projection for UserListProjection {
-//!     fn name(&self) -> &str {
-//!         "UserList"
-//!     }
+//! impl Projector for UserListProjector {
+//!     fn name(&self) -> &str { "UserList" }
 //!
 //!     fn handles(&self) -> Vec<String> {
 //!         vec!["UserCreated".to_string(), "ProfileUpdated".to_string()]
 //!     }
 //!
-//!     async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn std::error::Error>> {
+//!     async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
 //!         match event.event_type.as_str() {
 //!             "UserCreated" => {
-//!                 // Insert into users_view table
-//!             }
-//!             "ProfileUpdated" => {
-//!                 // Update users_view table
+//!                 store.execute("users_view", vec![event.payload.clone()]).await
+//!                     .map_err(|e| ProjectionError::handle_failed("UserList", &event.event_type, &event.event_id.to_string(), e.to_string()))?;
 //!             }
 //!             _ => {}
 //!         }
 //!         Ok(())
 //!     }
-//!
-//!     async fn clear(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-//!         // DELETE FROM users_view
-//!         Ok(())
-//!     }
 //! }
+//!
+//! // Compose: projector + store = projection
+//! let store = Arc::new(InMemoryReadModelStore::new());
+//! let projection = ProjectionUnit::new(Box::new(UserListProjector), store, "users_view");
+//!
+//! // Register with engine
+//! let mut engine = ProjectionEngine::new(event_store);
+//! engine.register(Box::new(projection));
+//! engine.process(&event).await?;
 //! ```
 
 use crate::event::Event;
 use crate::event_store::EventStore;
+use crate::read_model_store::ReadModelStore;
 use async_trait::async_trait;
+use std::sync::Arc;
 use thiserror::Error;
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
 
 /// Errors that can occur during projection operations.
 #[derive(Debug, Error)]
 pub enum ProjectionError {
     /// Error handling an event
-    #[error("Projection '{name}' failed to handle event {event_type} (event_id: {event_id}): {message}")]
+    #[error(
+        "Projection '{name}' failed to handle event {event_type} (event_id: {event_id}): {message}"
+    )]
     HandleFailed {
         name: String,
         event_type: String,
@@ -78,6 +95,10 @@ pub enum ProjectionError {
     /// Event store error during rebuild
     #[error("Failed to load events for rebuild: {0}")]
     EventStoreError(String),
+
+    /// Read model store error
+    #[error("Read model store error in projection '{name}': {message}")]
+    ReadModelError { name: String, message: String },
 
     /// Other errors
     #[error("Projection error: {message}")]
@@ -116,6 +137,14 @@ impl ProjectionError {
         }
     }
 
+    /// Create a read model error.
+    pub fn read_model_error(name: impl Into<String>, message: impl Into<String>) -> Self {
+        ProjectionError::ReadModelError {
+            name: name.into(),
+            message: message.into(),
+        }
+    }
+
     /// Create a generic error.
     pub fn other(message: impl Into<String>) -> Self {
         ProjectionError::Other {
@@ -127,124 +156,110 @@ impl ProjectionError {
 /// Result type for projection operations.
 pub type ProjectionResult<T> = Result<T, ProjectionError>;
 
-/// Trait for projections that build read models from events.
+// ---------------------------------------------------------------------------
+// Projector trait — the stateless event handler
+// ---------------------------------------------------------------------------
+
+/// A projector contains the pure event-handling logic for building a read model.
 ///
-/// Projections consume events and materialize views optimized for queries.
-/// They can be rebuilt at any time by replaying all events from the event store.
+/// Projectors are stateless — they receive events and translate them into write
+/// operations against a [`ReadModelStore`]. They do not own the store or the
+/// read model state.
+///
+/// # Design
+///
+/// - **Stateless**: all state lives in the `ReadModelStore`
+/// - **Deterministic**: same events + empty store = same read model
+/// - **Composable**: one projector per read model concern
+/// - **`&self`**: safe to share across threads
 ///
 /// # Idempotency
 ///
-/// Projections should be idempotent - handling the same event multiple times
-/// should produce the same result. This is important for:
-/// - Replay after bugs are fixed
-/// - Handling duplicate events
-/// - Eventual consistency in distributed systems
+/// `apply()` should be idempotent — handling the same event twice must produce
+/// the same result. Use UPSERT, check event_id, or make operations naturally
+/// idempotent (SET vs INCREMENT).
 ///
-/// # Thread Safety
+/// # Example
 ///
-/// Implementations must be Send + Sync for async Rust.
+/// ```rust,ignore
+/// struct UserListProjector;
+///
+/// #[async_trait]
+/// impl Projector for UserListProjector {
+///     fn name(&self) -> &str { "UserList" }
+///
+///     fn handles(&self) -> Vec<String> {
+///         vec!["UserCreated".to_string()]
+///     }
+///
+///     async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
+///         store.execute("users_view", vec![event.payload.clone()]).await
+///             .map_err(|e| ProjectionError::handle_failed(
+///                 "UserList", &event.event_type, &event.event_id.to_string(), e.to_string()
+///             ))?;
+///         Ok(())
+///     }
+/// }
+/// ```
 #[async_trait]
-pub trait Projection: Send + Sync {
-    /// Projection name (unique identifier).
+pub trait Projector: Send + Sync {
+    /// Unique name identifying this projector.
     ///
-    /// Used for logging, monitoring, and identification.
+    /// Used for logging, monitoring, position tracking, and rebuild targeting.
     fn name(&self) -> &str;
 
-    /// Event types this projection handles.
+    /// Event types this projector handles.
     ///
-    /// Return a vector of event type names (e.g., ["UserCreated", "ProfileUpdated"]).
-    /// Only events matching these types will be passed to `handle()`.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// fn handles(&self) -> Vec<String> {
-    ///     vec![
-    ///         "UserCreated".to_string(),
-    ///         "ProfileUpdated".to_string(),
-    ///         "UserDeleted".to_string(),
-    ///     ]
-    /// }
-    /// ```
+    /// Only events whose `event_type` is in this list will be passed to `apply()`.
     fn handles(&self) -> Vec<String>;
 
-    /// Handle a single event.
+    /// Apply a single event to the read model via the store.
     ///
-    /// Update the read model based on the event. This method should be idempotent.
-    ///
-    /// # Arguments
-    ///
-    /// - `event`: The event to process
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if the event was handled successfully
-    /// - `Err(ProjectionError)` if handling failed
-    ///
-    /// # Idempotency
-    ///
-    /// To make this idempotent, consider:
-    /// - Using UPSERT or INSERT ... ON CONFLICT
-    /// - Checking if the event was already processed
-    /// - Making operations naturally idempotent (SET vs INCREMENT)
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// async fn handle(&mut self, event: &Event) -> ProjectionResult<()> {
-    ///     match event.event_type.as_str() {
-    ///         "UserCreated" => {
-    ///             let data: UserCreatedEvent = serde_json::from_value(event.payload.clone())?;
-    ///             // INSERT INTO users_view ...
-    ///             Ok(())
-    ///         }
-    ///         _ => Ok(())
-    ///     }
-    /// }
-    /// ```
-    async fn handle(&mut self, event: &Event) -> ProjectionResult<()>;
+    /// This method should be idempotent: applying the same event twice
+    /// must produce the same result.
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()>;
 
-    /// Clear the projection state.
+    /// Initialize the read model schema (CREATE TABLE IF NOT EXISTS, etc.).
     ///
-    /// Remove all data from the read model. Called before rebuild.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// async fn clear(&mut self) -> ProjectionResult<()> {
-    ///     // DELETE FROM users_view
-    ///     Ok(())
-    /// }
-    /// ```
-    async fn clear(&mut self) -> ProjectionResult<()>;
+    /// Called once when the projector is first registered and before rebuilds.
+    /// Default implementation does nothing (for stores that don't need schema setup).
+    async fn init(&self, _store: &dyn ReadModelStore) -> ProjectionResult<()> {
+        Ok(())
+    }
+}
 
-    /// Rebuild the projection from scratch.
-    ///
-    /// Default implementation:
-    /// 1. Clear existing state
-    /// 2. Replay all events
-    ///
-    /// Override this if you need custom rebuild logic.
-    ///
-    /// # Arguments
-    ///
-    /// - `events`: All events to replay
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // Default implementation (usually sufficient)
-    /// async fn rebuild(&mut self, events: Vec<Event>) -> ProjectionResult<()> {
-    ///     self.clear().await?;
-    ///     for event in events {
-    ///         if self.handles().contains(&event.event_type) {
-    ///             self.handle(&event).await?;
-    ///         }
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
-    async fn rebuild(&mut self, events: Vec<Event>) -> ProjectionResult<()> {
+// ---------------------------------------------------------------------------
+// Projection trait — the composed read model unit
+// ---------------------------------------------------------------------------
+
+/// A projection is the composed unit of a projector + its read model store.
+///
+/// It represents a complete, self-contained read model: the logic that transforms
+/// events into state, paired with the storage where that state lives.
+///
+/// Most users don't implement this trait directly. Instead, implement [`Projector`]
+/// and compose it with a [`ReadModelStore`] via [`ProjectionUnit`].
+///
+/// # `&self` not `&mut self`
+///
+/// All methods take `&self`. Mutable state lives in the `ReadModelStore`, which
+/// handles interior mutability via connection pools, `Mutex`, etc.
+#[async_trait]
+pub trait Projection: Send + Sync {
+    /// Projection name (delegates to the projector).
+    fn name(&self) -> &str;
+
+    /// Event types this projection handles (delegates to the projector).
+    fn handles(&self) -> Vec<String>;
+
+    /// Handle a single event by applying it through the projector to the store.
+    async fn handle(&self, event: &Event) -> ProjectionResult<()>;
+
+    /// Clear all read model state for this projection.
+    async fn clear(&self) -> ProjectionResult<()>;
+
+    /// Rebuild from a set of events: clear, then replay matching events.
+    async fn rebuild(&self, events: Vec<Event>) -> ProjectionResult<()> {
         self.clear().await?;
         for event in events {
             if self.handles().contains(&event.event_type) {
@@ -255,32 +270,102 @@ pub trait Projection: Send + Sync {
     }
 }
 
-/// Engine for managing multiple projections.
+// ---------------------------------------------------------------------------
+// ProjectionUnit — standard composition glue
+// ---------------------------------------------------------------------------
+
+/// Standard composition of a [`Projector`] and a [`ReadModelStore`].
 ///
-/// The ProjectionEngine:
-/// - Registers multiple projections
-/// - Routes events to interested projections
-/// - Rebuilds projections from event store
-/// - Provides bulk operations
+/// This is the typical way to create a [`Projection`]: provide the event-handling
+/// logic (projector) and the storage backend (store), and `ProjectionUnit` wires
+/// them together.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use nineties_core::projection::ProjectionEngine;
+/// let projector = Box::new(UserListProjector);
+/// let store: Arc<dyn ReadModelStore> = Arc::new(SqliteReadModelStore::new(pool));
+/// let projection = ProjectionUnit::new(projector, store, "users_view");
+/// engine.register(Box::new(projection));
+/// ```
+pub struct ProjectionUnit {
+    projector: Box<dyn Projector>,
+    store: Arc<dyn ReadModelStore>,
+    /// Table/collection name used for `clear()` (truncate target).
+    table: String,
+}
+
+impl ProjectionUnit {
+    /// Create a new projection unit.
+    ///
+    /// # Arguments
+    ///
+    /// - `projector`: The stateless event handler
+    /// - `store`: The read model storage backend
+    /// - `table`: Table/collection name to truncate on `clear()`
+    pub fn new(
+        projector: Box<dyn Projector>,
+        store: Arc<dyn ReadModelStore>,
+        table: impl Into<String>,
+    ) -> Self {
+        Self {
+            projector,
+            store,
+            table: table.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl Projection for ProjectionUnit {
+    fn name(&self) -> &str {
+        self.projector.name()
+    }
+
+    fn handles(&self) -> Vec<String> {
+        self.projector.handles()
+    }
+
+    async fn handle(&self, event: &Event) -> ProjectionResult<()> {
+        self.projector.apply(event, self.store.as_ref()).await
+    }
+
+    async fn clear(&self) -> ProjectionResult<()> {
+        self.store
+            .truncate(&self.table)
+            .await
+            .map_err(|e| ProjectionError::clear_failed(self.projector.name(), e.to_string()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ProjectionEngine — orchestrates multiple projections
+// ---------------------------------------------------------------------------
+
+/// Engine for managing multiple projections.
 ///
+/// The `ProjectionEngine`:
+/// - Registers fully composed [`Projection`] instances
+/// - Routes events to interested projections
+/// - Rebuilds projections from the event store
+/// - Provides convenience registration via [`register_projector`](Self::register_projector)
+///
+/// # Example
+///
+/// ```rust,ignore
 /// let event_store = Box::new(sqlite_event_store);
 /// let mut engine = ProjectionEngine::new(event_store);
 ///
-/// // Register projections
-/// engine.register(Box::new(UserListProjection::new()));
-/// engine.register(Box::new(AuditLogProjection::new()));
+/// // Option 1: register a pre-composed projection
+/// engine.register(Box::new(projection_unit));
+///
+/// // Option 2: convenience — register projector + store directly
+/// engine.register_projector(Box::new(UserListProjector), store.clone(), "users_view");
 ///
 /// // Process events
-/// for event in events {
-///     engine.process(&event).await?;
-/// }
+/// engine.process(&event).await?;
 ///
-/// // Rebuild all projections
+/// // Rebuild all projections from event store
 /// engine.rebuild_all().await?;
 /// ```
 pub struct ProjectionEngine {
@@ -290,17 +375,6 @@ pub struct ProjectionEngine {
 
 impl ProjectionEngine {
     /// Create a new projection engine.
-    ///
-    /// # Arguments
-    ///
-    /// - `event_store`: Event store for loading events during rebuild
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let event_store = Box::new(InMemoryEventStore::new());
-    /// let engine = ProjectionEngine::new(event_store);
-    /// ```
     pub fn new(event_store: Box<dyn EventStore>) -> Self {
         Self {
             projections: Vec::new(),
@@ -308,44 +382,28 @@ impl ProjectionEngine {
         }
     }
 
-    /// Register a projection.
-    ///
-    /// The projection will receive all future events that match its `handles()` filter.
-    ///
-    /// # Arguments
-    ///
-    /// - `projection`: The projection to register
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// engine.register(Box::new(UserListProjection::new()));
-    /// ```
+    /// Register a fully composed projection.
     pub fn register(&mut self, projection: Box<dyn Projection>) {
         tracing::info!("Registering projection: {}", projection.name());
         self.projections.push(projection);
     }
 
+    /// Convenience: register a projector + store as a [`ProjectionUnit`].
+    pub fn register_projector(
+        &mut self,
+        projector: Box<dyn Projector>,
+        store: Arc<dyn ReadModelStore>,
+        table: impl Into<String>,
+    ) {
+        let unit = ProjectionUnit::new(projector, store, table);
+        self.register(Box::new(unit));
+    }
+
     /// Process a single event through all interested projections.
     ///
     /// Routes the event to projections whose `handles()` includes the event type.
-    ///
-    /// # Arguments
-    ///
-    /// - `event`: The event to process
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if all projections handled the event successfully
-    /// - `Err(ProjectionError)` if any projection failed
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// engine.process(&event).await?;
-    /// ```
-    pub async fn process(&mut self, event: &Event) -> ProjectionResult<()> {
-        for projection in &mut self.projections {
+    pub async fn process(&self, event: &Event) -> ProjectionResult<()> {
+        for projection in &self.projections {
             if projection.handles().contains(&event.event_type) {
                 tracing::debug!(
                     "Processing event {} ({}) in projection {}",
@@ -368,22 +426,7 @@ impl ProjectionEngine {
     }
 
     /// Process multiple events in sequence.
-    ///
-    /// # Arguments
-    ///
-    /// - `events`: Vector of events to process
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if all events were processed successfully
-    /// - `Err(ProjectionError)` on first failure
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// engine.process_batch(events).await?;
-    /// ```
-    pub async fn process_batch(&mut self, events: Vec<Event>) -> ProjectionResult<()> {
+    pub async fn process_batch(&self, events: Vec<Event>) -> ProjectionResult<()> {
         for event in events {
             self.process(&event).await?;
         }
@@ -391,26 +434,9 @@ impl ProjectionEngine {
     }
 
     /// Rebuild all registered projections from the event store.
-    ///
-    /// This will:
-    /// 1. Load all events from the event store (from position 0)
-    /// 2. Rebuild each projection by calling `projection.rebuild(events)`
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if all projections rebuilt successfully
-    /// - `Err(ProjectionError)` if any projection failed
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // Rebuild after fixing a bug
-    /// engine.rebuild_all().await?;
-    /// ```
-    pub async fn rebuild_all(&mut self) -> ProjectionResult<()> {
+    pub async fn rebuild_all(&self) -> ProjectionResult<()> {
         tracing::info!("Rebuilding all projections");
 
-        // Load all events
         let events = self
             .event_store
             .stream_all(0)
@@ -419,13 +445,13 @@ impl ProjectionEngine {
 
         tracing::info!("Loaded {} events for rebuild", events.len());
 
-        // Rebuild each projection
-        for projection in &mut self.projections {
+        for projection in &self.projections {
             tracing::info!("Rebuilding projection: {}", projection.name());
 
-            projection.rebuild(events.clone()).await.map_err(|e| {
-                ProjectionError::rebuild_failed(projection.name(), e.to_string())
-            })?;
+            projection
+                .rebuild(events.clone())
+                .await
+                .map_err(|e| ProjectionError::rebuild_failed(projection.name(), e.to_string()))?;
 
             tracing::info!("Rebuilt projection: {}", projection.name());
         }
@@ -434,39 +460,21 @@ impl ProjectionEngine {
     }
 
     /// Rebuild a specific projection by name.
-    ///
-    /// # Arguments
-    ///
-    /// - `name`: Name of the projection to rebuild
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if rebuild succeeded
-    /// - `Err(ProjectionError)` if projection not found or rebuild failed
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// engine.rebuild_projection("UserList").await?;
-    /// ```
-    pub async fn rebuild_projection(&mut self, name: &str) -> ProjectionResult<()> {
+    pub async fn rebuild_projection(&self, name: &str) -> ProjectionResult<()> {
         tracing::info!("Rebuilding projection: {}", name);
 
-        // Find projection
         let projection = self
             .projections
-            .iter_mut()
+            .iter()
             .find(|p| p.name() == name)
             .ok_or_else(|| ProjectionError::other(format!("Projection not found: {}", name)))?;
 
-        // Load all events
         let events = self
             .event_store
             .stream_all(0)
             .await
             .map_err(|e| ProjectionError::EventStoreError(e.to_string()))?;
 
-        // Rebuild
         projection
             .rebuild(events)
             .await
@@ -490,13 +498,21 @@ impl ProjectionEngine {
     }
 }
 
+// ===========================================================================
+// Tests
+// ===========================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::event_store::{EventStore, EventStoreResult, VersionCheck};
+    use crate::read_model_store::InMemoryReadModelStore;
     use std::sync::{Arc, Mutex};
 
-    // Mock in-memory event store for testing
+    // -----------------------------------------------------------------------
+    // Mock event store (unchanged — needed for ProjectionEngine)
+    // -----------------------------------------------------------------------
+
     struct MockEventStore {
         events: Arc<Mutex<Vec<Event>>>,
     }
@@ -568,37 +584,26 @@ mod tests {
         }
     }
 
-    // Mock projection for testing
-    struct MockProjection {
+    // -----------------------------------------------------------------------
+    // Mock projector — stateless, writes to ReadModelStore
+    // -----------------------------------------------------------------------
+
+    struct MockProjector {
         name: String,
-        events_handled: Arc<Mutex<Vec<Event>>>,
-        cleared: Arc<Mutex<bool>>,
         handles_types: Vec<String>,
     }
 
-    impl MockProjection {
+    impl MockProjector {
         fn new(name: &str, handles: Vec<String>) -> Self {
             Self {
                 name: name.to_string(),
-                events_handled: Arc::new(Mutex::new(Vec::new())),
-                cleared: Arc::new(Mutex::new(false)),
                 handles_types: handles,
             }
-        }
-
-        #[allow(dead_code)]
-        fn handled_count(&self) -> usize {
-            self.events_handled.lock().unwrap().len()
-        }
-
-        #[allow(dead_code)]
-        fn was_cleared(&self) -> bool {
-            *self.cleared.lock().unwrap()
         }
     }
 
     #[async_trait]
-    impl Projection for MockProjection {
+    impl Projector for MockProjector {
         fn name(&self) -> &str {
             &self.name
         }
@@ -607,17 +612,47 @@ mod tests {
             self.handles_types.clone()
         }
 
-        async fn handle(&mut self, event: &Event) -> ProjectionResult<()> {
-            self.events_handled.lock().unwrap().push(event.clone());
-            Ok(())
-        }
-
-        async fn clear(&mut self) -> ProjectionResult<()> {
-            self.events_handled.lock().unwrap().clear();
-            *self.cleared.lock().unwrap() = true;
+        async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
+            store
+                .execute(
+                    "test_table",
+                    vec![serde_json::json!({
+                        "event_id": event.event_id.to_string(),
+                        "event_type": event.event_type,
+                    })],
+                )
+                .await
+                .map_err(|e| {
+                    ProjectionError::handle_failed(
+                        &self.name,
+                        &event.event_type,
+                        event.event_id.to_string(),
+                        e.to_string(),
+                    )
+                })?;
             Ok(())
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Helper to build a projection from mock projector + in-memory store
+    // -----------------------------------------------------------------------
+
+    fn make_projection(
+        name: &str,
+        handles: Vec<String>,
+        store: Arc<InMemoryReadModelStore>,
+    ) -> Box<ProjectionUnit> {
+        Box::new(ProjectionUnit::new(
+            Box::new(MockProjector::new(name, handles)),
+            store,
+            "test_table",
+        ))
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests
+    // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn test_projection_engine_new() {
@@ -631,7 +666,8 @@ mod tests {
         let store = Box::new(MockEventStore::new());
         let mut engine = ProjectionEngine::new(store);
 
-        let projection = Box::new(MockProjection::new("Test", vec!["TestEvent".to_string()]));
+        let rm_store = Arc::new(InMemoryReadModelStore::new());
+        let projection = make_projection("Test", vec!["TestEvent".to_string()], rm_store);
         engine.register(projection);
 
         assert_eq!(engine.projection_count(), 1);
@@ -643,11 +679,8 @@ mod tests {
         let store = Box::new(MockEventStore::new());
         let mut engine = ProjectionEngine::new(store);
 
-        let projection = Box::new(MockProjection::new(
-            "Test",
-            vec!["UserCreated".to_string()],
-        ));
-        let proj_clone = projection.events_handled.clone();
+        let rm_store = Arc::new(InMemoryReadModelStore::new());
+        let projection = make_projection("Test", vec!["UserCreated".to_string()], rm_store.clone());
         engine.register(projection);
 
         let event = Event::new(
@@ -660,7 +693,7 @@ mod tests {
 
         engine.process(&event).await.unwrap();
 
-        assert_eq!(proj_clone.lock().unwrap().len(), 1);
+        assert_eq!(rm_store.get_rows("test_table").len(), 1);
     }
 
     #[tokio::test]
@@ -668,11 +701,8 @@ mod tests {
         let store = Box::new(MockEventStore::new());
         let mut engine = ProjectionEngine::new(store);
 
-        let projection = Box::new(MockProjection::new(
-            "Test",
-            vec!["UserCreated".to_string()],
-        ));
-        let proj_clone = projection.events_handled.clone();
+        let rm_store = Arc::new(InMemoryReadModelStore::new());
+        let projection = make_projection("Test", vec!["UserCreated".to_string()], rm_store.clone());
         engine.register(projection);
 
         // Event that should be handled
@@ -683,22 +713,21 @@ mod tests {
         let event2 = Event::new("User", "user-1", 2, "UserDeleted", serde_json::json!({}));
         engine.process(&event2).await.unwrap();
 
-        assert_eq!(proj_clone.lock().unwrap().len(), 1);
+        assert_eq!(rm_store.get_rows("test_table").len(), 1);
     }
 
     #[tokio::test]
     async fn test_rebuild_all() {
-        let store = MockEventStore::new();
+        let event_store = MockEventStore::new();
 
-        // Add events to store
-        store.add_event(Event::new(
+        event_store.add_event(Event::new(
             "User",
             "user-1",
             1,
             "UserCreated",
             serde_json::json!({}),
         ));
-        store.add_event(Event::new(
+        event_store.add_event(Event::new(
             "User",
             "user-2",
             1,
@@ -706,20 +735,15 @@ mod tests {
             serde_json::json!({}),
         ));
 
-        let mut engine = ProjectionEngine::new(Box::new(store));
+        let mut engine = ProjectionEngine::new(Box::new(event_store));
 
-        let projection = Box::new(MockProjection::new(
-            "Test",
-            vec!["UserCreated".to_string()],
-        ));
-        let proj_events = projection.events_handled.clone();
-        let proj_cleared = projection.cleared.clone();
+        let rm_store = Arc::new(InMemoryReadModelStore::new());
+        let projection = make_projection("Test", vec!["UserCreated".to_string()], rm_store.clone());
         engine.register(projection);
 
         engine.rebuild_all().await.unwrap();
 
-        assert!(*proj_cleared.lock().unwrap());
-        assert_eq!(proj_events.lock().unwrap().len(), 2);
+        assert_eq!(rm_store.get_rows("test_table").len(), 2);
     }
 
     #[tokio::test]
@@ -727,17 +751,19 @@ mod tests {
         let store = Box::new(MockEventStore::new());
         let mut engine = ProjectionEngine::new(store);
 
-        let proj1 = Box::new(MockProjection::new(
+        let rm_store1 = Arc::new(InMemoryReadModelStore::new());
+        let rm_store2 = Arc::new(InMemoryReadModelStore::new());
+
+        let proj1 = make_projection(
             "Projection1",
             vec!["UserCreated".to_string()],
-        ));
-        let proj2 = Box::new(MockProjection::new(
+            rm_store1.clone(),
+        );
+        let proj2 = make_projection(
             "Projection2",
             vec!["UserCreated".to_string(), "UserDeleted".to_string()],
-        ));
-
-        let proj1_events = proj1.events_handled.clone();
-        let proj2_events = proj2.events_handled.clone();
+            rm_store2.clone(),
+        );
 
         engine.register(proj1);
         engine.register(proj2);
@@ -745,8 +771,8 @@ mod tests {
         let event = Event::new("User", "user-1", 1, "UserCreated", serde_json::json!({}));
         engine.process(&event).await.unwrap();
 
-        assert_eq!(proj1_events.lock().unwrap().len(), 1);
-        assert_eq!(proj2_events.lock().unwrap().len(), 1);
+        assert_eq!(rm_store1.get_rows("test_table").len(), 1);
+        assert_eq!(rm_store2.get_rows("test_table").len(), 1);
     }
 
     #[tokio::test]
@@ -754,11 +780,8 @@ mod tests {
         let store = Box::new(MockEventStore::new());
         let mut engine = ProjectionEngine::new(store);
 
-        let projection = Box::new(MockProjection::new(
-            "Test",
-            vec!["UserCreated".to_string()],
-        ));
-        let proj_events = projection.events_handled.clone();
+        let rm_store = Arc::new(InMemoryReadModelStore::new());
+        let projection = make_projection("Test", vec!["UserCreated".to_string()], rm_store.clone());
         engine.register(projection);
 
         let events = vec![
@@ -769,6 +792,30 @@ mod tests {
 
         engine.process_batch(events).await.unwrap();
 
-        assert_eq!(proj_events.lock().unwrap().len(), 3);
+        assert_eq!(rm_store.get_rows("test_table").len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_projector_init_default() {
+        let projector = MockProjector::new("Test", vec![]);
+        let store = InMemoryReadModelStore::new();
+        // Default init() should succeed (no-op)
+        projector.init(&store).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_register_projector_convenience() {
+        let event_store = Box::new(MockEventStore::new());
+        let mut engine = ProjectionEngine::new(event_store);
+
+        let rm_store: Arc<dyn ReadModelStore> = Arc::new(InMemoryReadModelStore::new());
+        engine.register_projector(
+            Box::new(MockProjector::new("Convenient", vec!["X".to_string()])),
+            rm_store,
+            "my_table",
+        );
+
+        assert_eq!(engine.projection_count(), 1);
+        assert_eq!(engine.projection_names(), vec!["Convenient"]);
     }
 }

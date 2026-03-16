@@ -615,14 +615,9 @@ mod tests {
     #[tokio::test]
     async fn test_dispatch_empty_events() {
         // Aggregate that produces no events
+        #[derive(Default)]
         struct NoOpAggregate {
             version: i64,
-        }
-
-        impl Default for NoOpAggregate {
-            fn default() -> Self {
-                Self { version: 0 }
-            }
         }
 
         struct NoOpCommand {

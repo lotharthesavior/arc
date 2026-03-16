@@ -49,7 +49,7 @@ where
         // Skip rate limiting for health check and static files
         if path == "/health" || path.starts_with("/public/") {
             let fut = self.service.call(req);
-            return Box::pin(async move { fut.await });
+            return Box::pin(fut);
         }
 
         let ip = req

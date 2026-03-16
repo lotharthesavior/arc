@@ -347,42 +347,162 @@ pub trait EventBus: Send + Sync {
 #### Week 4: Projections
 
 **Tasks:**
-1. Define `Projection` trait
-2. Implement projection engine
-3. Create sample UserListProjection
-4. Add rebuild capability
+1. Define three-trait projection architecture:
+   - `Projector` trait (stateless event handler)
+   - `Projection` trait (composed read model unit)
+   - `ReadModelStore` trait (persistence layer)
+2. Implement `ProjectionUnit` (glue struct)
+3. Implement `ProjectionEngine`
+4. Build `InMemoryReadModelStore` for testing
+5. Add rebuild capability
+
+**Design Principles:**
+- **Separation of concerns**: Handler logic (projector) is separate from storage (read model store) and orchestration (projection engine)
+- **Stateless projectors**: Projectors take `&self`, not `&mut self`. All mutable state lives in the `ReadModelStore` via interior mutability.
+- **Composable**: One projector per read model concern; swap backends freely
 
 **Code to Create:**
+
+`crates/nineties-core/src/read_model_store.rs`:
+```rust
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+pub type Row = serde_json::Value;
+
+#[async_trait]
+pub trait ReadModelStore: Send + Sync {
+    /// Execute a write operation (INSERT, UPDATE, DELETE).
+    async fn execute(
+        &self,
+        sql: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<(), ReadModelError>;
+
+    /// Execute a query and return rows.
+    async fn query(
+        &self,
+        sql: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<Vec<Row>, ReadModelError>;
+
+    /// Truncate/clear a table or collection.
+    async fn truncate(&self, table: &str) -> Result<(), ReadModelError>;
+}
+
+/// In-memory read model store for testing (built into nineties-core).
+pub struct InMemoryReadModelStore {
+    tables: Mutex<HashMap<String, Vec<Row>>>,
+}
+
+impl InMemoryReadModelStore {
+    pub fn new() -> Self {
+        Self {
+            tables: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn get_rows(&self, table: &str) -> Vec<Row> {
+        self.tables.lock().unwrap().get(table).cloned().unwrap_or_default()
+    }
+}
+```
 
 `crates/nineties-core/src/projection.rs`:
 ```rust
 use crate::event::Event;
 use crate::event_store::EventStore;
+use crate::read_model_store::ReadModelStore;
 use async_trait::async_trait;
-use std::error::Error;
+use std::sync::Arc;
 
+/// Stateless event handler — the "machine".
+///
+/// Contains the pure logic for transforming events into read model writes.
+/// Takes `&self` (not `&mut self`) — all mutable state lives in the ReadModelStore.
 #[async_trait]
-pub trait Projection: Send + Sync {
-    /// Projection name
+pub trait Projector: Send + Sync {
+    /// Unique name identifying this projector.
     fn name(&self) -> &str;
 
-    /// Event types this projection handles
+    /// Event types this projector handles.
     fn handles(&self) -> Vec<String>;
 
-    /// Handle an event
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn Error>>;
+    /// Apply a single event to the read model via the store.
+    /// Should be idempotent.
+    async fn apply(
+        &self,
+        event: &Event,
+        store: &dyn ReadModelStore,
+    ) -> ProjectionResult<()>;
 
-    /// Rebuild from scratch (clear and replay all events)
-    async fn rebuild(&mut self, events: Vec<Event>) -> Result<(), Box<dyn Error>> {
+    /// Initialize the read model schema (CREATE TABLE IF NOT EXISTS, etc.).
+    /// Default implementation is a no-op.
+    async fn init(&self, _store: &dyn ReadModelStore) -> ProjectionResult<()> {
+        Ok(())
+    }
+}
+
+/// Composed read model unit — the "output".
+///
+/// Ties a projector to its storage backend. All methods take `&self`.
+#[async_trait]
+pub trait Projection: Send + Sync {
+    /// Projection name (delegates to the projector).
+    fn name(&self) -> &str;
+
+    /// Event types this projection handles (delegates to the projector).
+    fn handles(&self) -> Vec<String>;
+
+    /// Handle a single event by applying it through the projector to the store.
+    async fn handle(&self, event: &Event) -> ProjectionResult<()>;
+
+    /// Clear all read model state for this projection.
+    async fn clear(&self) -> ProjectionResult<()>;
+
+    /// Rebuild from a set of events: clear, then replay matching events.
+    async fn rebuild(&self, events: Vec<Event>) -> ProjectionResult<()> {
         self.clear().await?;
         for event in events {
-            self.handle(&event).await?;
+            if self.handles().contains(&event.event_type) {
+                self.handle(&event).await?;
+            }
         }
         Ok(())
     }
+}
 
-    /// Clear projection state
-    async fn clear(&mut self) -> Result<(), Box<dyn Error>>;
+/// Standard composition glue: Projector + Arc<dyn ReadModelStore> + table name = Projection.
+pub struct ProjectionUnit {
+    projector: Box<dyn Projector>,
+    store: Arc<dyn ReadModelStore>,
+    table: String,
+}
+
+impl ProjectionUnit {
+    pub fn new(
+        projector: Box<dyn Projector>,
+        store: Arc<dyn ReadModelStore>,
+        table: impl Into<String>,
+    ) -> Self {
+        Self { projector, store, table: table.into() }
+    }
+}
+
+#[async_trait]
+impl Projection for ProjectionUnit {
+    fn name(&self) -> &str { self.projector.name() }
+    fn handles(&self) -> Vec<String> { self.projector.handles() }
+
+    async fn handle(&self, event: &Event) -> ProjectionResult<()> {
+        self.projector.apply(event, self.store.as_ref()).await
+    }
+
+    async fn clear(&self) -> ProjectionResult<()> {
+        self.store.truncate(&self.table).await
+            .map_err(|e| ProjectionError::clear_failed(self.projector.name(), e.to_string()))
+    }
 }
 
 pub struct ProjectionEngine {
@@ -402,8 +522,20 @@ impl ProjectionEngine {
         self.projections.push(projection);
     }
 
-    pub async fn process(&mut self, event: &Event) -> Result<(), Box<dyn Error>> {
-        for projection in &mut self.projections {
+    /// Convenience: register a projector + store as a ProjectionUnit.
+    pub fn register_projector(
+        &mut self,
+        projector: Box<dyn Projector>,
+        store: Arc<dyn ReadModelStore>,
+        table: impl Into<String>,
+    ) {
+        let unit = ProjectionUnit::new(projector, store, table);
+        self.register(Box::new(unit));
+    }
+
+    /// Process a single event. Takes `&self` (not `&mut self`).
+    pub async fn process(&self, event: &Event) -> ProjectionResult<()> {
+        for projection in &self.projections {
             if projection.handles().contains(&event.event_type) {
                 projection.handle(event).await?;
             }
@@ -411,9 +543,11 @@ impl ProjectionEngine {
         Ok(())
     }
 
-    pub async fn rebuild_all(&mut self) -> Result<(), Box<dyn Error>> {
-        let events = self.event_store.stream_all(0).await?;
-        for projection in &mut self.projections {
+    /// Rebuild all projections from the event store. Takes `&self`.
+    pub async fn rebuild_all(&self) -> ProjectionResult<()> {
+        let events = self.event_store.stream_all(0).await
+            .map_err(|e| ProjectionError::EventStoreError(e.to_string()))?;
+        for projection in &self.projections {
             projection.rebuild(events.clone()).await?;
         }
         Ok(())
@@ -725,23 +859,26 @@ impl<A: Aggregate> CommandBus<A> {
 #### Week 8: User Projection (Read Model)
 
 **Tasks:**
-1. Create UserListProjection
-2. Connect to existing Diesel models
-3. Update on events
+1. Create `UserListProjector` (stateless event handler)
+2. Compose it with a `ReadModelStore` via `ProjectionUnit`
+3. Register with `ProjectionEngine`
 4. Add tests
 
 `crates/nineties-app/src/projections/user_list.rs`:
 ```rust
-use nineties_core::{Event, Projection};
-use diesel::prelude::*;
+use nineties_core::event::Event;
+use nineties_core::projection::{Projector, ProjectionResult, ProjectionError};
+use nineties_core::read_model_store::ReadModelStore;
 use async_trait::async_trait;
 
-pub struct UserListProjection {
-    pool: diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<SqliteConnection>>,
-}
+/// Stateless projector for the user list read model.
+///
+/// Transforms UserCreated and ProfileUpdated events into writes against
+/// a ReadModelStore. Does not own any state — the store handles persistence.
+pub struct UserListProjector;
 
 #[async_trait]
-impl Projection for UserListProjection {
+impl Projector for UserListProjector {
     fn name(&self) -> &str {
         "UserList"
     }
@@ -753,34 +890,40 @@ impl Projection for UserListProjection {
         ]
     }
 
-    async fn handle(&mut self, event: &Event) -> Result<(), Box<dyn std::error::Error>> {
-        let mut conn = self.pool.get()?;
-
+    async fn apply(
+        &self,
+        event: &Event,
+        store: &dyn ReadModelStore,
+    ) -> ProjectionResult<()> {
         match event.event_type.as_str() {
             "UserCreated" => {
-                // Parse event
-                let data: serde_json::Value = event.payload.clone();
+                let data = &event.payload;
 
-                // Insert into users_view table
-                diesel::sql_query(
-                    "INSERT INTO users_view (id, name, email, created_at) VALUES (?1, ?2, ?3, ?4)"
-                )
-                .bind::<diesel::sql_types::Text, _>(data["id"].as_str().unwrap())
-                .bind::<diesel::sql_types::Text, _>(data["name"].as_str().unwrap())
-                .bind::<diesel::sql_types::Text, _>(data["email"].as_str().unwrap())
-                .bind::<diesel::sql_types::BigInt, _>(event.timestamp.duration_since(UNIX_EPOCH)?.as_secs() as i64)
-                .execute(&mut conn)?;
+                store.execute(
+                    "INSERT INTO users_view (id, name, email, created_at) VALUES (?1, ?2, ?3, ?4)",
+                    vec![
+                        serde_json::json!(data["id"].as_str().unwrap()),
+                        serde_json::json!(data["name"].as_str().unwrap()),
+                        serde_json::json!(data["email"].as_str().unwrap()),
+                        serde_json::json!(event.timestamp.duration_since(UNIX_EPOCH)?.as_secs() as i64),
+                    ],
+                ).await.map_err(|e| ProjectionError::handle_failed(
+                    "UserList", &event.event_type, &event.event_id.to_string(), e.to_string()
+                ))?;
             }
             "ProfileUpdated" => {
-                let data: serde_json::Value = event.payload.clone();
+                let data = &event.payload;
 
-                diesel::sql_query(
-                    "UPDATE users_view SET name = ?1, updated_at = ?2 WHERE id = ?3"
-                )
-                .bind::<diesel::sql_types::Text, _>(data["name"].as_str().unwrap())
-                .bind::<diesel::sql_types::BigInt, _>(event.timestamp.duration_since(UNIX_EPOCH)?.as_secs() as i64)
-                .bind::<diesel::sql_types::Text, _>(event.aggregate_id.as_str())
-                .execute(&mut conn)?;
+                store.execute(
+                    "UPDATE users_view SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                    vec![
+                        serde_json::json!(data["name"].as_str().unwrap()),
+                        serde_json::json!(event.timestamp.duration_since(UNIX_EPOCH)?.as_secs() as i64),
+                        serde_json::json!(event.aggregate_id.as_str()),
+                    ],
+                ).await.map_err(|e| ProjectionError::handle_failed(
+                    "UserList", &event.event_type, &event.event_id.to_string(), e.to_string()
+                ))?;
             }
             _ => {}
         }
@@ -788,12 +931,42 @@ impl Projection for UserListProjection {
         Ok(())
     }
 
-    async fn clear(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut conn = self.pool.get()?;
-        diesel::sql_query("DELETE FROM users_view").execute(&mut conn)?;
+    async fn init(&self, store: &dyn ReadModelStore) -> ProjectionResult<()> {
+        store.execute(
+            "CREATE TABLE IF NOT EXISTS users_view (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER
+            )",
+            vec![],
+        ).await.map_err(|e| ProjectionError::read_model_error("UserList", e.to_string()))?;
         Ok(())
     }
 }
+```
+
+**Composing the projection:**
+```rust
+use nineties_core::projection::{ProjectionUnit, ProjectionEngine};
+use nineties_core::read_model_store::ReadModelStore;
+use std::sync::Arc;
+
+// Compose: projector + store = projection
+let store: Arc<dyn ReadModelStore> = Arc::new(sqlite_read_model_store);
+let projection = ProjectionUnit::new(
+    Box::new(UserListProjector),
+    store.clone(),
+    "users_view",
+);
+
+// Register with engine
+let mut engine = ProjectionEngine::new(event_store);
+engine.register(Box::new(projection));
+
+// Or use the convenience method:
+engine.register_projector(Box::new(UserListProjector), store, "users_view");
 ```
 
 ### Phase 3: Integration (Weeks 9-12)
@@ -969,13 +1142,13 @@ FROM users_backup;
 - Event serialization/deserialization
 - Aggregate command handling
 - Aggregate event application
-- Projection event handling
+- Projector event handling (apply)
 
 **Integration Tests:**
 - EventStore append/load
 - EventBus publish/subscribe
 - CommandBus dispatch
-- Projection rebuild
+- ProjectionUnit composition and rebuild
 
 **End-to-End Tests:**
 - Full user creation flow
@@ -1027,7 +1200,7 @@ async fn test_user_creation_flow() {
 
 **Phase 3: Build Domain (Weeks 5-8)**
 1. Implement UserAggregate
-2. Implement UserListProjection
+2. Implement UserListProjector + compose via ProjectionUnit
 3. Add integration tests
 4. Code review
 
@@ -1078,7 +1251,7 @@ async fn test_user_creation_flow() {
 |-----------|----------------|----------------|
 | Event Store | 95% | append, load, concurrency |
 | Aggregates | 95% | command handling, events |
-| Projections | 90% | event handling, rebuild |
+| Projections | 90% | projector apply, rebuild, ReadModelStore |
 | Controllers | 80% | happy path, error handling |
 | Overall | 85% | - |
 

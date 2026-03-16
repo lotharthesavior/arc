@@ -16,10 +16,9 @@ static TEMPLATES: Lazy<Tera> = Lazy::new(|| {
     for pattern in patterns {
         // A glob matching no files still returns Ok with an empty Tera, so only
         // accept a pattern that actually loaded at least one template.
-        if let Ok(t) = Tera::new(pattern) {
-            if t.get_template_names().next().is_some() {
-                return t;
-            }
+        match Tera::new(pattern) {
+            Ok(t) if t.get_template_names().next().is_some() => return t,
+            _ => continue,
         }
     }
 
@@ -59,8 +58,8 @@ pub fn load_template(
 fn get_assets_string(assets: Option<Vec<&str>>) -> String {
     let mut assets_string: String = String::new();
     if let Some(assets) = assets {
-        for value in assets {
-            let asset_type = value.split('.').next_back().unwrap_or_default();
+        for value in assets.into_iter() {
+            let asset_type = value.split('.').next_back().unwrap();
             if let Some(asset) = MANIFEST_ASSETS.get(value) {
                 if asset_type == "css" {
                     assets_string.push_str(&format!(
@@ -76,8 +75,8 @@ fn get_assets_string(assets: Option<Vec<&str>>) -> String {
             }
         }
     } else {
-        for value in MANIFEST_ASSETS.values() {
-            let asset_type = value.split('.').next_back().unwrap_or_default();
+        for (_key, value) in MANIFEST_ASSETS.iter() {
+            let asset_type = value.split('.').next_back().unwrap();
             if asset_type == "css" {
                 assets_string.push_str(&format!(
                     "<link rel=\"stylesheet\" href=\"/public/{}\">",
@@ -105,11 +104,10 @@ fn parse_manifest_assets() -> HashMap<String, String> {
 
         for (key, value) in manifest_json.as_object().unwrap().iter() {
             if let Some(asset) = value.get("file") {
-                let asset_str = asset.as_str().unwrap();
-                assets.insert(key.to_string(), asset_str.parse().unwrap());
+                assets.insert(key.to_string(), asset.as_str().unwrap().parse().unwrap());
 
                 // If the asset is a js file, we might add css files to the assets.
-                let asset_type = asset_str.split('.').next_back().unwrap_or_default();
+                let asset_type = asset.as_str().unwrap().split('.').next_back().unwrap();
                 if asset_type == "js" {
                     if let Some(css_array) = value.get("css").and_then(|v| v.as_array()) {
                         for css_file in css_array {

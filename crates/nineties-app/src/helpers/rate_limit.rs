@@ -38,7 +38,7 @@ impl RateLimiter {
         let mut requests = self.requests.lock().unwrap();
 
         // Get or create entry for this key
-        let key_requests = requests.entry(key).or_insert_with(Vec::new);
+        let key_requests = requests.entry(key).or_default();
 
         // Remove old requests outside the time window
         key_requests.retain(|&time| now.duration_since(time) < self.period);
@@ -56,17 +56,6 @@ impl RateLimiter {
         // Add this request
         key_requests.push(now);
         Ok(())
-    }
-
-    /// Cleanup old entries (call periodically to prevent memory leaks)
-    pub fn cleanup(&self) {
-        let now = Instant::now();
-        let mut requests = self.requests.lock().unwrap();
-
-        requests.retain(|_, times| {
-            times.retain(|&time| now.duration_since(time) < self.period);
-            !times.is_empty()
-        });
     }
 }
 
@@ -88,7 +77,10 @@ pub fn create_rate_limiter() -> LoginRateLimiter {
         "Configuring login rate limiter"
     );
 
-    LoginRateLimiter(RateLimiter::new(max_requests, Duration::from_secs(period_secs)))
+    LoginRateLimiter(RateLimiter::new(
+        max_requests,
+        Duration::from_secs(period_secs),
+    ))
 }
 
 /// Create a global rate limiter for all endpoints.

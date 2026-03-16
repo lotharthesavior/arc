@@ -44,10 +44,7 @@ pub async fn dashboard(data: web::Data<AppState>, session: Session) -> HttpRespo
 
 /// Renders the admin settings page.
 #[get("/settings")]
-pub async fn settings(
-    data: web::Data<AppState>,
-    session: Session,
-) -> impl Responder {
+pub async fn settings(data: web::Data<AppState>, session: Session) -> impl Responder {
     let user: User = match get_session_user(&session) {
         Some(u) => u,
         None => {
@@ -72,10 +69,7 @@ pub async fn settings(
 
 /// Renders the user profile edit page with the current user's data and a CSRF token.
 #[get("/profile")]
-pub async fn profile(
-    data: web::Data<AppState>,
-    session: Session,
-) -> impl Responder {
+pub async fn profile(data: web::Data<AppState>, session: Session) -> impl Responder {
     let user: User = match get_session_user(&session) {
         Some(u) => u,
         None => {
@@ -139,13 +133,13 @@ pub async fn profile_post(form: web::Form<UserForm>, session: Session) -> impl R
             .json(serde_json::json!({"errors": {"csrf": "Invalid request. Please refresh and try again."}}));
     }
 
-    let user: User = match get_session_user(&session) {
-        Some(u) => u,
-        None => {
-            return HttpResponse::Unauthorized()
-                .json(serde_json::json!({"errors": {"auth": "Session expired. Please sign in again."}}))
-        }
-    };
+    let user: User =
+        match get_session_user(&session) {
+            Some(u) => u,
+            None => return HttpResponse::Unauthorized().json(
+                serde_json::json!({"errors": {"auth": "Session expired. Please sign in again."}}),
+            ),
+        };
 
     // Validate input
     let profile_form = UpdateProfileForm {
@@ -153,8 +147,7 @@ pub async fn profile_post(form: web::Form<UserForm>, session: Session) -> impl R
         email: form.email.clone(),
     };
     if let Err(errors) = profile_form.validate() {
-        return HttpResponse::BadRequest()
-            .json(serde_json::json!({"errors": errors}));
+        return HttpResponse::BadRequest().json(serde_json::json!({"errors": errors}));
     }
 
     let user_name: String = form.name.clone();
@@ -162,7 +155,11 @@ pub async fn profile_post(form: web::Form<UserForm>, session: Session) -> impl R
 
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let result = match diesel::update(users.find(user.id))
-        .set((email.eq(user_email.clone()), name.eq(user_name.clone()), updated_at.eq(&now)))
+        .set((
+            email.eq(user_email.clone()),
+            name.eq(user_name.clone()),
+            updated_at.eq(&now),
+        ))
         .execute(&mut get_connection())
     {
         Ok(r) => r,
@@ -201,13 +198,13 @@ pub async fn profile_password_post(
             .json(serde_json::json!({"errors": {"csrf": "Invalid request. Please refresh and try again."}}));
     }
 
-    let user: User = match get_session_user(&session) {
-        Some(u) => u,
-        None => {
-            return HttpResponse::Unauthorized()
-                .json(serde_json::json!({"errors": {"auth": "Session expired. Please sign in again."}}))
-        }
-    };
+    let user: User =
+        match get_session_user(&session) {
+            Some(u) => u,
+            None => return HttpResponse::Unauthorized().json(
+                serde_json::json!({"errors": {"auth": "Session expired. Please sign in again."}}),
+            ),
+        };
 
     let current_email: String = form.current_email.clone();
     let old_password: String = form.old_password.clone();
@@ -222,14 +219,18 @@ pub async fn profile_password_post(
 
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let result = match diesel::update(users.find(user.id))
-        .set((password.eq(prepare_password(&*new_password)), updated_at.eq(&now)))
+        .set((
+            password.eq(prepare_password(&new_password)),
+            updated_at.eq(&now),
+        ))
         .execute(&mut get_connection())
     {
         Ok(r) => r,
         Err(e) => {
             tracing::error!("Failed to update password: {}", e);
-            return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"errors": {"server_error": "Failed to update password"}}));
+            return HttpResponse::InternalServerError().json(
+                serde_json::json!({"errors": {"server_error": "Failed to update password"}}),
+            );
         }
     };
 
@@ -243,11 +244,11 @@ pub async fn profile_password_post(
 
 #[cfg(test)]
 mod tests {
-    use crate::database::backend::DbPooledConnection;
+    use crate::database::backend::{DbConnection, DbPooledConnection};
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
-    use crate::helpers::test::TestFinalizer;
+    use crate::helpers::test::InMemoryTestGuard;
     use crate::http::controllers::{admin_controller, auth_controller};
     use crate::http::middlewares::auth_middleware::AuthMiddleware;
     use crate::models::user::{User, MIGRATIONS};
@@ -266,18 +267,16 @@ mod tests {
 
     fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
+        env::set_var("DATABASE_URL", "file::memory:?cache=shared");
         let mut conn: DbPooledConnection = get_connection();
-        conn.revert_all_migrations(MIGRATIONS)
-            .expect("Failed to revert migrations");
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
 
         conn
     }
 
-    fn seed_users_table() {
-        let mut conn: DbPooledConnection = prepare_test_db();
-        UserSeeder::execute(&mut conn).expect("Failed to seed users table");
+    fn seed_users_table(conn: &mut DbConnection) {
+        UserSeeder::execute(conn).expect("Failed to seed users table");
     }
 
     /// Helper to extract CSRF token from HTML response body
@@ -295,9 +294,10 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_dashboard() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
-        seed_users_table();
+        let mut conn = prepare_test_db();
+        seed_users_table(&mut conn);
 
         let secret_key = Key::from(
             env::var("SECRET_KEY")
@@ -307,7 +307,7 @@ mod tests {
 
         // Create rate limiter for test
         let rate_limiter = crate::helpers::rate_limit::LoginRateLimiter(
-            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60))
+            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60)),
         );
 
         let app = test::init_service(
@@ -376,9 +376,10 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_settings() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
-        seed_users_table();
+        let mut conn = prepare_test_db();
+        seed_users_table(&mut conn);
 
         let secret_key = Key::from(
             env::var("SECRET_KEY")
@@ -388,7 +389,7 @@ mod tests {
 
         // Create rate limiter for test
         let rate_limiter = crate::helpers::rate_limit::LoginRateLimiter(
-            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60))
+            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60)),
         );
 
         let app = test::init_service(
@@ -457,9 +458,10 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_profile_data() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
-        seed_users_table();
+        let mut conn = prepare_test_db();
+        seed_users_table(&mut conn);
 
         let secret_key = Key::from(
             env::var("SECRET_KEY")
@@ -469,7 +471,7 @@ mod tests {
 
         // Create rate limiter for test
         let rate_limiter = crate::helpers::rate_limit::LoginRateLimiter(
-            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60))
+            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60)),
         );
 
         let app = test::init_service(
@@ -566,9 +568,10 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_profile_password() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
-        seed_users_table();
+        let mut conn = prepare_test_db();
+        seed_users_table(&mut conn);
 
         let user_email = "jekyll@example.com";
 
@@ -580,7 +583,7 @@ mod tests {
 
         // Create rate limiter for test
         let rate_limiter = crate::helpers::rate_limit::LoginRateLimiter(
-            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60))
+            crate::helpers::rate_limit::RateLimiter::new(100, std::time::Duration::from_secs(60)),
         );
 
         let app = test::init_service(

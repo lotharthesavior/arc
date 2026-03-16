@@ -1,9 +1,9 @@
 use crate::helpers::database::get_connection;
 use crate::helpers::jwt::create_token;
+use crate::helpers::rate_limit::LoginRateLimiter;
 use crate::models::user::User;
 use crate::schema::users::dsl::*;
 use crate::services::user_service::{validate_user_credentials, UserValidationResult};
-use crate::helpers::rate_limit::LoginRateLimiter;
 use actix_web::{get, post, web, web::Json, HttpMessage, HttpRequest, HttpResponse, Responder};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::Deserialize;
@@ -34,7 +34,7 @@ pub async fn login(
     let key = format!("api_login:{}", ip);
 
     match limiter.check(key.clone()) {
-        Ok(()) => {}, // Rate limit not exceeded
+        Ok(()) => {} // Rate limit not exceeded
         Err(retry_after) => {
             warn!(
                 ip = ip,

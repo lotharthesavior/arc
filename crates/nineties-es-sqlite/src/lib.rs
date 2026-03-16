@@ -41,7 +41,6 @@ use diesel::r2d2::{self, ConnectionManager};
 use diesel::sqlite::SqliteConnection;
 use nineties_core::event::Event;
 use nineties_core::event_store::{EventStore, EventStoreError, EventStoreResult, VersionCheck};
-use serde_json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -216,12 +215,12 @@ impl EventStore for SqliteEventStore {
 
         // Run blocking database operation in tokio blocking thread
         tokio::task::spawn_blocking(move || -> EventStoreResult<()> {
-            use diesel::connection::TransactionManager;
             use diesel::connection::AnsiTransactionManager;
+            use diesel::connection::TransactionManager;
 
-            let mut conn = pool
-                .get()
-                .map_err(|e| EventStoreError::database(format!("Failed to get connection: {}", e)))?;
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
 
             // Begin transaction
             AnsiTransactionManager::begin_transaction(&mut *conn)
@@ -303,9 +302,9 @@ impl EventStore for SqliteEventStore {
         let pool = self.pool.clone();
 
         tokio::task::spawn_blocking(move || {
-            let mut conn = pool
-                .get()
-                .map_err(|e| EventStoreError::database(format!("Failed to get connection: {}", e)))?;
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
 
             let records: Vec<EventRecord> = events::table
                 .filter(events::aggregate_id.eq(&aggregate_id))
@@ -324,9 +323,9 @@ impl EventStore for SqliteEventStore {
         let pool = self.pool.clone();
 
         tokio::task::spawn_blocking(move || {
-            let mut conn = pool
-                .get()
-                .map_err(|e| EventStoreError::database(format!("Failed to get connection: {}", e)))?;
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
 
             let records: Vec<EventRecord> = events::table
                 .filter(events::id.ge(from_position as i32))
@@ -345,9 +344,9 @@ impl EventStore for SqliteEventStore {
         let pool = self.pool.clone();
 
         tokio::task::spawn_blocking(move || {
-            let mut conn = pool
-                .get()
-                .map_err(|e| EventStoreError::database(format!("Failed to get connection: {}", e)))?;
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
 
             let version = events::table
                 .filter(events::aggregate_id.eq(&aggregate_id))

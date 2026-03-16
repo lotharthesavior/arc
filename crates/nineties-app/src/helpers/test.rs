@@ -17,8 +17,8 @@ impl Drop for TestFinalizer {
         let database: String =
             env::var("DATABASE_URL").unwrap_or_else(|_| "database/database.sqlite".to_string());
 
-        // Only delete file-based databases; skip in-memory (`:memory:`) databases
-        if database != ":memory:" {
+        // Only delete file-based databases; skip in-memory databases
+        if database != ":memory:" && !database.contains(":memory:") {
             let _ = std::fs::remove_file(database);
         }
     }

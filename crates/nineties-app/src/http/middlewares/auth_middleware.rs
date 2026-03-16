@@ -68,11 +68,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::database::backend::DbPooledConnection;
+    use crate::database::backend::{DbConnection, DbPooledConnection};
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
-    use crate::helpers::test::TestFinalizer;
+    use crate::helpers::test::InMemoryTestGuard;
     use crate::http::middlewares::auth_middleware::AuthMiddleware;
     use crate::models::user::MIGRATIONS;
     use crate::schema::users::dsl::users;
@@ -90,6 +90,7 @@ mod tests {
 
     fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
+        env::set_var("DATABASE_URL", "file::memory:?cache=shared");
         let mut conn: DbPooledConnection = get_connection();
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
@@ -97,18 +98,17 @@ mod tests {
         conn
     }
 
-    fn seed_users_table() {
-        let mut conn: DbPooledConnection = prepare_test_db();
-        UserSeeder::execute(&mut conn).expect("Failed to seed users table");
+    fn seed_users_table(conn: &mut DbConnection) {
+        UserSeeder::execute(conn).expect("Failed to seed users table");
     }
 
     #[serial]
     #[actix_web::test]
     async fn test_auth_middleware() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
         let mut conn: DbPooledConnection = prepare_test_db();
-        seed_users_table();
+        seed_users_table(&mut conn);
         let all_users: Vec<i32> = users.select(id).load::<i32>(&mut conn).unwrap();
         let user_id: i32 = all_users[0];
 
@@ -129,26 +129,26 @@ mod tests {
                     secret_key.clone(),
                 ))
                 .service(web::resource("/force-auth").route(web::get().to({
-                    let user_id: i32 = user_id.clone();
+                    let user_id: i32 = user_id;
                     move |_req: HttpRequest, session: Session| async move {
                         session.insert("user_id", user_id).unwrap();
-                        HttpResponse::Ok()
+                        HttpResponse::Ok().finish()
                     }
                 })))
                 .service(
                     web::resource("/check-data")
                         .wrap(AuthMiddleware)
                         .route(web::get().to({
-                            let user_id: i32 = user_id.clone();
+                            let user_id: i32 = user_id;
                             move |_req: HttpRequest, session: Session| async move {
                                 let session_user_id: i32 = session
                                     .get::<i32>("user_id")
                                     .unwrap_or(Some(0))
                                     .unwrap_or(0);
                                 if user_id == session_user_id {
-                                    HttpResponse::Ok()
+                                    HttpResponse::Ok().finish()
                                 } else {
-                                    HttpResponse::BadRequest()
+                                    HttpResponse::BadRequest().finish()
                                 }
                             }
                         }),

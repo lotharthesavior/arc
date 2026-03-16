@@ -36,7 +36,7 @@ Nineties is a Rust/Actix-Web MVC starter with:
 
 ### 2.2 High-Level Architecture
 
-![Architecture Diagram - Event-Sourced Target Architecture - Core library contains Command Bus, Event Store, Event Bus, and Projection Engine, with optional web and CLI plugins, and pluggable storage backends including SQLite, Postgres, and in-memory options](diagrams/architecture-05-event-sourced-target.svg)
+![Architecture Diagram - Event-Sourced Target Architecture - Core library contains Command Bus, Event Store trait, Event Bus, and Projection Engine with Read Model Store trait, with optional web and CLI plugins, pluggable event store backends (SQLite, Postgres, File) and pluggable read model store backends (SQLite, Postgres, dqlite, in-memory)](diagrams/architecture-05-event-sourced-target.svg)
 
 ### 2.3 Dual Complexity Paths
 
@@ -59,6 +59,9 @@ members = [
     "crates/nineties-core",
     "crates/nineties-es-sqlite",
     "crates/nineties-es-postgres",
+    "crates/nineties-rm-sqlite",
+    "crates/nineties-rm-postgres",
+    "crates/nineties-rm-dqlite",
     "crates/nineties-web",
     "crates/nineties-cli",
     "crates/nineties-app",
@@ -140,16 +143,138 @@ Decouples event producers from consumers. Supports sync and async subscribers.
 
 ### 3.4 Projections (Read Models)
 
-Projections consume events and build query-optimized read models.
+Projections consume events and build query-optimized read models. The projection system uses a **three-trait architecture** that separates concerns cleanly:
 
-![Flow Diagram - Projection Event Flow - Event stream (UserCreated, ProfileUpdated, UserDeleted) flows into multiple projections (UserList, AuditLog, Stats) which materialize different read models in tables and in-memory stores](diagrams/flow-06-projection-event-flow.svg)
+- **`Projector`** — stateless event handler (the "machine"). Contains the pure logic for transforming events into read model writes. Takes `&self`.
+- **`Projection`** — composed read model unit (the "output"). Ties a projector to its storage backend. Takes `&self`.
+- **`ReadModelStore`** — backend-agnostic persistence layer. Implementations handle SQLite, Postgres, dqlite, or in-memory storage.
 
-![Architecture Diagram - Projection Classes - Projection trait defines event handling and rebuild capability, ProjectionEngine manages multiple projections, processes events, and coordinates rebuilding from EventStore](diagrams/architecture-10-projection-classes.svg)
+`ProjectionUnit` is the standard glue struct that composes a `Projector` + `Arc<dyn ReadModelStore>` + table name into a `Projection`.
+
+![Flow Diagram - Projection Event Flow - Event stream (UserCreated, ProfileUpdated, UserDeleted) flows into multiple projections (UserList, AuditLog, Stats) which materialize different read models through a pluggable backend supporting SQLite, Postgres, dqlite, and in-memory stores](diagrams/flow-06-projection-event-flow.svg)
+
+![Architecture Diagram - Projection Classes - ReadModelStore trait defines storage operations implemented by SQLite, Postgres, dqlite, and in-memory stores; Projector trait defines stateless event handling; Projection trait defines composed read model unit with handle, clear, and rebuild; ProjectionUnit glues Projector and ReadModelStore; ProjectionEngine manages multiple projections, processes events, and coordinates rebuilding from EventStore](diagrams/architecture-10-projection-classes.svg)
+
+**Projector trait** — stateless event handler:
+
+```rust
+#[async_trait]
+pub trait Projector: Send + Sync {
+    /// Unique name identifying this projector.
+    fn name(&self) -> &str;
+
+    /// Event types this projector handles.
+    fn handles(&self) -> Vec<String>;
+
+    /// Apply a single event to the read model via the store.
+    /// Must be idempotent: applying the same event twice produces the same result.
+    async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()>;
+
+    /// Initialize the read model schema (CREATE TABLE IF NOT EXISTS, etc.).
+    /// Default implementation is a no-op.
+    async fn init(&self, _store: &dyn ReadModelStore) -> ProjectionResult<()> {
+        Ok(())
+    }
+}
+```
+
+**Projection trait** — composed read model unit:
+
+```rust
+#[async_trait]
+pub trait Projection: Send + Sync {
+    /// Projection name (delegates to the projector).
+    fn name(&self) -> &str;
+
+    /// Event types this projection handles (delegates to the projector).
+    fn handles(&self) -> Vec<String>;
+
+    /// Handle a single event by applying it through the projector to the store.
+    async fn handle(&self, event: &Event) -> ProjectionResult<()>;
+
+    /// Clear all read model state for this projection.
+    async fn clear(&self) -> ProjectionResult<()>;
+
+    /// Rebuild from a set of events: clear, then replay matching events.
+    async fn rebuild(&self, events: Vec<Event>) -> ProjectionResult<()>;
+}
+```
+
+All methods take `&self`, not `&mut self`. Mutable state lives in the `ReadModelStore`, which handles interior mutability via connection pools, `Mutex`, etc.
+
+**ProjectionUnit** — standard composition glue:
+
+```rust
+pub struct ProjectionUnit {
+    projector: Box<dyn Projector>,
+    store: Arc<dyn ReadModelStore>,
+    table: String, // truncate target for clear()
+}
+
+impl ProjectionUnit {
+    pub fn new(
+        projector: Box<dyn Projector>,
+        store: Arc<dyn ReadModelStore>,
+        table: impl Into<String>,
+    ) -> Self;
+}
+
+// ProjectionUnit implements Projection by delegating:
+//   name()   → projector.name()
+//   handle() → projector.apply(event, store)
+//   clear()  → store.truncate(table)
+```
+
+**Read Model Store trait:**
+
+```rust
+#[async_trait]
+pub trait ReadModelStore: Send + Sync {
+    /// Execute a write operation (INSERT, UPDATE, DELETE)
+    async fn execute(&self, sql: &str, params: Vec<Value>) -> ReadModelResult<()>;
+
+    /// Execute a query and return rows
+    async fn query(&self, sql: &str, params: Vec<Value>) -> ReadModelResult<Vec<Row>>;
+
+    /// Truncate a table (used during projection rebuild)
+    async fn truncate(&self, table: &str) -> ReadModelResult<()>;
+}
+```
+
+`ReadModelError` and `ReadModelResult<T>` are defined in the `read_model_store` module. `ProjectionError` includes a `ReadModelError` variant for propagating store errors up through the projection layer.
+
+**Available backends:**
+
+| Backend | Crate | Best For |
+|---------|-------|----------|
+| **SQLite** | `nineties-rm-sqlite` | Local development, single-node, embedded |
+| **Postgres** | `nineties-rm-postgres` | Production, headless microservices |
+| **dqlite** | `nineties-rm-dqlite` | Distributed/edge, replicated SQLite |
+| **In-Memory** | `nineties-core` (built-in) | Testing, ephemeral projections |
+
+Adding a new backend requires implementing the `ReadModelStore` trait — no changes to projectors or the engine.
+
+**ProjectionEngine** — orchestrates multiple projections:
+
+The `ProjectionEngine` takes `&self` (not `&mut self`) for `process()`, `process_batch()`, `rebuild_all()`, and `rebuild_projection()`. It provides two registration paths:
+
+- `register()` — accepts a fully composed `Box<dyn Projection>`
+- `register_projector()` — convenience method that accepts a `Box<dyn Projector>` + `Arc<dyn ReadModelStore>` + table name, wraps them in a `ProjectionUnit`, and registers the result
+
+```rust
+// Option 1: register a pre-composed projection
+let projection = ProjectionUnit::new(Box::new(UserListProjector), store.clone(), "users_view");
+engine.register(Box::new(projection));
+
+// Option 2: convenience — register projector + store directly
+engine.register_projector(Box::new(UserListProjector), store.clone(), "users_view");
+```
 
 **Key capability**: Projections can be rebuilt from scratch by replaying the entire event stream. This enables:
 - Schema changes without data migration
 - New read models added retroactively
 - Bug fixes by replaying with corrected projection logic
+- Switching storage backends without rewriting projectors
 
 ### 3.5 Snapshot Store (Optional)
 
@@ -197,7 +322,7 @@ impl Plugin for BlogPlugin {
 
 ### 4.2 Composition Modes
 
-![Architecture Diagram - Composition Modes - Three deployment modes: Mode A combines core with web plugin and SQLite for full-stack apps, Mode B uses Postgres for headless microservices, Mode C focuses on CLI tools for replay and rebuild operations](diagrams/architecture-13-composition-modes.svg)
+![Architecture Diagram - Composition Modes - Four deployment modes: Mode A combines core with web plugin and SQLite for full-stack apps, Mode B uses Postgres for headless microservices, Mode C focuses on CLI tools for replay and rebuild, Mode D uses dqlite for distributed/edge deployments](diagrams/architecture-13-composition-modes.svg)
 
 ---
 
@@ -264,12 +389,16 @@ Move features (pages, blog, auth) into plugin crates that register their own agg
 | `EventStore` trait | `nineties-core` | P0 | New |
 | SQLite EventStore impl | `nineties-es-sqlite` | P0 | New |
 | `EventBus` trait + in-process impl | `nineties-core` | P0 | New |
-| `Projection` trait + engine | `nineties-core` | P0 | New |
+| `Projector` + `Projection` traits + engine | `nineties-core` | P0 | New |
+| `ReadModelStore` trait | `nineties-core` | P0 | New |
+| SQLite ReadModelStore impl | `nineties-rm-sqlite` | P0 | New |
 | `Aggregate` trait | `nineties-core` | P1 | New |
 | `CommandBus` | `nineties-core` | P1 | New |
 | `PluginRegistry` (ES-aware) | `nineties-core` | P1 | Extend existing plan |
+| Postgres ReadModelStore impl | `nineties-rm-postgres` | P1 | New |
 | Snapshot store | `nineties-core` | P2 | New |
 | Postgres EventStore impl | `nineties-es-postgres` | P2 | New |
+| dqlite ReadModelStore impl | `nineties-rm-dqlite` | P2 | New |
 | Web crate extraction | `nineties-web` | P1 | Refactor |
 | CLI crate (replay, rebuild) | `nineties-cli` | P1 | Refactor |
 | Async event bus (tokio channels) | `nineties-core` | P2 | New |
@@ -423,7 +552,7 @@ spec:
 
 ## 11. Final Crate Map
 
-![Architecture Diagram - Final Crate Map - nineties-core (events, aggregates, traits) as foundation, extended by Event Stores (SQLite, Postgres), Cluster Backends (NATS, P2P, K8s), Surfaces (Web, CLI), and Plugins (auth, blog, pages)](diagrams/architecture-19-final-crate-map.svg)
+![Architecture Diagram - Final Crate Map - nineties-core (events, aggregates, traits) as foundation, extended by Event Stores (SQLite, Postgres), Read Model Stores (SQLite, Postgres, dqlite), Cluster Backends (NATS, P2P, K8s), Surfaces (Web, CLI), and Plugins (auth, blog, pages)](diagrams/architecture-19-final-crate-map.svg)
 
 ---
 
@@ -434,10 +563,11 @@ Nineties evolves from a monolithic MVC starter into a **composable, event-source
 1. **Events are first-class citizens** — every state change is an event
 2. **Core is headless** — `nineties-core` has zero web dependencies
 3. **Web is a plugin** — `nineties-web` adds Actix, Tera, WebSocket
-4. **Each node is self-contained** — local SQLite event store, no shared DB dependency
+4. **Each node is self-contained** — local event store, no shared DB dependency
 5. **Nodes sync via eventual consistency** — events replicated through pluggable sync layer
 6. **Aggregate ownership eliminates conflicts** — consistent hashing assigns one writer per aggregate
-7. **Storage is pluggable** — SQLite (primary), Postgres (optional), or in-memory event stores
-8. **Cluster backends are pluggable** — NATS, gRPC, P2P gossip, or k8s-native discovery
-9. **Plugins compose freely** — register aggregates, projections, routes, CLI commands
-10. **Complexity is opt-in** — simple services or full CQRS, developer's choice
+7. **Event storage is pluggable** — SQLite (primary), Postgres (optional), or in-memory event stores
+8. **Read model storage is pluggable** — SQLite, Postgres, dqlite, or in-memory via the `ReadModelStore` trait; new backends require only a single trait implementation
+9. **Cluster backends are pluggable** — NATS, gRPC, P2P gossip, or k8s-native discovery
+10. **Plugins compose freely** — register aggregates, projections, routes, CLI commands
+11. **Complexity is opt-in** — simple services or full CQRS, developer's choice

@@ -8,7 +8,8 @@
 //! - Event store trait definitions
 //! - Aggregate trait definitions
 //! - Command and event bus traits
-//! - Projection engine traits
+//! - Projector, projection, and projection engine traits
+//! - Read model store trait
 //!
 
 // Re-export commonly used types
@@ -22,6 +23,7 @@ pub mod event;
 pub mod event_bus;
 pub mod event_store;
 pub mod projection;
+pub mod read_model_store;
 
 #[cfg(test)]
 mod tests {

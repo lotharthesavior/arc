@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Mutex;
 use std::{env, fs};
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod routes;
@@ -44,7 +44,6 @@ mod helpers {
     pub mod config;
     pub mod csrf;
     pub mod database;
-    pub mod form;
     pub mod general;
     pub mod jwt;
     pub mod rate_limit;

@@ -16,8 +16,11 @@ Core event sourcing primitives for the Nineties framework.
 - **EventBus** - Publish/subscribe event distribution
 - **Aggregate** - Domain logic encapsulation with command handling
 - **CommandBus** - Command dispatching and coordination
-- **Projection** - Read model materialization from event streams
-- **ProjectionEngine** - Multi-projection management and rebuilding
+- **Projector** - Stateless event handler for building read models (takes `&self`)
+- **Projection** - Composed read model unit (projector + store)
+- **ProjectionUnit** - Standard glue: `Projector` + `Arc<dyn ReadModelStore>` + table name
+- **ReadModelStore** - Backend-agnostic persistence for projections (`InMemoryReadModelStore` built in)
+- **ProjectionEngine** - Multi-projection management and rebuilding (takes `&self`)
 
 ## Documentation
 

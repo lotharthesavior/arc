@@ -33,11 +33,11 @@ pub struct NewUser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::backend::DbPooledConnection;
+    use crate::database::backend::{DbConnection, DbPooledConnection};
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
-    use crate::helpers::test::TestFinalizer;
+    use crate::helpers::test::InMemoryTestGuard;
     use crate::models::user::{NewUser, User, MIGRATIONS};
     use crate::schema::users::dsl::*;
 
@@ -45,24 +45,25 @@ mod tests {
     use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
     use diesel_migrations::MigrationHarness;
     use serial_test::serial;
+    use std::env;
 
     fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
+        env::set_var("DATABASE_URL", "file::memory:?cache=shared");
         let mut conn: DbPooledConnection = get_connection();
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
         conn
     }
 
-    fn seed_users_table() {
-        let mut conn: DbPooledConnection = prepare_test_db();
-        UserSeeder::execute(&mut conn).expect("Failed to seed users table");
+    fn seed_users_table(conn: &mut DbConnection) {
+        UserSeeder::execute(conn).expect("Failed to seed users table");
     }
 
     #[serial]
     #[actix_web::test]
     async fn test_can_create_user() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
         let mut conn: DbPooledConnection = prepare_test_db();
 
@@ -92,12 +93,12 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_can_delete_user() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
         let mut conn: DbPooledConnection = prepare_test_db();
 
         conn.test_transaction::<_, Error, _>(|conn| {
-            seed_users_table();
+            seed_users_table(conn);
 
             let expected_email: &str = "jekyll@example.com";
 
@@ -124,12 +125,12 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_can_retrieve_user_by_id() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
         let mut conn: DbPooledConnection = prepare_test_db();
 
-        conn.test_transaction::<_, Error, _>(|conn: &mut DbPooledConnection| {
-            seed_users_table();
+        conn.test_transaction::<_, Error, _>(|conn| {
+            seed_users_table(conn);
 
             let all_users: Vec<i32> = users.select(id).load::<i32>(conn).unwrap();
             let user_id: i32 = all_users[0];
@@ -147,12 +148,12 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn test_can_update_user() {
-        let _finalizer = TestFinalizer;
+        let _guard = InMemoryTestGuard;
 
         let mut conn: DbPooledConnection = prepare_test_db();
 
-        conn.test_transaction::<_, Error, _>(|conn: &mut DbPooledConnection| {
-            seed_users_table();
+        conn.test_transaction::<_, Error, _>(|conn| {
+            seed_users_table(conn);
 
             let all_users: Vec<i32> = users.select(id).load::<i32>(conn).unwrap();
             let user_id: i32 = all_users[0];
