@@ -40,7 +40,7 @@
 //!     async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
 //!         match event.event_type.as_str() {
 //!             "UserCreated" => {
-//!                 store.execute("users_view", vec![event.payload.clone()]).await
+//!                 store.upsert(Upsert::new("users_view", &event.aggregate_id, event.payload.clone())).await
 //!                     .map_err(|e| ProjectionError::handle_failed("UserList", &event.event_type, &event.event_id.to_string(), e.to_string()))?;
 //!             }
 //!             _ => {}
@@ -60,6 +60,7 @@
 //! ```
 
 use crate::event::Event;
+use crate::event_bus::EventHandler;
 use crate::event_store::EventStore;
 use crate::read_model_store::ReadModelStore;
 use async_trait::async_trait;
@@ -193,7 +194,7 @@ pub type ProjectionResult<T> = Result<T, ProjectionError>;
 ///     }
 ///
 ///     async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
-///         store.execute("users_view", vec![event.payload.clone()]).await
+///         store.upsert(Upsert::new("users_view", &event.aggregate_id, event.payload.clone())).await
 ///             .map_err(|e| ProjectionError::handle_failed(
 ///                 "UserList", &event.event_type, &event.event_id.to_string(), e.to_string()
 ///             ))?;
@@ -496,6 +497,54 @@ impl ProjectionEngine {
             .map(|p| p.name().to_string())
             .collect()
     }
+
+    /// Union of every event type any registered projection handles. Used by
+    /// [`ProjectionEngineHandler`] to declare its `handles()` set when
+    /// subscribing to an [`EventBus`](crate::event_bus::EventBus).
+    pub fn all_handled_event_types(&self) -> Vec<String> {
+        let mut all: Vec<String> = self.projections.iter().flat_map(|p| p.handles()).collect();
+        all.sort();
+        all.dedup();
+        all
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EventBus adapter — drive the engine from an in-process bus
+// ---------------------------------------------------------------------------
+
+/// Adapter that lets a [`ProjectionEngine`] subscribe to an
+/// [`EventBus`](crate::event_bus::EventBus). Wraps the engine in an
+/// [`EventHandler`] that routes every relevant event through
+/// [`ProjectionEngine::process`]. The engine stays accessible from outside
+/// (e.g. for `rebuild_all`) via the same [`Arc`].
+///
+/// Lives in `nineties-core` because the adapter needs nothing app-specific —
+/// any aggregate's projector can be driven through it.
+pub struct ProjectionEngineHandler {
+    engine: Arc<ProjectionEngine>,
+    handles: Vec<String>,
+}
+
+impl ProjectionEngineHandler {
+    pub fn new(engine: Arc<ProjectionEngine>) -> Self {
+        let handles = engine.all_handled_event_types();
+        Self { engine, handles }
+    }
+}
+
+#[async_trait]
+impl EventHandler for ProjectionEngineHandler {
+    fn handles(&self) -> Vec<String> {
+        self.handles.clone()
+    }
+
+    async fn handle(&self, event: &Event) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.engine
+            .process(event)
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+    }
 }
 
 // ===========================================================================
@@ -613,14 +662,17 @@ mod tests {
         }
 
         async fn apply(&self, event: &Event, store: &dyn ReadModelStore) -> ProjectionResult<()> {
+            use crate::read_model_store::Upsert;
             store
-                .execute(
+                .upsert(Upsert::new(
                     "test_table",
-                    vec![serde_json::json!({
-                        "event_id": event.event_id.to_string(),
+                    event.event_id.to_string(),
+                    serde_json::json!({
+                        "id": event.event_id.to_string(),
                         "event_type": event.event_type,
-                    })],
-                )
+                        "version": event.sequence,
+                    }),
+                ))
                 .await
                 .map_err(|e| {
                     ProjectionError::handle_failed(
