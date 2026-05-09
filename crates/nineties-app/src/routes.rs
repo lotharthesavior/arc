@@ -1,7 +1,12 @@
-use crate::helpers::jwt::jwt_auth_enabled;
-use crate::http::controllers::api_controller::{login, profile};
+use crate::http::controllers::api_controller::{
+    delete_profile, login, logout, profile, register, update_profile,
+};
+use crate::http::controllers::diag_controller::{diag_health, list_events};
 use crate::http::controllers::{admin_controller, auth_controller, home_controller};
-use crate::http::middlewares::{auth_middleware::AuthMiddleware, jwt_middleware::JwtMiddleware};
+use crate::http::middlewares::{
+    auth_middleware::AuthMiddleware, idle_timeout_middleware::IdleTimeoutMiddleware,
+    jwt_middleware::JwtMiddleware,
+};
 use crate::websocket;
 use actix_files as fs;
 use actix_web::http::header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH};
@@ -93,10 +98,35 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(auth_controller::signin_post)
         // GET /signout
         .service(auth_controller::signout)
+        // API routes v1 (JWT protected)
+        .service(
+            web::scope("/api/v1")
+                .service(login)
+                .service(register)
+                .service(
+                    web::scope("/protected")
+                        .wrap(JwtMiddleware)
+                        .service(profile)
+                        .service(update_profile)
+                        .service(delete_profile)
+                        .service(logout),
+                ),
+        )
+        // Backwards-compatible API routes (will be deprecated)
+        .service(
+            web::scope("/api").service(login).service(
+                web::scope("/protected")
+                    .wrap(JwtMiddleware)
+                    .service(profile),
+            ),
+        )
         // GET /admin
+        // AuthMiddleware is innermost (runs last, closest to handler) so the
+        // idle-timeout enforcer sees the session-bound user_id and can purge.
         .service(
             web::scope("/admin")
                 .wrap(AuthMiddleware)
+                .wrap(IdleTimeoutMiddleware::from_env())
                 .service(admin_controller::dashboard)
                 .service(admin_controller::settings)
                 .service(admin_controller::profile)
@@ -107,24 +137,14 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .route("/ws", web::get().to(websocket::connection::ws_handler))
         .service(static_file);
 
-    if jwt_auth_enabled() {
-        cfg
-            // API routes v1 (JWT protected)
-            .service(
-                web::scope("/api/v1").service(login).service(
-                    web::scope("/protected")
-                        .wrap(JwtMiddleware)
-                        .service(profile),
-                ),
-            )
-            // Backwards-compatible API routes (will be deprecated)
-            .service(
-                web::scope("/api").service(login).service(
-                    web::scope("/protected")
-                        .wrap(JwtMiddleware)
-                        .service(profile),
-                ),
-            );
+    // Diagnostic endpoints — only mounted when APP_ENV=e2e so production
+    // builds never expose them. Backend-agnostic: routes through EventStore.
+    if std::env::var("APP_ENV").as_deref() == Ok("e2e") {
+        cfg.service(
+            web::scope("/__diag__")
+                .service(diag_health)
+                .service(list_events),
+        );
     }
 }
 

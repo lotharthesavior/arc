@@ -165,7 +165,6 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
             .app_data(web::Data::new(login_rate_limiter.clone())) // Login controllers use this
             .app_data(web::Data::new(AppState {
                 app_name: Mutex::from(env::var("APP_NAME").unwrap_or_else(|_| "".to_string())),
-                _user_id: Mutex::from(None),
             }))
             .app_data(command_bus_data.clone())
             .app_data(read_model_store_data.clone())

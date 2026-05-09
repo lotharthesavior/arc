@@ -1,35 +1,72 @@
-use crate::helpers::database::get_connection;
-use crate::models::user::User;
-use crate::schema::users::dsl::users;
+//! Cookie-session-backed identity for the server-rendered admin UI.
+//!
+//! Sessions hold a [`SessionUser`] — a lightweight projection-backed POD
+//! carrying the `aggregate_id` UUID, name, and email. Reads from
+//! `users_view` (Step 2 projection); never touches the retired Diesel
+//! `users` table.
+
+use crate::domain::user::projector::USERS_VIEW;
 use actix_session::Session;
-use diesel::{QueryDsl, RunQueryDsl};
+use nineties_core::read_model_store::ReadModelStore;
+use serde::{Deserialize, Serialize};
 
-/// Check if user is authenticated by looking for cached user data in session.
-/// Falls back to database query only if user_data is missing but user_id exists.
+/// Session key holding the cached [`SessionUser`].
+const SESSION_USER_KEY: &str = "user";
+
+/// Identity stored in the cookie session after sign-in.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SessionUser {
+    /// Aggregate UUID — same value used in JWT `sub` and audit `actor_id`.
+    pub id: String,
+    pub name: String,
+    pub email: String,
+}
+
+impl SessionUser {
+    /// Build from a `users_view` row, or `None` if the row is missing the
+    /// fields the cookie session needs.
+    pub fn from_row(row: &serde_json::Value) -> Option<Self> {
+        Some(Self {
+            id: row.get("id")?.as_str()?.to_string(),
+            name: row.get("name")?.as_str()?.to_string(),
+            email: row.get("email")?.as_str()?.to_string(),
+        })
+    }
+
+    /// Refresh from the projection (e.g. after profile update).
+    pub async fn from_projection(store: &dyn ReadModelStore, id: &str) -> Option<Self> {
+        let row = store.get(USERS_VIEW, id).await.ok().flatten()?;
+        Self::from_row(&row)
+    }
+}
+
+/// `true` when the cookie session carries a [`SessionUser`].
+///
+/// Trusts the signed/encrypted cookie store — no DB round-trip per request.
 pub fn is_authenticated(session: &Session) -> bool {
-    // First check if we have cached user data
-    if let Ok(Some(_user)) = session.get::<User>("user_data") {
-        return true;
-    }
+    session
+        .get::<SessionUser>(SESSION_USER_KEY)
+        .ok()
+        .flatten()
+        .is_some()
+}
 
-    // Fallback: check user_id and query DB (for backwards compatibility)
-    let user_id: i32 = session
-        .get::<i32>("user_id")
-        .unwrap_or(Some(0))
-        .unwrap_or(0);
-    if user_id == 0 {
-        return false;
-    }
+/// Read the cached [`SessionUser`].
+pub fn get_session_user(session: &Session) -> Option<SessionUser> {
+    session.get::<SessionUser>(SESSION_USER_KEY).ok().flatten()
+}
 
-    let user: Result<User, diesel::result::Error> =
-        users.find(user_id).first::<User>(&mut get_connection());
-    if let Ok(user) = user {
-        // Cache the user data for future requests
-        let _ = session.insert("user_data", user);
-        true
-    } else {
-        false
-    }
+/// Cache identity in the session after a successful sign-in or profile change.
+pub fn set_session_user(session: &Session, user: &SessionUser) {
+    let _ = session.insert(SESSION_USER_KEY, user.clone());
+}
+
+/// Wipe identity (sign-out path).
+pub fn clear_session_user(session: &Session) {
+    session.remove(SESSION_USER_KEY);
+    // Pre-cutover keys — clear in case of session carry-over from old cookies.
+    session.remove("user_id");
+    session.remove("user_data");
 }
 
 /// Retrieves and clears the flash message from the session.
@@ -86,43 +123,4 @@ pub fn get_session_message(session: &Session, is_json: bool) -> (String, String)
     session.remove("message");
 
     ("success".to_string(), "".to_string())
-}
-
-/// Get user from session cache. Falls back to database query only if needed.
-pub fn get_session_user(session: &Session) -> Option<User> {
-    // First check if we have cached user data
-    if let Ok(Some(user)) = session.get::<User>("user_data") {
-        return Some(user);
-    }
-
-    // Fallback: query database and cache result
-    let user_id: i32 = session
-        .get::<i32>("user_id")
-        .unwrap_or(Some(0))
-        .unwrap_or(0);
-    if user_id == 0 {
-        return None;
-    }
-
-    let user: Result<User, diesel::result::Error> =
-        users.find(user_id).first::<User>(&mut get_connection());
-    if let Ok(user) = user {
-        // Cache for future requests
-        let _ = session.insert("user_data", user.clone());
-        Some(user)
-    } else {
-        None
-    }
-}
-
-/// Store user data in session (call this after successful login)
-pub fn set_session_user(session: &Session, user: &User) {
-    let _ = session.insert("user_id", user.id);
-    let _ = session.insert("user_data", user.clone());
-}
-
-/// Clear user data from session (call this on logout)
-pub fn clear_session_user(session: &Session) {
-    session.remove("user_id");
-    session.remove("user_data");
 }

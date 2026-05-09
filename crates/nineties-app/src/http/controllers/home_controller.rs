@@ -44,7 +44,6 @@ mod tests {
             App::new()
                 .app_data(web::Data::new(AppState {
                     app_name: Mutex::from(String::from("My App Name")),
-                    _user_id: Mutex::from(None),
                 }))
                 .service(home_controller::home),
         )

@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test test-e2e test-confidence clean format check lint docker-build docker-up docker-down
+.PHONY: help install build dev serve migrate seed test clean format check lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report
 
 # Default target
 .DEFAULT_GOAL := help
@@ -22,6 +22,8 @@ install: ## Install all dependencies (Rust, npm, and cargo-watch)
 	cargo fetch
 	@echo "$(GREEN)Installing npm dependencies...$(NC)"
 	npm install
+	@echo "$(GREEN)Updating browserslist database...$(NC)"
+	npx update-browserslist-db@latest --yes
 	@echo "$(GREEN)Checking for cargo-watch...$(NC)"
 	@if ! command -v cargo-watch >/dev/null 2>&1; then \
 		echo "$(YELLOW)Installing cargo-watch...$(NC)"; \
@@ -73,6 +75,15 @@ migrate: ## Run database migrations
 	@echo "$(GREEN)Running database migrations...$(NC)"
 	cargo run migrate
 
+# Create new aggregate from template
+new-aggregate: ## Scaffold a new CommandBus aggregate (usage: make new-aggregate NAME=Task)
+	@if [ -z "$(NAME)" ]; then \
+		echo "$(YELLOW)Error: Please provide NAME parameter$(NC)"; \
+		echo "Usage: make new-aggregate NAME=Task"; \
+		exit 1; \
+	fi
+	bash scripts/new-aggregate.sh $(NAME)
+
 # Populate database with initial sample data for development
 seed: ## Seed the database with sample data
 	@echo "$(GREEN)Seeding database...$(NC)"
@@ -82,11 +93,11 @@ seed: ## Seed the database with sample data
 db-setup: migrate seed ## Setup database (migrate + seed)
 	@echo "$(GREEN)Database setup complete!$(NC)"
 
-# Generate new Diesel migration file. Usage: make diesel-migration NAME=create_users
-diesel-migration: ## Create a new Diesel migration (usage: make diesel-migration NAME=migration_name)
+# Generate new Diesel migration file. Usage: make migrate-new NAME=create_users
+migrate-new: ## Create a new Diesel migration (usage: make migrate-new NAME=migration_name)
 	@if [ -z "$(NAME)" ]; then \
 		echo "$(YELLOW)Error: Please provide NAME parameter$(NC)"; \
-		echo "Usage: make diesel-migration NAME=create_users"; \
+		echo "Usage: make migrate-new NAME=create_users"; \
 		exit 1; \
 	fi
 	diesel migration generate $(NAME)
@@ -97,17 +108,6 @@ diesel-migration: ## Create a new Diesel migration (usage: make diesel-migration
 test: ## Run all tests
 	@echo "$(GREEN)Running tests...$(NC)"
 	cargo test
-
-# Run browser-level confidence tests against a real app server using Playwright
-test-e2e: ## Run Playwright end-to-end confidence tests
-	@echo "$(GREEN)Running Playwright confidence tests...$(NC)"
-	npm run test:e2e
-
-# Run both Rust tests and browser confidence tests
-test-confidence: ## Run Rust tests and Playwright confidence tests
-	@echo "$(GREEN)Running full confidence suite...$(NC)"
-	cargo test
-	npm run test:e2e
 
 # Run tests with full output including println! statements
 test-verbose: ## Run tests with verbose output
@@ -151,6 +151,33 @@ audit: ## Audit dependencies for security vulnerabilities
 		cargo install cargo-audit; \
 	fi
 	cargo audit
+
+##@ End-to-End Tests
+
+# One-time setup: install Playwright and the Chromium browser
+e2e-install: ## Install Playwright + Chromium (one-time)
+	@echo "$(GREEN)Installing Playwright...$(NC)"
+	npm install -D @playwright/test
+	npx playwright install --with-deps chromium
+
+# Compile the Rust binary and build frontend assets so the E2E run hits a real, complete server
+e2e-build: ## Build binary + frontend assets for E2E
+	@echo "$(GREEN)Building binary + frontend for E2E...$(NC)"
+	cargo build --bin nineties
+	npm run build
+
+# Run the full Playwright suite. Spawns server, runs migrations + seed, executes specs, tears down.
+e2e: e2e-build ## Run the Playwright E2E suite
+	@echo "$(GREEN)Running E2E tests...$(NC)"
+	E2E_SKIP_BUILD=1 E2E_SKIP_FRONTEND=1 npx playwright test
+
+# Run with a visible browser for debugging
+e2e-headed: e2e-build ## Run E2E tests with a visible browser
+	E2E_SKIP_BUILD=1 E2E_SKIP_FRONTEND=1 npx playwright test --headed
+
+# Open the last HTML report
+e2e-report: ## Open the latest Playwright HTML report
+	npx playwright show-report
 
 ##@ Frontend
 

@@ -3,5 +3,9 @@ dist/*
 node_modules
 .idea
 target
-test-results/
+
+# E2E
+.e2e-state.json
 playwright-report/
+test-results/
+database/database-e2e.sqlite*

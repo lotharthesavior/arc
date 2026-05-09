@@ -19,7 +19,7 @@ pub struct WsConnection {
     /// Unique connection ID
     id: Uuid,
     /// User ID if authenticated (optional)
-    user_id: Option<i32>,
+    user_id: Option<String>,
     /// Client heartbeat tracking
     heartbeat: Instant,
     /// Address of the broadcast server
@@ -27,7 +27,7 @@ pub struct WsConnection {
 }
 
 impl WsConnection {
-    pub fn new(user_id: Option<i32>, server_addr: Addr<WsServer>) -> Self {
+    pub fn new(user_id: Option<String>, server_addr: Addr<WsServer>) -> Self {
         WsConnection {
             id: Uuid::new_v4(),
             user_id,
@@ -88,7 +88,7 @@ impl Actor for WsConnection {
         let addr = ctx.address();
         self.server_addr.do_send(Connect {
             id: self.id,
-            user_id: self.user_id,
+            user_id: self.user_id.clone(),
             addr: addr.recipient(),
         });
 
@@ -146,8 +146,12 @@ pub async fn ws_handler(
     session: Session,
     server: web::Data<Addr<WsServer>>,
 ) -> Result<HttpResponse, Error> {
-    // Get user_id from session if authenticated (optional auth)
-    let user_id = session.get::<i32>("user_id").ok().flatten();
+    // Pull the aggregate UUID out of the cached `SessionUser`, if any.
+    let user_id = session
+        .get::<crate::helpers::session::SessionUser>("user")
+        .ok()
+        .flatten()
+        .map(|u| u.id);
 
     let ws_connection = WsConnection::new(user_id, server.get_ref().clone());
 

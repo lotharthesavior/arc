@@ -10,6 +10,7 @@ mod routes;
 mod http {
     pub mod middlewares {
         pub mod auth_middleware;
+        pub mod idle_timeout_middleware;
         pub mod jwt_middleware;
         pub mod rate_limit_middleware;
     }
@@ -18,32 +19,28 @@ mod http {
         pub mod admin_controller;
         pub mod api_controller;
         pub mod auth_controller;
+        pub mod diag_controller;
         pub mod home_controller;
     }
+
+    pub mod errors;
 }
 
 mod database {
-    pub mod backend;
-
     pub mod seeders {
         pub mod create_users;
-
-        pub mod traits {
-            pub mod seeder;
-        }
     }
-}
-
-mod models {
-    pub mod user;
 }
 
 mod schema;
 
 mod helpers {
+    pub mod access_log;
+    pub mod audit_context;
     pub mod config;
     pub mod csrf;
     pub mod database;
+    pub mod es_stack;
     pub mod general;
     pub mod jwt;
     pub mod rate_limit;
@@ -59,12 +56,12 @@ mod services {
 mod validation;
 
 mod commands;
+mod domain;
 pub mod websocket;
 /// Shared application state accessible by all request handlers via `web::Data`.
 #[derive(Debug)]
 pub struct AppState {
     app_name: Mutex<String>,
-    _user_id: Mutex<Option<i32>>,
 }
 
 /// Checks that the application environment is healthy (e.g., `.env` file exists).
@@ -98,34 +95,18 @@ fn validate_environment() {
     debug!("All required environment variables present");
 }
 
-/// Verifies the configured database backend is valid and that the database
-/// exists at the configured `DATABASE_URL`. Exits with code 1 and a helpful
-/// message otherwise.
+/// Verifies the SQLite database file exists at the configured `DATABASE_URL`.
+/// Exits with code 1 and a helpful message if the file is missing.
 pub fn check_database_health() {
     info!("Checking database health");
+    let database: String = helpers::config::database_url();
 
-    if let Err(err) = database::backend::validate_backend_configuration() {
-        error!("{}", err);
-        exit(1);
-    }
-
-    let database: String = database::backend::database_url();
-
-    if !database::backend::database_exists(&database) {
-        error!("Database not found at: {}", database);
+    if !fs::exists(PathBuf::from(&database)).unwrap() {
+        error!("Database file not found at: {}", database);
         error!("Please run `cargo run migrate` to create the database");
         exit(1);
     }
-    debug!("Database found at: {}", database);
-}
-
-/// Validates the JWT configuration when JWT auth is enabled. Exits with code 1
-/// if the configuration is invalid.
-fn check_jwt_health() {
-    if let Err(err) = helpers::jwt::validate_jwt_configuration() {
-        error!("{}", err);
-        exit(1);
-    }
+    debug!("Database file found at: {}", database);
 }
 
 #[actix_web::main]
@@ -144,8 +125,6 @@ async fn main() -> std::io::Result<()> {
     dotenv().ok();
 
     validate_environment();
-
-    check_jwt_health();
 
     info!("Nineties application starting");
 
@@ -167,8 +146,8 @@ async fn main() -> std::io::Result<()> {
             check_database_health();
             commands::develop::run_development().await
         }
-        "migrate" => commands::migrate::run(&args),
-        "seed" => commands::seed::run(),
+        "migrate" => commands::migrate::run(&args).await,
+        "seed" => commands::seed::run().await,
         _ => {
             error!("Unknown command: {}", command);
             Ok(())

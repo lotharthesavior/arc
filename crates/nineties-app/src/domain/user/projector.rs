@@ -290,8 +290,8 @@ mod tests {
 mod replay_from_zero {
     use super::{UserProjector, USERS_VIEW};
     use crate::helpers::database::get_connection;
+    use crate::helpers::database::MIGRATIONS;
     use crate::helpers::test::InMemoryTestGuard;
-    use crate::models::user::MIGRATIONS;
     use diesel_migrations::MigrationHarness;
     use nineties_core::audit::AuditMetadata;
     use nineties_core::event::Event;

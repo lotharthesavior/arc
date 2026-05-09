@@ -1,0 +1,66 @@
+services:
+  nats:
+    image: nats:latest
+    command: -js
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: nineties
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nineties_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nineties -d nineties_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    volumes:
+      - app-db:/app/database
+    environment:
+      DATABASE_URL: database/nineties_dev.db
+      NATS_URL: nats://nats:4222
+      APP_URL: 0.0.0.0
+      APP_PORT: 8080
+      APP_ENV: development
+      SECRET_KEY: change-me-32-bytes-or-the-server-refuses-to-start
+      JWT_SECRET: change-me-32-bytes-or-the-server-refuses-to-start
+    ports:
+      - "8080:8080"
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Stub for Step 3-4 nineties-worker. Sleeps until that crate exists.
+  worker:
+    image: alpine:3.20
+    command: ["sh", "-c", "echo 'worker stub — replace with nineties-worker once Step 4 lands' && sleep infinity"]
+    depends_on:
+      nats:
+        condition: service_healthy
+
+volumes:
+  nats-data:
+  pg-data:
+  app-db:

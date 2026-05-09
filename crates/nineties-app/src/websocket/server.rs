@@ -8,7 +8,7 @@ use uuid::Uuid;
 #[rtype(result = "()")]
 pub struct Connect {
     pub id: Uuid,
-    pub user_id: Option<i32>,
+    pub user_id: Option<String>,
     pub addr: Recipient<WsMessage>,
 }
 
@@ -48,7 +48,7 @@ pub struct BroadcastToRoom {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct BroadcastToUser {
-    pub user_id: i32,
+    pub user_id: String,
     pub message: String,
 }
 
@@ -68,7 +68,7 @@ pub struct WsMessage(pub String);
 /// Connection info stored in the server
 struct ConnectionInfo {
     addr: Recipient<WsMessage>,
-    user_id: Option<i32>,
+    user_id: Option<String>,
     rooms: HashSet<String>,
 }
 
@@ -80,7 +80,7 @@ pub struct WsServer {
     /// Map of room name to set of connection IDs
     rooms: HashMap<String, HashSet<Uuid>>,
     /// Map of user ID to set of connection IDs (for user-specific broadcasts)
-    user_connections: HashMap<i32, HashSet<Uuid>>,
+    user_connections: HashMap<String, HashSet<Uuid>>,
 }
 
 impl WsServer {
@@ -119,6 +119,8 @@ impl Handler<Connect> for WsServer {
     type Result = ();
 
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
+        let user_id_for_log = msg.user_id.clone();
+        let user_id_for_track = msg.user_id.clone();
         // Add connection to registry
         self.connections.insert(
             msg.id,
@@ -130,14 +132,14 @@ impl Handler<Connect> for WsServer {
         );
 
         // Track user connections if authenticated
-        if let Some(user_id) = msg.user_id {
+        if let Some(user_id) = user_id_for_track {
             self.user_connections
                 .entry(user_id)
                 .or_default()
                 .insert(msg.id);
         }
 
-        info!(connection_id = %msg.id, user_id = ?msg.user_id, "WebSocket connection established");
+        info!(connection_id = %msg.id, user_id = ?user_id_for_log, "WebSocket connection established");
     }
 }
 

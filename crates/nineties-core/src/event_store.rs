@@ -1,61 +1,28 @@
 //! # Event Store Module
 //!
-//! Defines the EventStore trait for persisting and retrieving events.
+//! Defines the [`EventStore`] trait for persisting and retrieving events.
 //!
 //! ## Design Principles
 //!
-//! - **Append-only**: Events can only be added, never modified or deleted
-//! - **Optimistic concurrency**: Version-based conflict detection
-//! - **Stream-based**: Events can be loaded by aggregate or streamed globally
-//! - **Pluggable**: Multiple implementations (SQLite, Postgres, in-memory)
+//! - **Append-only**: events can only be added, never modified or deleted
+//! - **Optimistic concurrency**: version-based conflict detection
+//! - **Stream-based**: events can be loaded by aggregate or streamed globally
+//! - **Audited**: every event must carry valid [`AuditMetadata`](crate::audit::AuditMetadata)
+//!   when appended (HIPAA §164.312(b))
+//! - **Pluggable**: multiple implementations (SQLite, Postgres, in-memory)
 //!
-//! ## Example
+//! ## HIPAA defense-in-depth
 //!
-//! ```rust,ignore
-//! use nineties_core::event_store::{EventStore, VersionCheck};
-//! use nineties_core::event::Event;
-//!
-//! # async fn example(store: impl EventStore) -> Result<(), Box<dyn std::error::Error>> {
-//! // Append first event
-//! store.append("user-123", VersionCheck::New, vec![event1]).await?;
-//!
-//! // Append with version check
-//! store.append("user-123", VersionCheck::Expected(1), vec![event2]).await?;
-//!
-//! // Load all events for aggregate
-//! let events = store.load("user-123").await?;
-//! # Ok(())
-//! # }
-//! ```
+//! `EventStore::append` MUST call `event.audit.validate()?` for each event
+//! before persisting. The `CommandBus` validates first, but the store is the
+//! durable boundary — it must not trust upstream.
 
+use crate::audit::AuditError;
 use crate::event::Event;
 use async_trait::async_trait;
 use thiserror::Error;
 
 /// Version check strategy for optimistic concurrency control.
-///
-/// Used when appending events to ensure no conflicting changes have occurred.
-///
-/// # Variants
-///
-/// - `New`: This is the first event for the aggregate (sequence should be 1)
-/// - `Expected(version)`: Require aggregate to be at this exact version
-/// - `Auto`: Load current version automatically (less safe, use sparingly)
-///
-/// # Example
-///
-/// ```rust
-/// use nineties_core::event_store::VersionCheck;
-///
-/// // First event for an aggregate
-/// let check = VersionCheck::New;
-///
-/// // Subsequent event - require version 5
-/// let check = VersionCheck::Expected(5);
-///
-/// // Auto-load version (use with caution)
-/// let check = VersionCheck::Auto;
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionCheck {
     /// First event for this aggregate (expected version is 0)
@@ -67,7 +34,6 @@ pub enum VersionCheck {
 }
 
 impl VersionCheck {
-    /// Get the expected version number, or None for Auto mode.
     pub fn version(&self) -> Option<i64> {
         match self {
             VersionCheck::New => Some(0),
@@ -80,7 +46,7 @@ impl VersionCheck {
 /// Errors that can occur during event store operations.
 #[derive(Debug, Error)]
 pub enum EventStoreError {
-    /// Optimistic concurrency conflict - aggregate version doesn't match
+    /// Optimistic concurrency conflict.
     #[error("Concurrency conflict: expected version {expected}, but aggregate is at version {actual} (aggregate_id: {aggregate_id})")]
     ConcurrencyConflict {
         aggregate_id: String,
@@ -88,11 +54,9 @@ pub enum EventStoreError {
         actual: i64,
     },
 
-    /// Aggregate not found
     #[error("Aggregate not found: {aggregate_id}")]
     AggregateNotFound { aggregate_id: String },
 
-    /// Event sequence violation (non-sequential sequence numbers)
     #[error(
         "Invalid event sequence: expected {expected}, got {actual} (aggregate_id: {aggregate_id})"
     )]
@@ -102,42 +66,59 @@ pub enum EventStoreError {
         actual: i64,
     },
 
-    /// Database connection error
+    /// One or more events in an `append` batch had invalid audit metadata.
+    /// Defense-in-depth: the bus should have caught this first.
+    #[error(
+        "Audit metadata validation failed for event {event_index} (aggregate_id: {aggregate_id}): {source}"
+    )]
+    InvalidAudit {
+        aggregate_id: String,
+        event_index: usize,
+        #[source]
+        source: AuditError,
+    },
+
     #[error("Database error: {message}")]
     DatabaseError { message: String },
 
-    /// Serialization/deserialization error
     #[error("Serialization error: {message}")]
     SerializationError { message: String },
 
-    /// General I/O error
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
-    /// Other errors
     #[error("Event store error: {message}")]
     Other { message: String },
 }
 
 impl EventStoreError {
-    /// Create a database error.
     pub fn database(message: impl Into<String>) -> Self {
         EventStoreError::DatabaseError {
             message: message.into(),
         }
     }
 
-    /// Create a serialization error.
     pub fn serialization(message: impl Into<String>) -> Self {
         EventStoreError::SerializationError {
             message: message.into(),
         }
     }
 
-    /// Create a generic error.
     pub fn other(message: impl Into<String>) -> Self {
         EventStoreError::Other {
             message: message.into(),
+        }
+    }
+
+    pub fn invalid_audit(
+        aggregate_id: impl Into<String>,
+        event_index: usize,
+        source: AuditError,
+    ) -> Self {
+        EventStoreError::InvalidAudit {
+            aggregate_id: aggregate_id.into(),
+            event_index,
+            source,
         }
     }
 }
@@ -145,60 +126,27 @@ impl EventStoreError {
 /// Result type for event store operations.
 pub type EventStoreResult<T> = Result<T, EventStoreError>;
 
+/// Helper for store implementations: validate every event's audit before persisting.
+/// Returns `Err(EventStoreError::InvalidAudit)` on the first failure.
+pub fn validate_audit_batch(aggregate_id: &str, events: &[Event]) -> EventStoreResult<()> {
+    for (idx, ev) in events.iter().enumerate() {
+        ev.audit
+            .validate()
+            .map_err(|e| EventStoreError::invalid_audit(aggregate_id, idx, e))?;
+    }
+    Ok(())
+}
+
 /// Trait for event store implementations.
 ///
-/// The event store is the core persistence layer for event sourcing.
-/// It provides:
-/// - Append-only storage of events
-/// - Optimistic concurrency control
-/// - Event stream retrieval by aggregate or globally
-/// - Guaranteed ordering within aggregates
-///
-/// # Implementation Requirements
-///
-/// - Events must be stored durably and in order
-/// - Concurrent appends to the same aggregate must be detected (optimistic locking)
-/// - Events within an aggregate must be loaded in sequence order
-/// - Global stream must maintain total ordering (by event ID or timestamp)
-///
-/// # Thread Safety
-///
-/// Implementations must be Send + Sync to work with async Rust.
+/// `append` MUST invoke `validate_audit_batch` before persisting (HIPAA defense
+/// in depth). The `CommandBus` also validates upstream — both layers run.
 #[async_trait]
 pub trait EventStore: Send + Sync {
     /// Append events to the store for a specific aggregate.
     ///
-    /// # Arguments
-    ///
-    /// - `aggregate_id`: ID of the aggregate
-    /// - `version_check`: Version check strategy for concurrency control
-    /// - `events`: Vector of events to append
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if events were successfully appended
-    /// - `Err(EventStoreError::ConcurrencyConflict)` if version check fails
-    /// - `Err(EventStoreError::InvalidSequence)` if event sequences are invalid
-    ///
-    /// # Concurrency Guarantee
-    ///
-    /// If multiple concurrent appends occur for the same aggregate, only one will
-    /// succeed. Others will receive a ConcurrencyConflict error and should retry.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use nineties_core::event_store::{EventStore, VersionCheck};
-    ///
-    /// # async fn example(store: impl EventStore, events: Vec<Event>) -> Result<(), Box<dyn std::error::Error>> {
-    /// // First event
-    /// store.append("user-123", VersionCheck::New, events).await?;
-    ///
-    /// // Subsequent event with version check
-    /// store.append("user-123", VersionCheck::Expected(1), more_events).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Implementations must call `validate_audit_batch(aggregate_id, &events)?`
+    /// before any persistence work.
     async fn append(
         &self,
         aggregate_id: &str,
@@ -206,138 +154,140 @@ pub trait EventStore: Send + Sync {
         events: Vec<Event>,
     ) -> EventStoreResult<()>;
 
-    /// Load all events for a specific aggregate.
-    ///
-    /// Events are returned in sequence order (oldest first).
-    ///
-    /// # Arguments
-    ///
-    /// - `aggregate_id`: ID of the aggregate
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Vec<Event>)` with events in sequence order
-    /// - Empty vector if aggregate has no events
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// # async fn example(store: impl EventStore) -> Result<(), Box<dyn std::error::Error>> {
-    /// let events = store.load("user-123").await?;
-    /// for event in events {
-    ///     println!("Event {}: {}", event.sequence, event.event_type);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     async fn load(&self, aggregate_id: &str) -> EventStoreResult<Vec<Event>>;
 
-    /// Load events for an aggregate starting from a specific sequence number.
-    ///
-    /// Useful for incremental loading or snapshot-based replay.
-    ///
-    /// # Arguments
-    ///
-    /// - `aggregate_id`: ID of the aggregate
-    /// - `from_sequence`: Starting sequence number (inclusive)
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Vec<Event>)` with events from `from_sequence` onwards
-    /// - Empty vector if no events exist from that sequence
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// # async fn example(store: impl EventStore) -> Result<(), Box<dyn std::error::Error>> {
-    /// // Load events after snapshot at sequence 100
-    /// let events = store.load_from("user-123", 101).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     async fn load_from(
         &self,
         aggregate_id: &str,
         from_sequence: i64,
     ) -> EventStoreResult<Vec<Event>>;
 
-    /// Stream all events globally, starting from a position.
-    ///
-    /// Used for building projections that need to process all events across
-    /// all aggregates. Position is implementation-specific but typically
-    /// corresponds to a global event ID or offset.
-    ///
-    /// # Arguments
-    ///
-    /// - `from_position`: Starting position (0 for all events)
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Vec<Event>)` with events in global order
-    ///
-    /// # Note
-    ///
-    /// For large event stores, consider implementing pagination or streaming
-    /// variants of this method.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// # async fn example(store: impl EventStore) -> Result<(), Box<dyn std::error::Error>> {
-    /// // Stream all events
-    /// let all_events = store.stream_all(0).await?;
-    ///
-    /// // Stream events after position 1000
-    /// let recent_events = store.stream_all(1000).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>>;
 
-    /// Get the current version (latest sequence number) for an aggregate.
-    ///
-    /// Returns 0 if the aggregate has no events.
-    ///
-    /// # Arguments
-    ///
-    /// - `aggregate_id`: ID of the aggregate
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(i64)` with the current version (0 if no events exist)
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// # async fn example(store: impl EventStore) -> Result<(), Box<dyn std::error::Error>> {
-    /// let version = store.get_version("user-123").await?;
-    /// println!("Current version: {}", version);
-    /// # Ok(())
-    /// # }
-    /// ```
     async fn get_version(&self, aggregate_id: &str) -> EventStoreResult<i64>;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-memory implementation, public for downstream test code.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(any(test, feature = "test-utils"))]
+mod in_memory {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::sync::Mutex as TokioMutex;
+
+    /// In-memory event store. Available to downstream crates via the
+    /// `test-utils` feature flag.
+    ///
+    /// Validates audit metadata on every append (same contract as production
+    /// stores) so behavior matches what real implementations enforce.
+    #[derive(Clone, Default)]
+    pub struct InMemoryEventStore {
+        events: Arc<TokioMutex<Vec<Event>>>,
+    }
+
+    impl InMemoryEventStore {
+        pub fn new() -> Self {
+            Self::default()
+        }
+    }
+
+    #[async_trait]
+    impl EventStore for InMemoryEventStore {
+        async fn append(
+            &self,
+            aggregate_id: &str,
+            version_check: VersionCheck,
+            events: Vec<Event>,
+        ) -> EventStoreResult<()> {
+            validate_audit_batch(aggregate_id, &events)?;
+
+            let mut store = self.events.lock().await;
+
+            let current_version = store
+                .iter()
+                .filter(|e| e.aggregate_id == aggregate_id)
+                .map(|e| e.sequence)
+                .max()
+                .unwrap_or(0);
+
+            if let Some(expected) = version_check.version() {
+                if current_version != expected {
+                    return Err(EventStoreError::ConcurrencyConflict {
+                        aggregate_id: aggregate_id.to_string(),
+                        expected,
+                        actual: current_version,
+                    });
+                }
+            }
+
+            store.extend(events);
+            Ok(())
+        }
+
+        async fn load(&self, aggregate_id: &str) -> EventStoreResult<Vec<Event>> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|e| e.aggregate_id == aggregate_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn load_from(
+            &self,
+            aggregate_id: &str,
+            from_sequence: i64,
+        ) -> EventStoreResult<Vec<Event>> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|e| e.aggregate_id == aggregate_id && e.sequence >= from_sequence)
+                .cloned()
+                .collect())
+        }
+
+        async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>> {
+            let store = self.events.lock().await;
+            Ok(store.iter().skip(from_position as usize).cloned().collect())
+        }
+
+        async fn get_version(&self, aggregate_id: &str) -> EventStoreResult<i64> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|e| e.aggregate_id == aggregate_id)
+                .map(|e| e.sequence)
+                .max()
+                .unwrap_or(0))
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use in_memory::InMemoryEventStore;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audit::AuditMetadata;
+    use crate::event::Event;
+    use serde_json::json;
 
     #[test]
     fn test_version_check_new() {
-        let check = VersionCheck::New;
-        assert_eq!(check.version(), Some(0));
+        assert_eq!(VersionCheck::New.version(), Some(0));
     }
 
     #[test]
     fn test_version_check_expected() {
-        let check = VersionCheck::Expected(5);
-        assert_eq!(check.version(), Some(5));
+        assert_eq!(VersionCheck::Expected(5).version(), Some(5));
     }
 
     #[test]
     fn test_version_check_auto() {
-        let check = VersionCheck::Auto;
-        assert_eq!(check.version(), None);
+        assert_eq!(VersionCheck::Auto.version(), None);
     }
 
     #[test]
@@ -347,15 +297,56 @@ mod tests {
             expected: 5,
             actual: 6,
         };
-        let error_msg = error.to_string();
-        assert!(error_msg.contains("expected version 5"));
-        assert!(error_msg.contains("aggregate is at version 6"));
-        assert!(error_msg.contains("user-123"));
+        let msg = error.to_string();
+        assert!(msg.contains("expected version 5"));
+        assert!(msg.contains("aggregate is at version 6"));
+        assert!(msg.contains("user-123"));
 
-        let error = EventStoreError::database("Connection failed");
-        assert!(error.to_string().contains("Connection failed"));
+        assert!(EventStoreError::database("X").to_string().contains("X"));
+        assert!(EventStoreError::serialization("Y")
+            .to_string()
+            .contains("Y"));
+    }
 
-        let error = EventStoreError::serialization("Invalid JSON");
-        assert!(error.to_string().contains("Invalid JSON"));
+    #[test]
+    fn test_validate_audit_batch_rejects_pending() {
+        let mut e = Event::new("User", "u1", 1, "X", json!({}));
+        e.audit = AuditMetadata::pending();
+        let err = validate_audit_batch("u1", &[e]).unwrap_err();
+        assert!(matches!(
+            err,
+            EventStoreError::InvalidAudit { event_index: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn test_validate_audit_batch_passes_stamped() {
+        let e =
+            Event::new("User", "u1", 1, "X", json!({})).with_audit(AuditMetadata::test_default());
+        validate_audit_batch("u1", &[e]).expect("stamped audit must pass");
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_rejects_pending_audit() {
+        let store = InMemoryEventStore::new();
+        let e = Event::new("User", "u1", 1, "X", json!({})); // pending
+        let err = store
+            .append("u1", VersionCheck::New, vec![e])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, EventStoreError::InvalidAudit { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_persists_stamped_event() {
+        let store = InMemoryEventStore::new();
+        let e =
+            Event::new("User", "u1", 1, "X", json!({})).with_audit(AuditMetadata::test_default());
+        store
+            .append("u1", VersionCheck::New, vec![e])
+            .await
+            .unwrap();
+        let loaded = store.load("u1").await.unwrap();
+        assert_eq!(loaded.len(), 1);
     }
 }

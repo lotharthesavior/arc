@@ -29,3 +29,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 diesel_migrations = { version = "2.2", features = ["sqlite"] }
+nineties-core = { path = "../nineties-core", features = ["test-utils"] }

@@ -4,56 +4,26 @@ use std::{fs, io};
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::process::{ChildStderr, ChildStdout, Command};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tokio::try_join;
+use tracing::{debug, error, info};
 
 /// Starts the development environment with `cargo-watch` for Rust hot-reloading
 /// and Vite for frontend asset bundling, running both concurrently.
 pub async fn run_development() -> io::Result<()> {
     info!("Starting development mode");
 
-    let mut cargo_watch_task: JoinHandle<io::Result<()>> = tokio::spawn(run_cargo_watch());
-    let mut bundle_task: JoinHandle<io::Result<()>> = tokio::spawn(run_vite_bundle());
+    let cargo_watch_task: JoinHandle<io::Result<()>> = tokio::spawn(run_cargo_watch());
+    let bundle_task: JoinHandle<io::Result<()>> = tokio::spawn(run_vite_bundle());
 
-    tokio::select! {
-        result = &mut cargo_watch_task => {
-            bundle_task.abort();
-            handle_development_task_result("Cargo Watch", result)
-        }
-        result = &mut bundle_task => {
-            cargo_watch_task.abort();
-            handle_development_task_result("Vite", result)
-        }
-    }
-}
-
-fn handle_development_task_result(
-    name: &str,
-    result: Result<io::Result<()>, tokio::task::JoinError>,
-) -> io::Result<()> {
-    match result {
-        Ok(Ok(())) => {
-            info!("{name} process exited successfully");
+    match try_join!(cargo_watch_task, bundle_task) {
+        Ok(_) => {
+            info!("Development environment running successfully");
             Ok(())
         }
-        Ok(Err(err)) => {
-            error!("{name} process exited with error: {err}");
-            Err(err)
+        Err(e) => {
+            error!("Development environment error: {:?}", e);
+            Err(io::Error::other("Failed to run development tasks"))
         }
-        Err(err) => {
-            error!("{name} task failed: {err}");
-            Err(io::Error::other(format!("{name} task failed: {err}")))
-        }
-    }
-}
-
-fn log_child_stderr(prefix: &str, line: &str) {
-    let trimmed = line.trim_start();
-    let is_error = trimmed.starts_with("Error:") || trimmed.starts_with("error:");
-
-    if is_error {
-        error!("[{prefix}] {line}");
-    } else {
-        warn!("[{prefix}] {line}");
     }
 }
 
@@ -92,7 +62,7 @@ async fn run_cargo_watch() -> io::Result<()> {
     let stderr_task = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStderr>> = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            log_child_stderr("cargo-watch", &line);
+            info!("[cargo-watch] {}", line);
         }
     });
 
@@ -164,7 +134,7 @@ async fn run_vite_bundle() -> io::Result<()> {
     let stderr_task: JoinHandle<()> = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStderr>> = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            log_child_stderr("vite", &line);
+            info!("[vite] {}", line);
         }
     });
 

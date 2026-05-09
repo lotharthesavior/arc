@@ -20,3 +20,13 @@ tokio = { workspace = true, features = ["sync"] }
 
 # Logging
 tracing.workspace = true
+
+# HIPAA-5: HMAC-SHA256 integrity chain
+hmac.workspace = true
+sha2.workspace = true
+
+[features]
+default = []
+# Exposes test helpers (AuditMetadata::test_default, InMemoryEventStore) to
+# downstream crates' integration tests.
+test-utils = []

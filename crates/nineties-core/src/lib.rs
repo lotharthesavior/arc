@@ -17,13 +17,17 @@ pub use serde::{Deserialize, Serialize};
 pub use uuid::Uuid;
 
 // Module structure
+pub mod access_log;
 pub mod aggregate;
+pub mod audit;
 pub mod command_bus;
 pub mod event;
 pub mod event_bus;
 pub mod event_store;
+pub mod integrity;
 pub mod projection;
 pub mod read_model_store;
+pub mod session;
 
 #[cfg(test)]
 mod tests {
