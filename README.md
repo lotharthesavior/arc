@@ -7,6 +7,8 @@
 
 [![Build and Test](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml/badge.svg)](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml)
 
+[![Build and Test](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml/badge.svg)](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml)
+
 This is a starter for web with rust on top of [Actix](https://actix.rs).
 
 Spend time with **your ideas** on top of a solid foundation.
