@@ -16,15 +16,15 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: nineties
+      POSTGRES_USER: arc
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: nineties_dev
+      POSTGRES_DB: arc_dev
     ports:
       - "5432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nineties -d nineties_dev"]
+      test: ["CMD-SHELL", "pg_isready -U arc -d arc_dev"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -34,7 +34,7 @@ services:
     volumes:
       - app-db:/app/database
     environment:
-      DATABASE_URL: database/nineties_dev.db
+      DATABASE_URL: database/arc_dev.db
       NATS_URL: nats://nats:4222
       APP_URL: 0.0.0.0
       APP_PORT: 8080
@@ -52,10 +52,10 @@ services:
       timeout: 3s
       retries: 5
 
-  # Stub for Step 3-4 nineties-worker. Sleeps until that crate exists.
+  # Stub for Step 3-4 arc-worker. Sleeps until that crate exists.
   worker:
     image: alpine:3.20
-    command: ["sh", "-c", "echo 'worker stub — replace with nineties-worker once Step 4 lands' && sleep infinity"]
+    command: ["sh", "-c", "echo 'worker stub — replace with arc-worker once Step 4 lands' && sleep infinity"]
     depends_on:
       nats:
         condition: service_healthy

@@ -1,6 +1,6 @@
 # Browser E2E Tests
 
-Playwright drives a real Chromium browser against a real `nineties` server
+Playwright drives a real Chromium browser against a real `arc` server
 binary, with audit-trail verification routed through a backend-agnostic diag
 endpoint (so it keeps working when Step 5 swaps SQLite for Postgres).
 
@@ -16,7 +16,7 @@ endpoint (so it keeps working when Step 5 swaps SQLite for Postgres).
 ## Backend-agnostic audit verification
 
 The diag endpoint at `/__diag__/events/{aggregate_id}` is mounted **only when
-`APP_ENV=e2e`** (see `crates/nineties-app/src/routes.rs`). It reads through
+`APP_ENV=e2e`** (see `crates/arc-app/src/routes.rs`). It reads through
 the `EventStore` trait — exactly the same code path as `CommandBus` — so it
 returns identical results whether the store is SQLite, Postgres, or
 in-memory. Production builds never expose it.
@@ -47,11 +47,11 @@ The `e2e` target shells through to `playwright.config.ts`, which spawns the
 binary via `tests/e2e/global-setup.ts`. That setup script:
 
 1. Loads `.env.e2e` (deterministic secrets, port 18080, `DATABASE_URL=database/database-e2e.sqlite`)
-2. `cargo build --bin nineties` (skipped if `E2E_SKIP_BUILD=1`)
+2. `cargo build --bin arc` (skipped if `E2E_SKIP_BUILD=1`)
 3. `npm run build` for Vite assets
 4. Deletes any stale `database/database-e2e.sqlite{,-shm,-wal}`
-5. `nineties migrate` then `nineties seed` → `jekyll@example.com` / `password`
-6. Spawns `nineties serve` and waits for both `GET /health` and `GET /__diag__/health`
+5. `arc migrate` then `arc seed` → `jekyll@example.com` / `password`
+6. Spawns `arc serve` and waits for both `GET /health` and `GET /__diag__/health`
 7. Records PID + port in `.e2e-state.json`
 
 `global-teardown.ts` SIGTERMs the PID, deletes the DB files, and removes

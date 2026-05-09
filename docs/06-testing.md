@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nineties includes a comprehensive test suite covering models, controllers, middleware, and routes. Tests use Actix Web's testing utilities and run serially to avoid database conflicts.
+Arc includes a comprehensive test suite covering models, controllers, middleware, and routes. Tests use Actix Web's testing utilities and run serially to avoid database conflicts.
 
 ## Test Configuration
 

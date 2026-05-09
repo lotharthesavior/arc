@@ -172,16 +172,16 @@ Things to *not* do:
 
 ## 5. Testing audited code
 
-The `nineties-core` crate exposes `AuditMetadata::test_default()` and
+The `arc-core` crate exposes `AuditMetadata::test_default()` and
 `InMemoryEventStore` behind the `test-utils` feature flag. Both
-`nineties-app` and `nineties-es-sqlite` enable the feature in their
+`arc-app` and `arc-es-sqlite` enable the feature in their
 `[dev-dependencies]`.
 
 ### Building stamped events in unit tests
 
 ```rust
-use nineties_core::audit::AuditMetadata;
-use nineties_core::event::Event;
+use arc_core::audit::AuditMetadata;
+use arc_core::event::Event;
 use serde_json::json;
 
 let event = Event::new("User", "u1", 1, "UserCreated", json!({}))
@@ -191,8 +191,8 @@ let event = Event::new("User", "u1", 1, "UserCreated", json!({}))
 ### Dispatching commands in unit tests
 
 ```rust
-use nineties_core::command_bus::{CommandBus, CommandContext};
-use nineties_core::event_store::InMemoryEventStore;
+use arc_core::command_bus::{CommandBus, CommandContext};
+use arc_core::event_store::InMemoryEventStore;
 
 let bus = CommandBus::<MyAgg>::new(
     Box::new(InMemoryEventStore::new()),
@@ -262,6 +262,6 @@ SELECT * FROM events WHERE causation_id = 'event-uuid-123';
 
 - `docs/ark/refactor-plan.md` — broader HIPAA appendix and remaining tasks
   (HIPAA-2 through HIPAA-5)
-- `crates/nineties-core/src/audit.rs` — the source of truth for the type
+- `crates/arc-core/src/audit.rs` — the source of truth for the type
   and validation rules
 - `migrations/2026-04-21-000002_add_hipaa_audit/up.sql`

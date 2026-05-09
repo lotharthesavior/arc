@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-The Core Event Sourcing Library for the Nineties framework has been successfully implemented. All 7 core components are complete with comprehensive tests, zero compiler warnings, and production-ready quality.
+The Core Event Sourcing Library for the Arc framework has been successfully implemented. All 7 core components are complete with comprehensive tests, zero compiler warnings, and production-ready quality.
 
 ### Achievement Metrics
 
@@ -26,7 +26,7 @@ The Core Event Sourcing Library for the Nineties framework has been successfully
 
 ### 1. Event Type ✅ (Task #4)
 
-**File**: `crates/nineties-core/src/event.rs`
+**File**: `crates/arc-core/src/event.rs`
 **Lines**: 368
 **Tests**: 7/7 passing
 
@@ -49,7 +49,7 @@ The Core Event Sourcing Library for the Nineties framework has been successfully
 
 ### 2. EventStore Trait ✅ (Task #2)
 
-**File**: `crates/nineties-core/src/event_store.rs`
+**File**: `crates/arc-core/src/event_store.rs`
 **Lines**: 363
 **Tests**: 4/4 passing
 
@@ -76,7 +76,7 @@ The Core Event Sourcing Library for the Nineties framework has been successfully
 
 ### 3. SQLite EventStore ✅ (Task #6)
 
-**File**: `crates/nineties-es-sqlite/src/lib.rs`
+**File**: `crates/arc-es-sqlite/src/lib.rs`
 **Lines**: 623
 **Tests**: 11/11 passing
 **Migration**: `migrations/2026-03-01-000000_create_events_table/`
@@ -115,7 +115,7 @@ CREATE TABLE events (
 
 ### 4. EventBus Trait ✅ (Task #9)
 
-**File**: `crates/nineties-core/src/event_bus.rs`
+**File**: `crates/arc-core/src/event_bus.rs`
 **Lines**: 739
 **Tests**: 12/12 passing
 
@@ -144,7 +144,7 @@ bus.publish(vec![event1, event2]).await?;
 
 ### 5. Aggregate Trait ✅ (Task #10)
 
-**File**: `crates/nineties-core/src/aggregate.rs`
+**File**: `crates/arc-core/src/aggregate.rs`
 **Lines**: 1,320
 **Tests**: 11/11 passing
 
@@ -189,7 +189,7 @@ impl Aggregate for UserAggregate {
 
 ### 6. CommandBus ✅ (Task #5)
 
-**File**: `crates/nineties-core/src/command_bus.rs`
+**File**: `crates/arc-core/src/command_bus.rs`
 **Lines**: 785
 **Tests**: 9/9 passing
 
@@ -217,7 +217,7 @@ let events = command_bus.dispatch(command).await?;
 
 ### 7. Projection Trait ✅ (Task #3)
 
-**File**: `crates/nineties-core/src/projection.rs`
+**File**: `crates/arc-core/src/projection.rs`
 **Lines**: 685
 **Tests**: 8/8 passing
 
@@ -253,7 +253,7 @@ let events = command_bus.dispatch(command).await?;
 
 ### Design Documents Created
 
-1. **`crates/nineties-core/ARCHITECTURE.md`** (1,177 lines)
+1. **`crates/arc-core/ARCHITECTURE.md`** (1,177 lines)
    - Core principles and philosophy
    - Complexity paths (simple vs full CQRS)
    - Component specifications
@@ -262,7 +262,7 @@ let events = command_bus.dispatch(command).await?;
    - Quality standards
    - Anti-patterns to avoid
 
-2. **`crates/nineties-core/DX_GUIDELINES.md`** (13KB)
+2. **`crates/arc-core/DX_GUIDELINES.md`** (13KB)
    - Naming conventions
    - Error handling patterns
    - Progressive disclosure examples
@@ -270,7 +270,7 @@ let events = command_bus.dispatch(command).await?;
    - IDE support considerations
    - Testing patterns
 
-3. **`crates/nineties-core/DX_REVIEW_FEEDBACK.md`** (8KB)
+3. **`crates/arc-core/DX_REVIEW_FEEDBACK.md`** (8KB)
    - Executive summary
    - Prioritized recommendations
    - Quick wins
@@ -308,10 +308,10 @@ let events = command_bus.dispatch(command).await?;
 ## Workspace Structure
 
 ```
-nineties/
+arc/
 ├── Cargo.toml                     # Workspace manifest
 ├── crates/
-│   ├── nineties-core/            # ✅ Event sourcing primitives (headless)
+│   ├── arc-core/            # ✅ Event sourcing primitives (headless)
 │   │   ├── src/
 │   │   │   ├── lib.rs
 │   │   │   ├── event.rs           # 368 lines, 7 tests
@@ -324,10 +324,10 @@ nineties/
 │   │   ├── DX_GUIDELINES.md       # 13KB
 │   │   ├── DX_REVIEW_FEEDBACK.md  # 8KB
 │   │   └── README.md
-│   ├── nineties-es-sqlite/       # ✅ SQLite event store implementation
+│   ├── arc-es-sqlite/       # ✅ SQLite event store implementation
 │   │   ├── src/lib.rs            # 623 lines, 11 tests
 │   │   └── Cargo.toml
-│   └── nineties-app/             # ✅ Main application (existing MVC code)
+│   └── arc-app/             # ✅ Main application (existing MVC code)
 │       └── src/
 └── migrations/
     └── 2026-03-01-000000_create_events_table/
@@ -567,5 +567,5 @@ The Core Event Sourcing Library has been successfully implemented with productio
 - [Event Sourcing Architecture](../09-event-sourcing-architecture.md)
 - [Implementation Guide](../10-event-sourcing-implementation-guide.md)
 - [Roadmap](../roadmap.md)
-- [Core Architecture](../../crates/nineties-core/ARCHITECTURE.md)
-- [DX Guidelines](../../crates/nineties-core/DX_GUIDELINES.md)
+- [Core Architecture](../../crates/arc-core/ARCHITECTURE.md)
+- [DX Guidelines](../../crates/arc-core/DX_GUIDELINES.md)

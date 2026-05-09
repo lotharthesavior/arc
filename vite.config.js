@@ -6,8 +6,8 @@ export default defineConfig({
     build: {
         rollupOptions: {
             input: {
-                script: resolve(__dirname, 'crates/nineties-app/src/resources/js/script.js'),
-                styles: resolve(__dirname, 'crates/nineties-app/src/resources/css/styles.css'),
+                script: resolve(__dirname, 'crates/arc-app/src/resources/js/script.js'),
+                styles: resolve(__dirname, 'crates/arc-app/src/resources/css/styles.css'),
             },
             output: {
                 entryFileNames: '[name]-[hash].js',
@@ -24,7 +24,7 @@ export default defineConfig({
         copy({
             targets: [
                 {
-                    src: 'crates/nineties-app/src/resources/imgs/**/*',
+                    src: 'crates/arc-app/src/resources/imgs/**/*',
                     dest: 'dist/imgs',
                 },
             ],

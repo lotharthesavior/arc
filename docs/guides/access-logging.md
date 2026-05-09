@@ -87,7 +87,7 @@ use this to drop public-data reads when volume is a concern.
 
 ```rust
 use crate::helpers::access_log;
-use nineties_core::access_log::{
+use arc_core::access_log::{
     AccessLogger, AccessedResource, PurposeOfUse, Sensitivity,
 };
 
@@ -142,7 +142,7 @@ Things to **not** do:
 Default to `NoOpAccessLogger`:
 
 ```rust
-use nineties_core::access_log::{AccessLogger, NoOpAccessLogger};
+use arc_core::access_log::{AccessLogger, NoOpAccessLogger};
 use std::sync::Arc;
 
 let access_logger: Arc<dyn AccessLogger> = Arc::new(NoOpAccessLogger);
@@ -161,12 +161,12 @@ does not change.
 
 ## 6. Testing
 
-`nineties-core` exposes `RecordingAccessLogger` behind the `test-utils`
+`arc-core` exposes `RecordingAccessLogger` behind the `test-utils`
 feature for downstream tests. It captures every `log_access` call and
 returns them via `entries().await`.
 
 ```rust
-use nineties_core::access_log::{AccessLogger, RecordingAccessLogger};
+use arc_core::access_log::{AccessLogger, RecordingAccessLogger};
 
 let rec = RecordingAccessLogger::new();
 let arc: Arc<dyn AccessLogger> = Arc::new(rec.clone());
@@ -223,6 +223,6 @@ layer (out of HIPAA-2 scope).
 ## See also
 
 - `docs/guides/audit-metadata.md` — write-side audit (HIPAA-1)
-- `crates/nineties-core/src/access_log.rs` — source of truth for the
+- `crates/arc-core/src/access_log.rs` — source of truth for the
   trait and types
 - `docs/ark/refactor-plan.md` HIPAA appendix — broader compliance context

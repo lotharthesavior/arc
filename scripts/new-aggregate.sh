@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scaffold a new aggregate under crates/nineties-app/src/domain/<entity>/
+# Scaffold a new aggregate under crates/arc-app/src/domain/<entity>/
 # Usage: scripts/new-aggregate.sh <Entity>
 #
 # Follows CONVENTIONS.md: creates aggregate/commands/events with skeleton
@@ -16,7 +16,7 @@ ENTITY_PASCAL="$1"
 ENTITY_LOWER="$(echo "$ENTITY_PASCAL" | tr '[:upper:]' '[:lower:]')"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-TARGET_DIR="$REPO_ROOT/crates/nineties-app/src/domain/$ENTITY_LOWER"
+TARGET_DIR="$REPO_ROOT/crates/arc-app/src/domain/$ENTITY_LOWER"
 
 if [[ -d "$TARGET_DIR" ]]; then
     echo "Error: $TARGET_DIR already exists"
@@ -40,7 +40,7 @@ pub enum ${ENTITY_PASCAL}Command {
     // Add more commands here
 }
 
-impl nineties_core::aggregate::Command for ${ENTITY_PASCAL}Command {
+impl arc_core::aggregate::Command for ${ENTITY_PASCAL}Command {
     fn aggregate_id(&self) -> &str {
         match self {
             Self::Create${ENTITY_PASCAL} { id } => id,
@@ -63,7 +63,7 @@ EOF
 cat > "$TARGET_DIR/aggregate.rs" <<EOF
 use crate::domain::${ENTITY_LOWER}::commands::${ENTITY_PASCAL}Command;
 use async_trait::async_trait;
-use nineties_core::{aggregate::Aggregate, event::Event};
+use arc_core::{aggregate::Aggregate, event::Event};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -128,6 +128,6 @@ EOF
 echo "Created $TARGET_DIR"
 echo
 echo "Next steps:"
-echo "  1. Add 'pub mod $ENTITY_LOWER;' to crates/nineties-app/src/domain/mod.rs"
+echo "  1. Add 'pub mod $ENTITY_LOWER;' to crates/arc-app/src/domain/mod.rs"
 echo "  2. Register a CommandBus<${ENTITY_PASCAL}Aggregate> in commands/serve.rs"
 echo "  3. Add controller routes that dispatch ${ENTITY_PASCAL}Command"

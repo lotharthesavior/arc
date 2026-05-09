@@ -1,8 +1,8 @@
-# Nineties: Event Sourcing & Composable Architecture
+# Arc: Event Sourcing & Composable Architecture
 
 ## 1. Current State Analysis
 
-Nineties is a Rust/Actix-Web MVC starter with:
+Arc is a Rust/Actix-Web MVC starter with:
 - Diesel ORM + SQLite (CRUD, mutable state)
 - Tera templates, Tailwind, Alpine.js, HTMX
 - WebSocket support (Turbo Streams)
@@ -11,7 +11,7 @@ Nineties is a Rust/Actix-Web MVC starter with:
 
 ### Current Architecture
 
-![Architecture Diagram - Current Nineties MVC - HTTP requests flow through middleware to routes, controllers, and services, using Diesel ORM for SQLite database access and Tera for template rendering](diagrams/architecture-04-current-nineties-mvc.svg)
+![Architecture Diagram - Current Arc MVC - HTTP requests flow through middleware to routes, controllers, and services, using Diesel ORM for SQLite database access and Tera for template rendering](diagrams/architecture-04-current-arc-mvc.svg)
 
 ### Key Problems
 
@@ -49,22 +49,22 @@ The framework supports both simple and complex patterns. Developers choose based
 
 ### 2.4 Package / Crate Structure
 
-![Architecture Diagram - Workspace Crates - nineties-core is the foundation crate with no dependencies, implemented by event stores (SQLite, Postgres), extended by web and CLI crates, and composed by plugins and the main application](diagrams/architecture-06-workspace-crates.svg)
+![Architecture Diagram - Workspace Crates - arc-core is the foundation crate with no dependencies, implemented by event stores (SQLite, Postgres), extended by web and CLI crates, and composed by plugins and the main application](diagrams/architecture-06-workspace-crates.svg)
 
 Proposed `Cargo.toml` workspace:
 
 ```toml
 [workspace]
 members = [
-    "crates/nineties-core",
-    "crates/nineties-es-sqlite",
-    "crates/nineties-es-postgres",
-    "crates/nineties-rm-sqlite",
-    "crates/nineties-rm-postgres",
-    "crates/nineties-rm-dqlite",
-    "crates/nineties-web",
-    "crates/nineties-cli",
-    "crates/nineties-app",
+    "crates/arc-core",
+    "crates/arc-es-sqlite",
+    "crates/arc-es-postgres",
+    "crates/arc-rm-sqlite",
+    "crates/arc-rm-postgres",
+    "crates/arc-rm-dqlite",
+    "crates/arc-web",
+    "crates/arc-cli",
+    "crates/arc-app",
     "plugins/*",
 ]
 ```
@@ -247,10 +247,10 @@ pub trait ReadModelStore: Send + Sync {
 
 | Backend | Crate | Best For |
 |---------|-------|----------|
-| **SQLite** | `nineties-rm-sqlite` | Local development, single-node, embedded |
-| **Postgres** | `nineties-rm-postgres` | Production, headless microservices |
-| **dqlite** | `nineties-rm-dqlite` | Distributed/edge, replicated SQLite |
-| **In-Memory** | `nineties-core` (built-in) | Testing, ephemeral projections |
+| **SQLite** | `arc-rm-sqlite` | Local development, single-node, embedded |
+| **Postgres** | `arc-rm-postgres` | Production, headless microservices |
+| **dqlite** | `arc-rm-dqlite` | Distributed/edge, replicated SQLite |
+| **In-Memory** | `arc-core` (built-in) | Testing, ephemeral projections |
 
 Adding a new backend requires implementing the `ReadModelStore` trait — no changes to projectors or the engine.
 
@@ -295,7 +295,7 @@ Building on the existing [plugin-system.md](planning/plugin-system.md), plugins 
 **Example: A "Blog" plugin as a separate crate:**
 
 ```rust
-// plugins/nineties-plugin-blog/src/lib.rs
+// plugins/arc-plugin-blog/src/lib.rs
 pub struct BlogPlugin;
 
 impl Plugin for BlogPlugin {
@@ -308,7 +308,7 @@ impl Plugin for BlogPlugin {
         reg.register_projection(Box::new(BlogListProjection::new()));
         reg.register_event_handler(Box::new(BlogSearchIndexer::new()));
 
-        // Web (only if nineties-web is present)
+        // Web (only if arc-web is present)
         #[cfg(feature = "web")]
         {
             reg.register_routes(blog_routes::config);
@@ -347,9 +347,9 @@ impl Plugin for BlogPlugin {
 ### Phase 1: Extract Core Library
 
 ```
-nineties/                    nineties/
+arc/                    arc/
 ├── src/                     ├── crates/
-│   ├── main.rs              │   ├── nineties-core/
+│   ├── main.rs              │   ├── arc-core/
 │   ├── routes.rs    ──►     │   │   ├── src/
 │   ├── models/              │   │   │   ├── aggregate.rs
 │   ├── services/            │   │   │   ├── command.rs
@@ -358,9 +358,9 @@ nineties/                    nineties/
                              │   │   │   ├── event_bus.rs
                              │   │   │   ├── projection.rs
                              │   │   │   └── lib.rs
-                             │   ├── nineties-web/
+                             │   ├── arc-web/
                              │   │   ├── src/ (actix, tera, routes)
-                             │   └── nineties-app/
+                             │   └── arc-app/
                              │       └── src/main.rs
                              └── plugins/
 ```
@@ -385,25 +385,25 @@ Move features (pages, blog, auth) into plugin crates that register their own agg
 
 | Component | Crate | Priority | Status |
 |-----------|-------|----------|--------|
-| `Event` type + serialization | `nineties-core` | P0 | New |
-| `EventStore` trait | `nineties-core` | P0 | New |
-| SQLite EventStore impl | `nineties-es-sqlite` | P0 | New |
-| `EventBus` trait + in-process impl | `nineties-core` | P0 | New |
-| `Projector` + `Projection` traits + engine | `nineties-core` | P0 | New |
-| `ReadModelStore` trait | `nineties-core` | P0 | New |
-| SQLite ReadModelStore impl | `nineties-rm-sqlite` | P0 | New |
-| `Aggregate` trait | `nineties-core` | P1 | New |
-| `CommandBus` | `nineties-core` | P1 | New |
-| `PluginRegistry` (ES-aware) | `nineties-core` | P1 | Extend existing plan |
-| Postgres ReadModelStore impl | `nineties-rm-postgres` | P1 | New |
-| Snapshot store | `nineties-core` | P2 | New |
-| Postgres EventStore impl | `nineties-es-postgres` | P2 | New |
-| dqlite ReadModelStore impl | `nineties-rm-dqlite` | P2 | New |
-| Web crate extraction | `nineties-web` | P1 | Refactor |
-| CLI crate (replay, rebuild) | `nineties-cli` | P1 | Refactor |
-| Async event bus (tokio channels) | `nineties-core` | P2 | New |
+| `Event` type + serialization | `arc-core` | P0 | New |
+| `EventStore` trait | `arc-core` | P0 | New |
+| SQLite EventStore impl | `arc-es-sqlite` | P0 | New |
+| `EventBus` trait + in-process impl | `arc-core` | P0 | New |
+| `Projector` + `Projection` traits + engine | `arc-core` | P0 | New |
+| `ReadModelStore` trait | `arc-core` | P0 | New |
+| SQLite ReadModelStore impl | `arc-rm-sqlite` | P0 | New |
+| `Aggregate` trait | `arc-core` | P1 | New |
+| `CommandBus` | `arc-core` | P1 | New |
+| `PluginRegistry` (ES-aware) | `arc-core` | P1 | Extend existing plan |
+| Postgres ReadModelStore impl | `arc-rm-postgres` | P1 | New |
+| Snapshot store | `arc-core` | P2 | New |
+| Postgres EventStore impl | `arc-es-postgres` | P2 | New |
+| dqlite ReadModelStore impl | `arc-rm-dqlite` | P2 | New |
+| Web crate extraction | `arc-web` | P1 | Refactor |
+| CLI crate (replay, rebuild) | `arc-cli` | P1 | Refactor |
+| Async event bus (tokio channels) | `arc-core` | P2 | New |
 | `the-hook` async support | `the-hook` | P2 | Extend |
-| Saga / Process Manager | `nineties-core` | P3 | New |
+| Saga / Process Manager | `arc-core` | P3 | New |
 
 ---
 
@@ -417,13 +417,13 @@ Move features (pages, blog, auth) into plugin crates that register their own agg
 
 ### 9.1 The Problem Space
 
-When multiple Nineties apps need to work together — scaling horizontally, distributing workload, and sharing events across nodes.
+When multiple Arc apps need to work together — scaling horizontally, distributing workload, and sharing events across nodes.
 
-![Architecture Diagram - Single Node - Current single-node architecture with Nineties App connected to local Event Store](diagrams/architecture-14-single-node.svg)
+![Architecture Diagram - Single Node - Current single-node architecture with Arc App connected to local Event Store](diagrams/architecture-14-single-node.svg)
 
 ### 9.2 Architecture: Pluggable Cluster with Local-First Storage
 
-Each node owns its local SQLite event store. Cluster traits in `nineties-core` define how nodes discover each other, sync events, and distribute workload. Backend implementations are swappable.
+Each node owns its local SQLite event store. Cluster traits in `arc-core` define how nodes discover each other, sync events, and distribute workload. Backend implementations are swappable.
 
 ![Architecture Diagram - Cluster Architecture - Cluster control plane with Node Registry, Coordinator/Leader, and Heartbeat Monitor coordinates three nodes (A as Leader, B and C as Workers), each with local SQLite Event Store and Event Bus, synchronized via pluggable sync layer (NATS/gRPC/Gossip)](diagrams/architecture-15-cluster-architecture.svg)
 
@@ -451,7 +451,7 @@ Each node owns its local SQLite event store. Aggregate partitioning via consiste
 
 ### 9.5 Pluggable Cluster Backends
 
-![Architecture Diagram - Cluster Backend Implementations - nineties-core defines traits (NodeRegistry, ClusterEventBus, WorkloadDistributor, LeaderElection), implemented by three backends: NATS (with JetStream), P2P (with Gossip and gRPC), and K8s (native discovery)](diagrams/architecture-18-cluster-backend-implementations.svg)
+![Architecture Diagram - Cluster Backend Implementations - arc-core defines traits (NodeRegistry, ClusterEventBus, WorkloadDistributor, LeaderElection), implemented by three backends: NATS (with JetStream), P2P (with Gossip and gRPC), and K8s (native discovery)](diagrams/architecture-18-cluster-backend-implementations.svg)
 
 Available backends:
 
@@ -494,12 +494,12 @@ Available backends:
 
 ### 9.9 Kubernetes Integration
 
-![Deployment Diagram - Kubernetes Integration - StatefulSet nineties with three pods (nineties-0 Leader, nineties-1 and nineties-2 Workers), exposed via LoadBalancer Service for web traffic and Headless Service for pod discovery, with optional NATS StatefulSet for event synchronization](diagrams/deployment-01-kubernetes-integration.svg)
+![Deployment Diagram - Kubernetes Integration - StatefulSet arc with three pods (arc-0 Leader, arc-1 and arc-2 Workers), exposed via LoadBalancer Service for web traffic and Headless Service for pod discovery, with optional NATS StatefulSet for event synchronization](diagrams/deployment-01-kubernetes-integration.svg)
 
 **K8s-native discovery:**
 
 ```rust
-// nineties-cluster-k8s crate
+// arc-cluster-k8s crate
 pub struct K8sNodeRegistry {
     namespace: String,
     service_name: String,  // headless service
@@ -524,19 +524,19 @@ impl NodeRegistry for K8sNodeRegistry {
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: nineties
+  name: arc
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: StatefulSet
-    name: nineties
+    name: arc
   minReplicas: 2
   maxReplicas: 20
   metrics:
     - type: Pods
       pods:
         metric:
-          name: nineties_command_queue_depth
+          name: arc_command_queue_depth
         target:
           type: AverageValue
           averageValue: "100"
@@ -552,17 +552,17 @@ spec:
 
 ## 11. Final Crate Map
 
-![Architecture Diagram - Final Crate Map - nineties-core (events, aggregates, traits) as foundation, extended by Event Stores (SQLite, Postgres), Read Model Stores (SQLite, Postgres, dqlite), Cluster Backends (NATS, P2P, K8s), Surfaces (Web, CLI), and Plugins (auth, blog, pages)](diagrams/architecture-19-final-crate-map.svg)
+![Architecture Diagram - Final Crate Map - arc-core (events, aggregates, traits) as foundation, extended by Event Stores (SQLite, Postgres), Read Model Stores (SQLite, Postgres, dqlite), Cluster Backends (NATS, P2P, K8s), Surfaces (Web, CLI), and Plugins (auth, blog, pages)](diagrams/architecture-19-final-crate-map.svg)
 
 ---
 
 ## 12. Summary
 
-Nineties evolves from a monolithic MVC starter into a **composable, event-sourced framework** where:
+Arc evolves from a monolithic MVC starter into a **composable, event-sourced framework** where:
 
 1. **Events are first-class citizens** — every state change is an event
-2. **Core is headless** — `nineties-core` has zero web dependencies
-3. **Web is a plugin** — `nineties-web` adds Actix, Tera, WebSocket
+2. **Core is headless** — `arc-core` has zero web dependencies
+3. **Web is a plugin** — `arc-web` adds Actix, Tera, WebSocket
 4. **Each node is self-contained** — local event store, no shared DB dependency
 5. **Nodes sync via eventual consistency** — events replicated through pluggable sync layer
 6. **Aggregate ownership eliminates conflicts** — consistent hashing assigns one writer per aggregate

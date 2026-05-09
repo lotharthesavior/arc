@@ -10,10 +10,10 @@ Successfully converted all 31 inline mermaid diagrams from documentation files t
 ## Files Updated
 
 ### Source Files Created (31 total)
-All created in `/home/savior/Code/Studies/nineties/docs/diagrams/source/`:
+All created in `/home/savior/Code/Studies/arc/docs/diagrams/source/`:
 
 **Architecture Diagrams (16):**
-- architecture-04-current-nineties-mvc.mmd
+- architecture-04-current-arc-mvc.mmd
 - architecture-05-event-sourced-target.mmd
 - architecture-06-workspace-crates.mmd
 - architecture-07-event-store-classes.mmd
@@ -54,7 +54,7 @@ All created in `/home/savior/Code/Studies/nineties/docs/diagrams/source/`:
 - deployment-01-kubernetes-integration.mmd
 
 ### SVG Files Generated (31 total)
-All generated in `/home/savior/Code/Studies/nineties/docs/diagrams/`:
+All generated in `/home/savior/Code/Studies/arc/docs/diagrams/`:
 - All corresponding .svg files created successfully
 - Total diagram count: 37 SVG files (including 6 pre-existing from research)
 
@@ -115,7 +115,7 @@ For future diagram additions:
 
 ```bash
 # Generate all SVG files
-cd /home/savior/Code/Studies/nineties/docs/diagrams
+cd /home/savior/Code/Studies/arc/docs/diagrams
 for mmd in source/*.mmd; do
     filename=$(basename "$mmd" .mmd)
     mmdc -i "$mmd" -o "${filename}.svg" -t default -b transparent
@@ -133,10 +133,10 @@ done
 
 ## Files Changed
 
-- `/home/savior/Code/Studies/nineties/docs/roadmap.md` (updated)
-- `/home/savior/Code/Studies/nineties/docs/09-event-sourcing-architecture.md` (updated)
-- `/home/savior/Code/Studies/nineties/docs/diagrams/source/*.mmd` (31 new files)
-- `/home/savior/Code/Studies/nineties/docs/diagrams/*.svg` (31 new files)
+- `/home/savior/Code/Studies/arc/docs/roadmap.md` (updated)
+- `/home/savior/Code/Studies/arc/docs/09-event-sourcing-architecture.md` (updated)
+- `/home/savior/Code/Studies/arc/docs/diagrams/source/*.mmd` (31 new files)
+- `/home/savior/Code/Studies/arc/docs/diagrams/*.svg` (31 new files)
 
 ---
 

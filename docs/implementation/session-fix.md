@@ -10,7 +10,7 @@
 
 ### User Report
 
-When running Nineties with `APP_URL=0.0.0.0` (to accept connections from any network interface) and accessing from another machine using the server's IP address (e.g., `http://192.168.1.100:8080` instead of `http://localhost:8080`), login attempts fail even with correct credentials.
+When running Arc with `APP_URL=0.0.0.0` (to accept connections from any network interface) and accessing from another machine using the server's IP address (e.g., `http://192.168.1.100:8080` instead of `http://localhost:8080`), login attempts fail even with correct credentials.
 
 ### Technical Cause
 
@@ -103,7 +103,7 @@ let mut session_middleware = SessionMiddleware::builder(
     CookieSessionStore::default(),
     secret_key.clone(),
 )
-.cookie_name("nineties_session")
+.cookie_name("arc_session")
 .cookie_http_only(true)
 .cookie_same_site(same_site);
 
@@ -284,7 +284,7 @@ curl -v http://192.168.1.100:8080/signin
 
 **Browser DevTools** (F12):
 1. Application → Cookies
-2. Find `nineties_session`
+2. Find `arc_session`
 3. Verify:
    - `HttpOnly`: ✅ (should be checked)
    - `Secure`: ❌ (should NOT be checked in dev)

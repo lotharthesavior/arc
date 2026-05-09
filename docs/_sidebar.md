@@ -43,4 +43,4 @@
   * [Developer Notes](dev-notes/)
   * [Documentation for AI Agents](CLAUDE.md)
 
-* [GitHub](https://github.com/lotharthesavior/nineties)
+* [GitHub](https://github.com/lotharthesavior/arc)

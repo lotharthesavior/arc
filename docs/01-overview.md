@@ -1,8 +1,8 @@
-# Nineties - Project Overview
+# Arc - Project Overview
 
 ## Introduction
 
-**Nineties** is a web application starter/framework built with Rust and the Actix Web framework. It provides a solid, production-ready foundation for building traditional server-rendered web applications.
+**Arc** is a web application starter/framework built with Rust and the Actix Web framework. It provides a solid, production-ready foundation for building traditional server-rendered web applications.
 
 **Philosophy:** "Spend time with your ideas on top of a solid foundation" - The project aims to reduce boilerplate setup and provide a complete MVC structure with authentication, database integration, and frontend tooling pre-configured.
 
@@ -79,7 +79,7 @@ cargo install cargo-watch
 ## Directory Structure
 
 ```
-nineties/
+arc/
 ├── src/                    # Main source code
 │   ├── console/           # CLI commands
 │   ├── database/          # Seeders

@@ -88,7 +88,7 @@ The term "multi-process" can be ambiguous. It's crucial to distinguish between m
 A library like `the-hook` that uses `static` variables for storage operates **within a single OS process**.
 
 - **Shared Memory:** All threads within a single process share the same memory space. The hook registry is accessible to all threads.
-- **No Cross-Process Communication:** If you run two separate instances of the Nineties server, **they do not share memory**. The hooks registered in Process A are completely invisible to Process B.
+- **No Cross-Process Communication:** If you run two separate instances of the Arc server, **they do not share memory**. The hooks registered in Process A are completely invisible to Process B.
 
 This is the standard and expected behavior. The library is "multi-process capable" in that you can run multiple processes, but it does not provide any magic communication *between* them.
 
@@ -96,7 +96,7 @@ This is the standard and expected behavior. The library is "multi-process capabl
 
 **The recommendation is to embrace this process-local behavior.** It is simple, robust, and predictable.
 
-In a typical production deployment, you would have multiple instances of the Nineties application running behind a load balancer. Each instance would be a separate process. When each process starts, it loads all plugins and registers their hooks independently.
+In a typical production deployment, you would have multiple instances of the Arc application running behind a load balancer. Each instance would be a separate process. When each process starts, it loads all plugins and registers their hooks independently.
 
 This means that a request handled by Process A will trigger the hooks registered within Process A. This is a standard and scalable stateless architecture.
 

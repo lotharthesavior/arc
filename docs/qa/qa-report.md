@@ -15,8 +15,8 @@ The Core Event Sourcing Library implementation is complete with all tests passin
 ## Test Results
 
 ### ✅ Core Library Tests (PASSING)
-- nineties-core: 51/51 tests passing
-- nineties-es-sqlite: 11/11 tests passing
+- arc-core: 51/51 tests passing
+- arc-es-sqlite: 11/11 tests passing
 - Zero compiler warnings in core library
 - **Status**: Production ready
 
@@ -35,7 +35,7 @@ The Core Event Sourcing Library implementation is complete with all tests passin
 **Impact**: Application wouldn't compile
 **Root Cause**: SQLite AUTOINCREMENT columns appear nullable to Diesel introspection
 **Fix**: Manually corrected `id` fields to `Integer` (not `Nullable<Integer>`)
-**File**: `crates/nineties-app/src/schema.rs`
+**File**: `crates/arc-app/src/schema.rs`
 
 ```diff
 - id -> Nullable<Integer>,
@@ -45,14 +45,14 @@ The Core Event Sourcing Library implementation is complete with all tests passin
 ### 2. Template Path Issue ✅ FIXED
 **Problem**: Template loader looking for `src/resources/views/**/*` but running from workspace root
 **Impact**: Server panic on startup: `TemplateNotFound("home.html")`
-**Root Cause**: Workspace structure changed paths, templates now at `crates/nineties-app/src/resources/views/**/*`
+**Root Cause**: Workspace structure changed paths, templates now at `crates/arc-app/src/resources/views/**/*`
 **Fix**: Added fallback logic to try both workspace and direct paths
-**File**: `crates/nineties-app/src/helpers/template.rs`
+**File**: `crates/arc-app/src/helpers/template.rs`
 
 ```rust
 // Try workspace path first, fallback to direct path
 let patterns = vec![
-    "crates/nineties-app/src/resources/views/**/*", // Workspace
+    "crates/arc-app/src/resources/views/**/*", // Workspace
     "src/resources/views/**/*",                      // Direct run
 ];
 ```
@@ -75,11 +75,11 @@ let patterns = vec![
 5. Lazy static initialization failure on first request
 
 **Files to Investigate**:
-- `crates/nineties-app/src/commands/serve.rs` - Server configuration
-- `crates/nineties-app/src/helpers/template.rs` - Template system
-- `crates/nineties-app/src/helpers/database.rs` - DB connection
-- `crates/nineties-app/src/http/middlewares/*` - All middlewares
-- `crates/nineties-app/src/http/controllers/home_controller.rs` - Home page
+- `crates/arc-app/src/commands/serve.rs` - Server configuration
+- `crates/arc-app/src/helpers/template.rs` - Template system
+- `crates/arc-app/src/helpers/database.rs` - DB connection
+- `crates/arc-app/src/http/middlewares/*` - All middlewares
+- `crates/arc-app/src/http/controllers/home_controller.rs` - Home page
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides a complete reference for all HTTP endpoints in the Nineties application. The API uses a combination of HTML page responses and JSON API responses.
+This document provides a complete reference for all HTTP endpoints in the Arc application. The API uses a combination of HTML page responses and JSON API responses.
 
 ## Base URL
 

@@ -121,11 +121,11 @@ src/ (monolithic)
 **Target Structure**:
 ```
 crates/
-├── nineties-core/       (ES primitives)
-├── nineties-es-sqlite/  (EventStore impl)
-├── nineties-web/        (Actix layer)
-├── nineties-cli/        (Tools)
-└── nineties-app/        (Main app)
+├── arc-core/       (ES primitives)
+├── arc-es-sqlite/  (EventStore impl)
+├── arc-web/        (Actix layer)
+├── arc-cli/        (Tools)
+└── arc-app/        (Main app)
 plugins/
 └── ...
 ```
@@ -297,7 +297,7 @@ plugins/
 4. **Begin Workspace Setup** (Low Risk)
    - Create workspace Cargo.toml
    - Create `crates/` directory
-   - Move current code to `crates/nineties-app/`
+   - Move current code to `crates/arc-app/`
    - Verify build still works
 
 ### Short-term (Weeks 2-4)

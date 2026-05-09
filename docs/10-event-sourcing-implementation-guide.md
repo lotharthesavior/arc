@@ -155,26 +155,26 @@ users_view.filter(email.eq(&user_email)).first()
 
 **Tasks:**
 1. Create Cargo workspace structure
-2. Create `nineties-core` crate
+2. Create `arc-core` crate
 3. Setup crate dependencies
 4. Configure feature flags
 
 **Deliverables:**
 ```
-nineties/
+arc/
 ├── Cargo.toml              # Workspace manifest
 ├── crates/
-│   ├── nineties-core/     # ES primitives
-│   ├── nineties-app/      # Main application
-│   └── nineties-web/      # Web layer (future)
+│   ├── arc-core/     # ES primitives
+│   ├── arc-app/      # Main application
+│   └── arc-web/      # Web layer (future)
 ```
 
 **Cargo.toml (workspace):**
 ```toml
 [workspace]
 members = [
-    "crates/nineties-core",
-    "crates/nineties-app",
+    "crates/arc-core",
+    "crates/arc-app",
 ]
 resolver = "2"
 
@@ -198,7 +198,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 
 **Code to Create:**
 
-`crates/nineties-core/src/event.rs`:
+`crates/arc-core/src/event.rs`:
 ```rust
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
@@ -253,7 +253,7 @@ impl Event {
 }
 ```
 
-`crates/nineties-core/src/event_store.rs`:
+`crates/arc-core/src/event_store.rs`:
 ```rust
 use crate::event::Event;
 use async_trait::async_trait;
@@ -319,7 +319,7 @@ CREATE INDEX idx_events_id ON events(id);
 
 **Code to Create:**
 
-`crates/nineties-core/src/event_bus.rs`:
+`crates/arc-core/src/event_bus.rs`:
 ```rust
 use crate::event::Event;
 use async_trait::async_trait;
@@ -363,7 +363,7 @@ pub trait EventBus: Send + Sync {
 
 **Code to Create:**
 
-`crates/nineties-core/src/read_model_store.rs`:
+`crates/arc-core/src/read_model_store.rs`:
 ```rust
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -391,7 +391,7 @@ pub trait ReadModelStore: Send + Sync {
     async fn truncate(&self, table: &str) -> Result<(), ReadModelError>;
 }
 
-/// In-memory read model store for testing (built into nineties-core).
+/// In-memory read model store for testing (built into arc-core).
 pub struct InMemoryReadModelStore {
     tables: Mutex<HashMap<String, Vec<Row>>>,
 }
@@ -409,7 +409,7 @@ impl InMemoryReadModelStore {
 }
 ```
 
-`crates/nineties-core/src/projection.rs`:
+`crates/arc-core/src/projection.rs`:
 ```rust
 use crate::event::Event;
 use crate::event_store::EventStore;
@@ -567,7 +567,7 @@ impl ProjectionEngine {
 
 **Code to Create:**
 
-`crates/nineties-core/src/aggregate.rs`:
+`crates/arc-core/src/aggregate.rs`:
 ```rust
 use crate::event::Event;
 use async_trait::async_trait;
@@ -611,9 +611,9 @@ pub trait Aggregate: Send + Sync + Default {
 
 **Example Implementation:**
 
-`crates/nineties-app/src/domain/user.rs`:
+`crates/arc-app/src/domain/user.rs`:
 ```rust
-use nineties_core::{Aggregate, Command, Event};
+use arc_core::{Aggregate, Command, Event};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -806,7 +806,7 @@ impl Aggregate for UserAggregate {
 3. Add optimistic concurrency control
 4. Add tests
 
-`crates/nineties-core/src/command_bus.rs`:
+`crates/arc-core/src/command_bus.rs`:
 ```rust
 use crate::{Aggregate, Command, Event, EventBus, EventStore};
 use std::error::Error;
@@ -864,11 +864,11 @@ impl<A: Aggregate> CommandBus<A> {
 3. Register with `ProjectionEngine`
 4. Add tests
 
-`crates/nineties-app/src/projections/user_list.rs`:
+`crates/arc-app/src/projections/user_list.rs`:
 ```rust
-use nineties_core::event::Event;
-use nineties_core::projection::{Projector, ProjectionResult, ProjectionError};
-use nineties_core::read_model_store::ReadModelStore;
+use arc_core::event::Event;
+use arc_core::projection::{Projector, ProjectionResult, ProjectionError};
+use arc_core::read_model_store::ReadModelStore;
 use async_trait::async_trait;
 
 /// Stateless projector for the user list read model.
@@ -949,8 +949,8 @@ impl Projector for UserListProjector {
 
 **Composing the projection:**
 ```rust
-use nineties_core::projection::{ProjectionUnit, ProjectionEngine};
-use nineties_core::read_model_store::ReadModelStore;
+use arc_core::projection::{ProjectionUnit, ProjectionEngine};
+use arc_core::read_model_store::ReadModelStore;
 use std::sync::Arc;
 
 // Compose: projector + store = projection

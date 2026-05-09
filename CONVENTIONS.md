@@ -1,4 +1,4 @@
-# Nineties Framework Conventions
+# Arc Framework Conventions
 
 Durable rules for how code is organized and named in this repository. These are
 the rules that the framework itself depends on — breaking them breaks the
@@ -6,7 +6,7 @@ architecture, not just aesthetics.
 
 ## Aggregate layout
 
-Every aggregate lives under `crates/nineties-app/src/domain/<entity>/` with
+Every aggregate lives under `crates/arc-app/src/domain/<entity>/` with
 these files:
 
 ```
@@ -48,13 +48,13 @@ Three invariants every aggregate must satisfy:
 
 | Thing                              | Crate / path                                       |
 |------------------------------------|----------------------------------------------------|
-| Trait: `Aggregate`, `Command`, `EventStore`, `EventBus` | `nineties-core`    |
-| `Event` struct                     | `nineties-core`                                    |
-| SQLite event store                 | `nineties-es-sqlite`                               |
-| Domain aggregates                  | `nineties-app/src/domain/<entity>/`                |
-| HTTP controllers                   | `nineties-app/src/http/controllers/`               |
-| Service helpers (password hash, email index) | `nineties-app/src/services/`             |
-| `AppError` + `ResponseError` impl  | `nineties-app/src/http/errors.rs`                  |
+| Trait: `Aggregate`, `Command`, `EventStore`, `EventBus` | `arc-core`    |
+| `Event` struct                     | `arc-core`                                    |
+| SQLite event store                 | `arc-es-sqlite`                               |
+| Domain aggregates                  | `arc-app/src/domain/<entity>/`                |
+| HTTP controllers                   | `arc-app/src/http/controllers/`               |
+| Service helpers (password hash, email index) | `arc-app/src/services/`             |
+| `AppError` + `ResponseError` impl  | `arc-app/src/http/errors.rs`                  |
 | Migrations                         | `migrations/` (workspace root)                     |
 
 Never reach across: a domain module must not import a controller; a controller

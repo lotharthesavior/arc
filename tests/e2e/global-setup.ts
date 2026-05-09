@@ -65,7 +65,7 @@ export default async function globalSetup(): Promise<void> {
   // Build the binary once. Skip when already built (developers iterating).
   if (!process.env.E2E_SKIP_BUILD) {
     process.stdout.write('[e2e] cargo build...\n');
-    execSync('cargo build --bin nineties', { cwd: ROOT, stdio: 'inherit', env: childEnv });
+    execSync('cargo build --bin arc', { cwd: ROOT, stdio: 'inherit', env: childEnv });
   }
 
   // Build frontend assets so /signin renders fully.
@@ -76,12 +76,12 @@ export default async function globalSetup(): Promise<void> {
 
   // Migrations + seed (legacy users for /signin form flow).
   process.stdout.write('[e2e] migrate + seed...\n');
-  execSync('./target/debug/nineties migrate', { cwd: ROOT, stdio: 'inherit', env: childEnv });
-  execSync('./target/debug/nineties seed', { cwd: ROOT, stdio: 'inherit', env: childEnv });
+  execSync('./target/debug/arc migrate', { cwd: ROOT, stdio: 'inherit', env: childEnv });
+  execSync('./target/debug/arc seed', { cwd: ROOT, stdio: 'inherit', env: childEnv });
 
   // Spawn the server.
   process.stdout.write(`[e2e] spawning server on :${port}...\n`);
-  const proc: ChildProcess = spawn('./target/debug/nineties', ['serve'], {
+  const proc: ChildProcess = spawn('./target/debug/arc', ['serve'], {
     cwd: ROOT,
     env: childEnv,
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -89,7 +89,7 @@ export default async function globalSetup(): Promise<void> {
   });
 
   if (!proc.pid) {
-    throw new Error('failed to spawn nineties server');
+    throw new Error('failed to spawn arc server');
   }
 
   // Persist state for teardown.

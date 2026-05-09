@@ -1,16 +1,16 @@
-# Performance Analysis: Nineties vs Minimal TCP Server
+# Performance Analysis: Arc vs Minimal TCP Server
 
 ## Executive Summary
 
-The minimal TCP server achieves **~50,000 req/sec** while Nineties achieves only **~172 req/sec** - a **290x performance difference**.
+The minimal TCP server achieves **~50,000 req/sec** while Arc achieves only **~172 req/sec** - a **290x performance difference**.
 
-This document analyzes why this gap exists and provides actionable recommendations to improve Nineties' throughput.
+This document analyzes why this gap exists and provides actionable recommendations to improve Arc' throughput.
 
 ---
 
 ## Baseline Comparison
 
-| Metric | Minimal TCP Server | Nineties | Difference |
+| Metric | Minimal TCP Server | Arc | Difference |
 |--------|-------------------|----------|------------|
 | Requests/sec | ~50,000 | ~172 | 290x slower |
 | Framework | None (raw TCP) | Actix-web | - |
@@ -382,7 +382,7 @@ It represents the **theoretical maximum throughput** for the hardware, useful as
 
 ## Conclusion
 
-Nineties' poor performance is primarily due to:
+Arc' poor performance is primarily due to:
 
 1. **Template compilation on every request** (biggest impact)
 2. **File I/O for manifest on every request**

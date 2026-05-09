@@ -5,6 +5,8 @@
 
 > Beta
 
+[![Build and Test](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml/badge.svg)](https://github.com/lotharthesavior/arc/actions/workflows/tests.yml)
+
 This is a starter for web with rust on top of [Actix](https://actix.rs).
 
 Spend time with **your ideas** on top of a solid foundation.
@@ -23,7 +25,7 @@ At this point this is tested in Ubuntu, and it requires the following:
 Just clone this repo start coding your web app:
 
 ```bash
-git clone https://github.com/lotharthesavior/nineties.git my_project
+git clone https://github.com/lotharthesavior/arc.git my_project
 cd my_project
 cargo run migrate
 cargo run seed
@@ -59,7 +61,7 @@ The UI assets sit in the `resources` folder:
 ├── css
     └── styles.css
 ├── imgs
-    └── nineties-logo.png
+    └── arc-logo.png
 ├── js
     └── script.js 
 └── views
@@ -128,7 +130,7 @@ At the `main.rs` file you'll find the main entry point of the application. There
 
 ### Routing
 
-The server routing is defined in the `routes.rs` file. Actix routing points to services. In nineties, each file carrying these services is considered a controllers, and is located in the `http/controllers` folder.
+The server routing is defined in the `routes.rs` file. Actix routing points to services. In arc, each file carrying these services is considered a controllers, and is located in the `http/controllers` folder.
 
 ### Database
 
@@ -221,9 +223,9 @@ Run: `chmod +x test-jwt.sh; make db-setup; cargo run serve &; sleep 5; ./test-jw
 
 ---
 
-## Nineties binary
+## Arc binary
 
-To build nineties binary, the following steps are necessary:
+To build arc binary, the following steps are necessary:
 
 **Step 1**:
 
@@ -315,7 +317,7 @@ Then visit http://localhost:3000
 
 - **[Planning Documents](docs/planning/)** - Feature plans and design proposals
 - **[Technical Analysis](docs/analysis/)** - Performance analysis and benchmarks
-- **[Performance Analysis](docs/analysis/performance.md)** - Nineties vs Minimal TCP Server
+- **[Performance Analysis](docs/analysis/performance.md)** - Arc vs Minimal TCP Server
 
 ### Additional Resources
 

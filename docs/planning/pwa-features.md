@@ -1,8 +1,8 @@
-# PWA Implementation Analysis for Nineties
+# PWA Implementation Analysis for Arc
 
 ## Overview
 
-This document explores the best options for implementing Progressive Web App (PWA) capabilities in Nineties, a Rust/Actix-web application using Hotwire (Turbo + Stimulus).
+This document explores the best options for implementing Progressive Web App (PWA) capabilities in Arc, a Rust/Actix-web application using Hotwire (Turbo + Stimulus).
 
 ---
 
@@ -58,7 +58,7 @@ This document explores the best options for implementing Progressive Web App (PW
 
 ---
 
-### Option 3: Hybrid (Recommended for Nineties)
+### Option 3: Hybrid (Recommended for Arc)
 
 **What**: Use `vite-plugin-pwa` for generation + custom service worker logic for Turbo integration.
 
@@ -71,7 +71,7 @@ This document explores the best options for implementing Progressive Web App (PW
 **Cons**:
 - Requires understanding both Workbox and service worker APIs
 
-**Best for**: Nineties - we need Turbo-aware caching.
+**Best for**: Arc - we need Turbo-aware caching.
 
 ---
 
@@ -81,8 +81,8 @@ This document explores the best options for implementing Progressive Web App (PW
 
 ```json
 {
-  "name": "Nineties App",
-  "short_name": "Nineties",
+  "name": "Arc App",
+  "short_name": "Arc",
   "description": "A modern web application",
   "start_url": "/",
   "display": "standalone",
@@ -207,7 +207,7 @@ Create a simple offline fallback page:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Offline - Nineties</title>
+  <title>Offline - Arc</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -292,8 +292,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'icons/*.png'],
       manifest: {
-        name: 'Nineties App',
-        short_name: 'Nineties',
+        name: 'Arc App',
+        short_name: 'Arc',
         theme_color: '#4f46e5',
         background_color: '#ffffff',
         display: 'standalone',

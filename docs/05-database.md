@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nineties uses **SQLite** as its database with **Diesel ORM** for type-safe database operations. This provides a lightweight, file-based database that requires no separate server process.
+Arc uses **SQLite** as its database with **Diesel ORM** for type-safe database operations. This provides a lightweight, file-based database that requires no separate server process.
 
 ## Database Configuration
 

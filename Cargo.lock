@@ -477,6 +477,78 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
+name = "arc"
+version = "0.2.2"
+dependencies = [
+ "actix",
+ "actix-files",
+ "actix-limitation",
+ "actix-session 0.10.1",
+ "actix-web",
+ "actix-web-actors",
+ "actix-web-lab",
+ "arc-core",
+ "arc-es-sqlite",
+ "argon2",
+ "async-trait",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "dotenv",
+ "fs_extra",
+ "futures",
+ "futures-util",
+ "jsonwebtoken",
+ "md5",
+ "once_cell",
+ "rand",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sqlx",
+ "tera",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-actix-web",
+ "tracing-subscriber",
+ "urlencoding",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "arc-core"
+version = "0.2.2"
+dependencies = [
+ "async-trait",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "arc-es-sqlite"
+version = "0.2.2"
+dependencies = [
+ "arc-core",
+ "async-trait",
+ "diesel",
+ "diesel_migrations",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1930,78 +2002,6 @@ name = "mutually_exclusive_features"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e94e1e6445d314f972ff7395df2de295fe51b71821694f0b0e1e79c4f12c8577"
-
-[[package]]
-name = "nineties"
-version = "0.2.2"
-dependencies = [
- "actix",
- "actix-files",
- "actix-limitation",
- "actix-session 0.10.1",
- "actix-web",
- "actix-web-actors",
- "actix-web-lab",
- "argon2",
- "async-trait",
- "chrono",
- "diesel",
- "diesel_migrations",
- "dotenv",
- "fs_extra",
- "futures",
- "futures-util",
- "jsonwebtoken",
- "md5",
- "nineties-core",
- "nineties-es-sqlite",
- "once_cell",
- "rand",
- "serde",
- "serde_json",
- "serial_test",
- "sqlx",
- "tera",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-actix-web",
- "tracing-subscriber",
- "urlencoding",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "nineties-core"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "hmac",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "nineties-es-sqlite"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "diesel",
- "diesel_migrations",
- "nineties-core",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "uuid",
-]
 
 [[package]]
 name = "nu-ansi-term"

@@ -10,7 +10,7 @@
 
 ## Overview
 
-This document explains how session cookies are configured in Nineties and how to set them up for different environments (development, production, network access).
+This document explains how session cookies are configured in Arc and how to set them up for different environments (development, production, network access).
 
 ---
 
@@ -18,7 +18,7 @@ This document explains how session cookies are configured in Nineties and how to
 
 ### Symptom
 
-When running Nineties on a server with `APP_URL=0.0.0.0` (to accept connections from any network interface) and accessing it from another machine via IP address (e.g., `http://192.168.1.100:8080`), login attempts fail even with correct credentials.
+When running Arc on a server with `APP_URL=0.0.0.0` (to accept connections from any network interface) and accessing it from another machine via IP address (e.g., `http://192.168.1.100:8080`), login attempts fail even with correct credentials.
 
 ### Root Cause
 
@@ -241,7 +241,7 @@ let mut session_middleware = SessionMiddleware::builder(
     CookieSessionStore::default(),
     secret_key.clone(),
 )
-.cookie_name("nineties_session")
+.cookie_name("arc_session")
 .cookie_http_only(true)  // Always true for security
 .cookie_same_site(same_site)
 .session_lifecycle(
@@ -266,7 +266,7 @@ if let Some(ref domain) = session_domain {
 
 | Attribute | Development | Production |
 |-----------|-------------|------------|
-| `Name` | `nineties_session` | `nineties_session` |
+| `Name` | `arc_session` | `arc_session` |
 | `Domain` | Not set (or from env) | From `SESSION_DOMAIN` |
 | `Secure` | `false` | `true` |
 | `HttpOnly` | `true` | `true` |
@@ -291,7 +291,7 @@ curl -X POST http://localhost:8080/signin \
   -v
 ```
 
-**Expected**: You should see `Set-Cookie: nineties_session=...` in response headers
+**Expected**: You should see `Set-Cookie: arc_session=...` in response headers
 
 ---
 
@@ -327,7 +327,7 @@ curl -X POST http://192.168.1.100:8080/signin \
 1. Open browser DevTools (F12)
 2. Go to Application → Cookies
 3. Login to your app
-4. Check the `nineties_session` cookie
+4. Check the `arc_session` cookie
 
 **Verify**:
 - `HttpOnly`: ✅ (should be checked)

@@ -17,7 +17,7 @@ test.describe('UI signin flow', () => {
     await expect(page).toHaveURL(/\/admin/);
 
     const cookies = await context.cookies();
-    expect(cookies.find((c) => c.name === 'nineties_session')).toBeTruthy();
+    expect(cookies.find((c) => c.name === 'arc_session')).toBeTruthy();
   });
 
   test('wrong password keeps user on /signin', async ({ page }) => {

@@ -37,7 +37,7 @@ Implementations:
 
 - `InMemorySessionStore` — `Arc<Mutex<HashMap>>`. Behind `test-utils`
   feature; usable as a single-node deployment too.
-- `SqliteSessionStore` — durable, in `nineties-es-sqlite`. Indexed on
+- `SqliteSessionStore` — durable, in `arc-es-sqlite`. Indexed on
   `actor_id` (powers `revoke_all_for_actor`) and `expires_at_us` (powers
   `prune_expired`). PK on `jti` covers `is_valid` / `revoke`.
 

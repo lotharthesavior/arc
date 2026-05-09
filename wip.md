@@ -12,8 +12,8 @@ See `todo.md` for the full breakdown. Plan at `docs/ark/refactor-plan.md`.
 
 ### Earlier in Step 2
 - Migration `2026-05-07-000001_create_users_view` — `(id PK, version BIGINT, data JSON)` + `UNIQUE INDEX ON json_extract(data,'$.email')`.
-- `nineties-core::read_model_store` — typed `upsert/delete/get/find_by/list/truncate` replacing the SQL-leaking `execute(sql, params)` (production risk #3). Version-gated upsert makes replay idempotent.
-- `nineties-es-sqlite::SqliteReadModelStore` — r2d2+diesel, parameterized SQL, identifier allow-listing, `ON CONFLICT(id) DO UPDATE … WHERE table.version < excluded.version`.
+- `arc-core::read_model_store` — typed `upsert/delete/get/find_by/list/truncate` replacing the SQL-leaking `execute(sql, params)` (production risk #3). Version-gated upsert makes replay idempotent.
+- `arc-es-sqlite::SqliteReadModelStore` — r2d2+diesel, parameterized SQL, identifier allow-listing, `ON CONFLICT(id) DO UPDATE … WHERE table.version < excluded.version`.
 - `domain::user::projector::UserProjector` — handles all five user events, carries unchanged fields forward, deletes on `UserDeleted`.
 - `ProjectionEngineHandler` — `EventHandler` adapter so the engine subscribes to any `EventBus`.
 - API controllers (`register/login/profile`) read `users_view`; `validate_user_credentials_es` + `lookup_aggregate_id_by_email_view` are projection-backed.
@@ -49,29 +49,29 @@ make e2e              # 13 Playwright specs (re-run after this session)
 ### Targeted
 
 ```bash
-cargo test --bin nineties http::controllers::admin_controller::tests   # admin via CommandBus
-cargo test --bin nineties http::controllers::auth_controller           # cookie signin via users_view
-cargo test --bin nineties http::middlewares::auth_middleware           # SessionUser-backed auth
-cargo test -p nineties-core read_model_store                            # in-mem version gate
-cargo test -p nineties-es-sqlite read_model_store                       # SQLite upsert/find/idempotency
+cargo test --bin arc http::controllers::admin_controller::tests   # admin via CommandBus
+cargo test --bin arc http::controllers::auth_controller           # cookie signin via users_view
+cargo test --bin arc http::middlewares::auth_middleware           # SessionUser-backed auth
+cargo test -p arc-core read_model_store                            # in-mem version gate
+cargo test -p arc-es-sqlite read_model_store                       # SQLite upsert/find/idempotency
 ```
 
 ### Manual smoke (CLI seed path)
 
 ```bash
-DATABASE_URL=/tmp/nineties.sqlite SECRET_KEY=$(openssl rand -hex 32) JWT_SECRET=$(openssl rand -hex 32) APP_NAME=test \
-  ./target/debug/nineties migrate --seed
+DATABASE_URL=/tmp/arc.sqlite SECRET_KEY=$(openssl rand -hex 32) JWT_SECRET=$(openssl rand -hex 32) APP_NAME=test \
+  ./target/debug/arc migrate --seed
 
-sqlite3 /tmp/nineties.sqlite \
+sqlite3 /tmp/arc.sqlite \
   "SELECT json_extract(data,'\$.email') FROM users_view;"  # → jekyll@example.com
-sqlite3 /tmp/nineties.sqlite \
+sqlite3 /tmp/arc.sqlite \
   "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','user_email_index');"  # → empty
 ```
 
 ## Next Steps (priority)
 
-1. **Step 3 — `nineties-es-nats` (JetStream `EventBus`).** At that point split `InProcessEventBus` lanes into sync (in-tx projectors + integrity chain) vs async (JetStream + email/Stripe).
-2. **Step 4 — `nineties-worker` crate** (durable consumer driving `ProjectionEngine` out-of-process).
+1. **Step 3 — `arc-es-nats` (JetStream `EventBus`).** At that point split `InProcessEventBus` lanes into sync (in-tx projectors + integrity chain) vs async (JetStream + email/Stripe).
+2. **Step 4 — `arc-worker` crate** (durable consumer driving `ProjectionEngine` out-of-process).
 3. **Snapshot interface** — `EventStore::save_snapshot/load_snapshot`, `Aggregate::to_snapshot/from_snapshot`. Implementation in Step 5 alongside Postgres.
 4. **HIPAA-2b** — compile-time read-logging guarantee. Defer until read surface > `/profile`.
 5. **Docs cluster** — tutorials/guides/reference reconciliation. `docs/tutorials/02-adding-a-projection.md` is the next addition.

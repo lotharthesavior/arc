@@ -1,6 +1,6 @@
-# Nineties Documentation
+# Arc Documentation
 
-Welcome to the Nineties documentation. This documentation provides comprehensive information about the architecture, implementation, and usage of the Nineties web application framework.
+Welcome to the Arc documentation. This documentation provides comprehensive information about the architecture, implementation, and usage of the Arc web application framework.
 
 ## Table of Contents
 

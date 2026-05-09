@@ -1,0 +1,32 @@
+[package]
+name = "arc-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Event sourcing primitives for arc framework (headless, no web dependencies)"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core event sourcing dependencies only - NO web dependencies
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+
+# Async runtime (for async traits)
+tokio = { workspace = true, features = ["sync"] }
+
+# Logging
+tracing.workspace = true
+
+# HIPAA-5: HMAC-SHA256 integrity chain
+hmac.workspace = true
+sha2.workspace = true
+
+[features]
+default = []
+# Exposes test helpers (AuditMetadata::test_default, InMemoryEventStore) to
+# downstream crates' integration tests.
+test-utils = []

@@ -272,7 +272,7 @@ Performance analysis, benchmarks, and technical comparisons.
 
 ## Documents
 
-- [Performance Analysis](performance.md) - Nineties vs Minimal TCP Server comparison
+- [Performance Analysis](performance.md) - Arc vs Minimal TCP Server comparison
 
 ## Navigation
 
@@ -371,7 +371,7 @@ Update `docs/_sidebar.md` with new structure:
   * [Diagram Catalog](diagrams/catalog.md)
   * [Architecture Diagrams](diagrams/)
 
-* [GitHub](https://github.com/lotharthesavior/nineties)
+* [GitHub](https://github.com/lotharthesavior/arc)
 ```
 
 ---

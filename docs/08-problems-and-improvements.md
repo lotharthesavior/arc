@@ -1,6 +1,6 @@
 # Problems and Improvements
 
-This document outlines identified issues, potential improvements, and "low-hanging fruit" optimizations for the Nineties codebase.
+This document outlines identified issues, potential improvements, and "low-hanging fruit" optimizations for the Arc codebase.
 
 ---
 
@@ -227,7 +227,7 @@ Both functions do exactly the same thing - hash passwords using Argon2.
 
 **Solution Implemented**:
 - Schema: `file = "src/schema.rs"` (was already fixed)
-- Migrations: `dir = "migrations"` (was absolute `/var/www/JackedPHP/nineties-test/test-1/migrations`)
+- Migrations: `dir = "migrations"` (was absolute `/var/www/JackedPHP/arc-test/test-1/migrations`)
 
 ---
 

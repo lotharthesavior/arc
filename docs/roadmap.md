@@ -1,4 +1,4 @@
-# Nineties Development Roadmap
+# Arc Development Roadmap
 
 > Comprehensive development plan synthesized from architecture, security, reliability, QA, UX/DX, and CI/CD specialist reviews.
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Nineties is evolving from a traditional MVC Rust web starter into a **composable, event-sourced framework** with plugin architecture and distributed capabilities. This roadmap prioritizes:
+Arc is evolving from a traditional MVC Rust web starter into a **composable, event-sourced framework** with plugin architecture and distributed capabilities. This roadmap prioritizes:
 
 1. **Critical fixes** (security, performance bugs)
 2. **Event sourcing foundation** (core library, event store)
@@ -88,7 +88,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
 - ✅ Comprehensive planning & documentation complete
 - ✅ Implementation guide ready (`docs/10-event-sourcing-implementation-guide.md`)
 - ✅ All dependencies available (serde_json, uuid, diesel)
-- ✅ Workspace structure created (crates/nineties-core, nineties-es-sqlite, nineties-app)
+- ✅ Workspace structure created (crates/arc-core, arc-es-sqlite, arc-app)
 - ✅ Core event sourcing library implemented
 - ✅ **7 of 7 core components built and tested**
 - ✅ 62 tests passing (51 core + 11 SQLite)
@@ -97,7 +97,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
 
 ### 1.1 Core Event Sourcing Library (100% Complete) ✅
 
-**Epic**: Create `nineties-core` crate with ES primitives
+**Epic**: Create `arc-core` crate with ES primitives
 **Progress**: 7 of 7 components implemented
 **Total Code**: 4,383 lines of Rust
 **Documentation**: CORE_EVENT_SOURCING_IMPLEMENTATION_SUMMARY.md
@@ -106,14 +106,14 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - `Event` struct with metadata (aggregate_id, sequence, timestamp, payload)
   - Serialization support (serde_json)
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/event.rs` (368 lines, 7 tests)
+  - **File**: `crates/arc-core/src/event.rs` (368 lines, 7 tests)
   - **Status**: Complete - immutable events with metadata support
 
 - [x] **EventStore trait** (100%) ✅
   - `append()`, `load()`, `load_from()`, `stream_all()` methods
   - Optimistic concurrency control (VersionCheck enum)
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/event_store.rs` (363 lines, 4 tests)
+  - **File**: `crates/arc-core/src/event_store.rs` (363 lines, 4 tests)
   - **Status**: Complete - pluggable event store interface
 
 - [x] **SQLite EventStore implementation** (100%) ✅
@@ -121,7 +121,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - Implement EventStore trait with Diesel
   - Connection pooling and transaction support
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-es-sqlite/src/lib.rs` (623 lines, 11 tests)
+  - **File**: `crates/arc-es-sqlite/src/lib.rs` (623 lines, 11 tests)
   - **Migration**: `migrations/2026-03-01-000000_create_events_table/`
   - **Status**: Complete - production-ready with optimistic concurrency
 
@@ -129,7 +129,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - Pub/sub for events
   - Synchronous event handling with filtering
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/event_bus.rs` (739 lines, 12 tests)
+  - **File**: `crates/arc-core/src/event_bus.rs` (739 lines, 12 tests)
   - **Status**: Complete - event distribution to subscribers
 
 - [x] **Projection trait + ProjectionEngine** (100%) ✅
@@ -137,7 +137,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - Rebuild capability from event stream
   - Multiple projection management
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/projection.rs` (685 lines, 8 tests)
+  - **File**: `crates/arc-core/src/projection.rs` (685 lines, 8 tests)
   - **Status**: Complete - rebuildable read models
 
 - [x] **Aggregate trait** (100%) ✅
@@ -145,7 +145,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - Event application for state updates
   - State reconstruction from events
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/aggregate.rs` (1,320 lines, 11 tests)
+  - **File**: `crates/arc-core/src/aggregate.rs` (1,320 lines, 11 tests)
   - **Status**: Complete - type-safe domain aggregates
 
 - [x] **CommandBus** (100%) ✅
@@ -153,7 +153,7 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
   - Persist events with version checking
   - Publish to EventBus after persistence
   - **Completed**: 2026-03-01
-  - **File**: `crates/nineties-core/src/command_bus.rs` (785 lines, 9 tests)
+  - **File**: `crates/arc-core/src/command_bus.rs` (785 lines, 9 tests)
   - **Status**: Complete - full CQRS command flow
 
 ### 1.2 Workspace Restructuring (100% Complete) ✅
@@ -163,32 +163,32 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
 
 - [x] **Create workspace structure** (100%) ✅
   ```
-  nineties/
+  arc/
   ├── crates/
-  │   ├── nineties-core/      # Event sourcing primitives ✅
-  │   ├── nineties-es-sqlite/ # SQLite event store impl ✅
-  │   ├── nineties-app/       # Main application binary ✅
-  │   ├── nineties-web/       # Web layer (Actix, Tera) - Phase 2
-  │   └── nineties-cli/       # CLI tools (rebuild, replay) - Phase 2
+  │   ├── arc-core/      # Event sourcing primitives ✅
+  │   ├── arc-es-sqlite/ # SQLite event store impl ✅
+  │   ├── arc-app/       # Main application binary ✅
+  │   ├── arc-web/       # Web layer (Actix, Tera) - Phase 2
+  │   └── arc-cli/       # CLI tools (rebuild, replay) - Phase 2
   └── plugins/                # Plugin directory - Phase 3
   ```
   - **Completed**: 2026-03-01
   - **Status**: Complete - workspace with 3 crates
 
-- [x] **Extract core library to nineties-core** (100%) ✅
+- [x] **Extract core library to arc-core** (100%) ✅
   - Event sourcing primitives with zero web dependencies
   - Headless, can be used in CLI, workers, tests
   - **Completed**: 2026-03-01
   - **Status**: Complete - 4,383 lines, 51 tests passing
 
-- [ ] **Extract web layer to nineties-web** (0%)
+- [ ] **Extract web layer to arc-web** (0%)
   - Move Actix, Tera, routes to separate crate
   - Make web layer optional
   - **Effort**: 2 weeks
   - **Dependencies**: Core library ✅
   - **Status**: Deferred to Phase 2
 
-- [ ] **Create nineties-cli** (0%)
+- [ ] **Create arc-cli** (0%)
   - Replay events command
   - Rebuild projections command
   - Migration tools
@@ -868,8 +868,8 @@ Nineties is evolving from a traditional MVC Rust web starter into a **composable
 ### Short-term (Next 2-4 Weeks) - **✅ PHASE 1 COMPLETE**
 **Week 1: Foundation Setup** ✅ COMPLETE
 1. ✅ Create workspace Cargo.toml structure
-2. ✅ Create `crates/nineties-core/` directory
-3. ✅ Create `crates/nineties-app/` and move existing code
+2. ✅ Create `crates/arc-core/` directory
+3. ✅ Create `crates/arc-app/` and move existing code
 4. ✅ Verify build works after restructuring
 
 **Week 2: Event Store Core** ✅ COMPLETE

@@ -22,7 +22,7 @@
 
 ## Versioning Strategy
 
-**Nineties follows [Semantic Versioning 2.0.0](https://semver.org/)**
+**Arc follows [Semantic Versioning 2.0.0](https://semver.org/)**
 
 ### Version Format: `MAJOR.MINOR.PATCH`
 
@@ -259,13 +259,13 @@ If GitHub Actions fail or for manual releases:
 cargo build --release
 
 # 2. Create release archive
-tar czf nineties-v0.3.0-linux-x86_64.tar.gz -C target/release nineties
+tar czf arc-v0.3.0-linux-x86_64.tar.gz -C target/release arc
 
 # 3. Create GitHub release manually
 gh release create v0.3.0 \
   --title "Release v0.3.0" \
   --notes-file CHANGELOG.md \
-  nineties-v0.3.0-linux-x86_64.tar.gz
+  arc-v0.3.0-linux-x86_64.tar.gz
 
 # 4. Publish to crates.io
 cargo publish
@@ -427,9 +427,9 @@ git push origin main
 ### Release Announcement Template
 
 ```markdown
-# 🎉 Nineties v0.3.0 Released!
+# 🎉 Arc v0.3.0 Released!
 
-We're excited to announce the release of Nineties v0.3.0!
+We're excited to announce the release of Arc v0.3.0!
 
 ## ✨ Highlights
 
@@ -442,16 +442,16 @@ We're excited to announce the release of Nineties v0.3.0!
 
 **Cargo**:
 ```bash
-cargo install nineties
+cargo install arc
 ```
 
 **Docker**:
 ```bash
-docker pull username/nineties:0.3.0
+docker pull username/arc:0.3.0
 ```
 
 **Binary**:
-Download from [GitHub Releases](https://github.com/user/nineties/releases/tag/v0.3.0)
+Download from [GitHub Releases](https://github.com/user/arc/releases/tag/v0.3.0)
 
 ## 📝 Changelog
 
@@ -463,7 +463,7 @@ Thank you to all contributors who made this release possible!
 
 ## 🐛 Reporting Issues
 
-Found a bug? [Open an issue](https://github.com/user/nineties/issues/new)
+Found a bug? [Open an issue](https://github.com/user/arc/issues/new)
 
 ---
 
@@ -527,7 +527,7 @@ Happy coding! 🚀
 
 ## Summary
 
-**Nineties Release Process**:
+**Arc Release Process**:
 - ✅ Semantic Versioning 2.0.0
 - ✅ Automated via GitHub Actions
 - ✅ Comprehensive testing required

@@ -1,7 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
-  content: ["./crates/nineties-app/src/resources/**/*.{html,js}"],
+  content: ["./crates/arc-app/src/resources/**/*.{html,js}"],
   theme: {
     extend: {},
   },

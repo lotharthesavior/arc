@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/nineties-core",
-    "crates/nineties-es-sqlite",
-    "crates/nineties-app",
+    "crates/arc-core",
+    "crates/arc-es-sqlite",
+    "crates/arc-app",
 ]
 
 [workspace.package]
@@ -11,7 +11,7 @@ version = "0.2.2"
 edition = "2021"
 authors = ["Savio Resende <savio@savioresende.com>"]
 license = "MIT"
-repository = "https://github.com/lotharthesavior/nineties"
+repository = "https://github.com/lotharthesavior/arc"
 
 [workspace.dependencies]
 # Core event sourcing dependencies

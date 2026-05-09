@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Nineties Benchmark Script
+# Arc Benchmark Script
 # Uses wrk to benchmark the application
 #
 # Prerequisites:
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Nineties Benchmark Script"
+            echo "Arc Benchmark Script"
             echo ""
             echo "Usage: ./scripts/benchmark.sh [options]"
             echo ""
@@ -92,7 +92,7 @@ if ! curl -s -o /dev/null -w "%{http_code}" "$BASE_URL" | grep -q "200\|302"; th
 fi
 
 echo "=============================================="
-echo "  Nineties Benchmark"
+echo "  Arc Benchmark"
 echo "=============================================="
 echo ""
 echo "Configuration:"
@@ -126,9 +126,9 @@ echo ""
 
 # Benchmark static assets
 echo "----------------------------------------------"
-echo "Benchmarking: GET /public/imgs/nineties-logo.png (Static Asset)"
+echo "Benchmarking: GET /public/imgs/arc-logo.png (Static Asset)"
 echo "----------------------------------------------"
-wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" "$BASE_URL/public/imgs/nineties-logo.png"
+wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" "$BASE_URL/public/imgs/arc-logo.png"
 echo ""
 
 echo "=============================================="

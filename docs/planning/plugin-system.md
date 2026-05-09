@@ -1,8 +1,8 @@
-# Plugin System Plan for Nineties
+# Plugin System Plan for Arc
 
 ## Objective
 
-Make Nineties "hookable" so features like dynamic pages can be implemented as decoupled plugins rather than core code.
+Make Arc "hookable" so features like dynamic pages can be implemented as decoupled plugins rather than core code.
 
 ---
 
@@ -37,7 +37,7 @@ let result = apply_filters("modify_content", "Hello".to_string());
 
 ### Verdict
 
-**Good fit for Nineties.** The mutex overhead is negligible compared to template rendering and DB queries. The simple API makes plugin development easy.
+**Good fit for Arc.** The mutex overhead is negligible compared to template rendering and DB queries. The simple API makes plugin development easy.
 
 ---
 
@@ -45,7 +45,7 @@ let result = apply_filters("modify_content", "Hello".to_string());
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Nineties Core                          │
+│                      Arc Core                          │
 ├─────────────────────────────────────────────────────────────┤
 │  Hooks System (the-hook)                                    │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -516,7 +516,7 @@ where
 ## Directory Structure (Final)
 
 ```
-nineties/
+arc/
 ├── src/
 │   ├── main.rs
 │   ├── routes.rs
@@ -543,7 +543,7 @@ nineties/
 
 ## Summary
 
-**`the-hook` is a good choice** for Nineties because:
+**`the-hook` is a good choice** for Arc because:
 
 1. Simple, familiar API (WordPress-style)
 2. Negligible performance overhead

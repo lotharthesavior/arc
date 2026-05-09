@@ -26,7 +26,7 @@
 
 ### Overview
 
-The `nineties-core` crate provides trait-based abstractions for event sourcing patterns. All traits are async-compatible and designed for composability.
+The `arc-core` crate provides trait-based abstractions for event sourcing patterns. All traits are async-compatible and designed for composability.
 
 **Key Design Principles:**
 - Traits over concrete types for maximum flexibility
@@ -42,7 +42,7 @@ The `nineties-core` crate provides trait-based abstractions for event sourcing p
 
 The fundamental event type representing a domain event in the system.
 
-**Location**: `nineties-core::event::Event`
+**Location**: `arc-core::event::Event`
 
 **Definition**:
 ```rust
@@ -90,7 +90,7 @@ impl Event {
 **Example**:
 ```rust
 // PLACEHOLDER: To be filled with real implementation example
-use nineties_core::Event;
+use arc_core::Event;
 use serde_json::json;
 
 let event = Event::new(
@@ -113,7 +113,7 @@ let event = Event::new(
 
 Defines the contract for persisting and retrieving events.
 
-**Location**: `nineties-core::event_store::EventStore`
+**Location**: `arc-core::event_store::EventStore`
 
 **Definition**:
 ```rust
@@ -250,7 +250,7 @@ for event in all_events {
 
 #### `SqliteEventStore`
 
-**Location**: `nineties-es-sqlite::SqliteEventStore`
+**Location**: `arc-es-sqlite::SqliteEventStore`
 
 SQLite-based implementation of `EventStore`.
 
@@ -288,7 +288,7 @@ CREATE TABLE events (
 
 Publishes events to subscribers for asynchronous processing.
 
-**Location**: `nineties-core::event_bus::EventBus`
+**Location**: `arc-core::event_bus::EventBus`
 
 **Definition**:
 ```rust
@@ -383,7 +383,7 @@ Async event bus using Tokio channels.
 
 Defines domain aggregate with command handling and event application.
 
-**Location**: `nineties-core::aggregate::Aggregate`
+**Location**: `arc-core::aggregate::Aggregate`
 
 **Definition**:
 ```rust
@@ -495,7 +495,7 @@ The projection system uses a three-trait architecture to separate concerns:
 
 Stateless event handler containing the pure logic for transforming events into read model writes. Projectors take `&self` (not `&mut self`) — all mutable state lives in the `ReadModelStore`.
 
-**Location**: `nineties-core::projection::Projector`
+**Location**: `arc-core::projection::Projector`
 
 **Definition**:
 ```rust
@@ -540,9 +540,9 @@ pub trait Projector: Send + Sync {
 
 **Example**:
 ```rust
-use nineties_core::projection::{Projector, ProjectionResult, ProjectionError};
-use nineties_core::read_model_store::ReadModelStore;
-use nineties_core::event::Event;
+use arc_core::projection::{Projector, ProjectionResult, ProjectionError};
+use arc_core::read_model_store::ReadModelStore;
+use arc_core::event::Event;
 
 struct UserListProjector;
 
@@ -574,7 +574,7 @@ impl Projector for UserListProjector {
 
 Backend-agnostic persistence layer for projection read models. Provides a uniform interface for projectors to persist and query materialized views.
 
-**Location**: `nineties-core::read_model_store::ReadModelStore`
+**Location**: `arc-core::read_model_store::ReadModelStore`
 
 **Definition**:
 ```rust
@@ -616,9 +616,9 @@ pub trait ReadModelStore: Send + Sync {
 
 #### `InMemoryReadModelStore`
 
-Built-in in-memory implementation for testing and ephemeral projections. Ships with `nineties-core`.
+Built-in in-memory implementation for testing and ephemeral projections. Ships with `arc-core`.
 
-**Location**: `nineties-core::read_model_store::InMemoryReadModelStore`
+**Location**: `arc-core::read_model_store::InMemoryReadModelStore`
 
 ```rust
 pub struct InMemoryReadModelStore {
@@ -644,7 +644,7 @@ A composed read model unit representing a projector paired with its storage. All
 
 Most users do not implement this trait directly. Instead, implement `Projector` and compose it with a `ReadModelStore` via `ProjectionUnit`.
 
-**Location**: `nineties-core::projection::Projection`
+**Location**: `arc-core::projection::Projection`
 
 **Definition**:
 ```rust
@@ -682,7 +682,7 @@ pub trait Projection: Send + Sync {
 
 Standard composition glue that wires a `Projector` + `Arc<dyn ReadModelStore>` + table name into a `Projection`.
 
-**Location**: `nineties-core::projection::ProjectionUnit`
+**Location**: `arc-core::projection::ProjectionUnit`
 
 **Definition**:
 ```rust
@@ -713,8 +713,8 @@ impl ProjectionUnit {
 
 **Example**:
 ```rust
-use nineties_core::projection::{ProjectionUnit, Projection};
-use nineties_core::read_model_store::InMemoryReadModelStore;
+use arc_core::projection::{ProjectionUnit, Projection};
+use arc_core::read_model_store::InMemoryReadModelStore;
 use std::sync::Arc;
 
 let store = Arc::new(InMemoryReadModelStore::new());
@@ -732,7 +732,7 @@ projection.handle(&event).await?;
 
 Manages multiple projections. Routes events to interested projections, handles rebuilds from the event store. All methods take `&self` (not `&mut self`).
 
-**Location**: `nineties-core::projection::ProjectionEngine`
+**Location**: `arc-core::projection::ProjectionEngine`
 
 **Definition**:
 ```rust
@@ -788,8 +788,8 @@ impl ProjectionEngine {
 
 **Example**:
 ```rust
-use nineties_core::projection::{ProjectionEngine, ProjectionUnit};
-use nineties_core::read_model_store::InMemoryReadModelStore;
+use arc_core::projection::{ProjectionEngine, ProjectionUnit};
+use arc_core::read_model_store::InMemoryReadModelStore;
 use std::sync::Arc;
 
 let mut engine = ProjectionEngine::new(event_store);
@@ -817,7 +817,7 @@ engine.rebuild_all().await?;
 
 Orchestrates command handling with aggregates, event store, and event bus.
 
-**Location**: `nineties-core::command_bus::CommandBus`
+**Location**: `arc-core::command_bus::CommandBus`
 
 **Definition**:
 ```rust
@@ -867,7 +867,7 @@ let events = command_bus.dispatch(command).await?;
 **PLACEHOLDER**: Error types will be documented as they are implemented
 
 ```rust
-// nineties-core::error
+// arc-core::error
 pub enum EventStoreError {
     ConcurrencyError { expected: i64, actual: i64 },
     StorageError(String),
@@ -1023,12 +1023,12 @@ impl Aggregate for UserAggregate {
 ### Example 3: Building a Projection (Three-Trait Pattern)
 
 ```rust
-use nineties_core::projection::{
+use arc_core::projection::{
     Projector, Projection, ProjectionUnit, ProjectionEngine,
     ProjectionResult, ProjectionError,
 };
-use nineties_core::read_model_store::{ReadModelStore, InMemoryReadModelStore};
-use nineties_core::event::Event;
+use arc_core::read_model_store::{ReadModelStore, InMemoryReadModelStore};
+use arc_core::event::Event;
 use std::sync::Arc;
 
 // Step 1: Implement a Projector (stateless event handler)
@@ -1186,8 +1186,8 @@ See [Migration Guide](#migration-guide) section below.
 
 - [Event Sourcing Architecture](09-event-sourcing-architecture.md)
 - [Implementation Guide](10-event-sourcing-implementation-guide.md)
-- [Nineties Core README](../crates/nineties-core/README.md)
-- [SQLite EventStore README](../crates/nineties-es-sqlite/README.md)
+- [Arc Core README](../crates/arc-core/README.md)
+- [SQLite EventStore README](../crates/arc-es-sqlite/README.md)
 
 ---
 

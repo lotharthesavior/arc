@@ -163,7 +163,7 @@ e2e-install: ## Install Playwright + Chromium (one-time)
 # Compile the Rust binary and build frontend assets so the E2E run hits a real, complete server
 e2e-build: ## Build binary + frontend assets for E2E
 	@echo "$(GREEN)Building binary + frontend for E2E...$(NC)"
-	cargo build --bin nineties
+	cargo build --bin arc
 	npm run build
 
 # Run the full Playwright suite. Spawns server, runs migrations + seed, executes specs, tears down.

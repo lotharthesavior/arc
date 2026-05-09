@@ -1,4 +1,4 @@
-# Nineties Progress Report
+# Arc Progress Report
 
 **Date**: 2026-02-27
 **Session**: Multi-Agent Orchestrated Review & Implementation
@@ -70,7 +70,7 @@ Created `docs/roadmap.md` with:
 #### Added `tracing` Crate
 - ✅ Added dependencies: `tracing`, `tracing-subscriber`, `tracing-actix-web`
 - ✅ Initialized subscriber in `main.rs` with environment-based filtering
-- ✅ Configured default filter: `nineties=info,actix_web=info`
+- ✅ Configured default filter: `arc=info,actix_web=info`
 
 #### Replaced All `println!` Statements
 - ✅ `main.rs` - Health checks, startup messages
@@ -221,7 +221,7 @@ All documentation is now browsable via Docsify:
 **Timeline**: 3-4 months
 **Status**: Planning complete, ready to implement
 
-- [ ] Create `nineties-core` crate
+- [ ] Create `arc-core` crate
 - [ ] Implement Event type + EventStore trait
 - [ ] Implement SQLite EventStore
 - [ ] Create EventBus + Projections
@@ -273,7 +273,7 @@ cargo run
 RUST_LOG=debug cargo run develop
 
 # Specific module debug
-RUST_LOG=nineties=debug,actix_web=info cargo run
+RUST_LOG=arc=debug,actix_web=info cargo run
 
 # Quiet mode (errors only)
 RUST_LOG=error cargo run
@@ -352,7 +352,7 @@ All code compiles successfully. No errors.
 
 ### Option B: Start Event Sourcing Foundation
 1. Create workspace structure
-2. Create `nineties-core` crate
+2. Create `arc-core` crate
 3. Implement Event type
 4. Implement EventStore trait
 5. **Deliverable**: Core ES primitives ready

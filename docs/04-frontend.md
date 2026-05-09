@@ -228,7 +228,7 @@ dist/
 ├── script-[hash].js         # Bundled JavaScript
 ├── styles-[hash].css        # Bundled CSS
 └── imgs/                    # Copied images
-    └── nineties-logo.png
+    └── arc-logo.png
 ```
 
 ### Asset Manifest

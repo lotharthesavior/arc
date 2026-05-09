@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nineties follows a traditional **MVC (Model-View-Controller)** architecture pattern with additional layers for services and helpers. The application is built around the Actix Web framework, which provides an actor-based, asynchronous HTTP server.
+Arc follows a traditional **MVC (Model-View-Controller)** architecture pattern with additional layers for services and helpers. The application is built around the Actix Web framework, which provides an actor-based, asynchronous HTTP server.
 
 ## Architectural Diagram
 

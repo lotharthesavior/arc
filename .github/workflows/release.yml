@@ -130,16 +130,16 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            name: nineties-linux-x86_64
+            name: arc-linux-x86_64
           - target: x86_64-apple-darwin
             os: macos-latest
-            name: nineties-macos-x86_64
+            name: arc-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            name: nineties-macos-aarch64
+            name: arc-macos-aarch64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            name: nineties-windows-x86_64.exe
+            name: arc-windows-x86_64.exe
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -155,15 +155,15 @@ jobs:
 
       - name: Strip binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
-        run: strip target/${{ matrix.target }}/release/nineties
+        run: strip target/${{ matrix.target }}/release/arc
 
       - name: Prepare binary
         run: |
           mkdir -p release
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/nineties.exe release/${{ matrix.name }}
+            cp target/${{ matrix.target }}/release/arc.exe release/${{ matrix.name }}
           else
-            cp target/${{ matrix.target }}/release/nineties release/${{ matrix.name }}
+            cp target/${{ matrix.target }}/release/arc release/${{ matrix.name }}
           fi
         shell: bash
 
@@ -228,7 +228,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/nineties
+          images: ${{ secrets.DOCKER_USERNAME }}/arc
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -283,7 +283,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
-          cname: nineties.dev  # Optional: your custom domain
+          cname: arc.dev  # Optional: your custom domain
 
   # Notify on release completion
   notify:
