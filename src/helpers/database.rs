@@ -1,18 +1,17 @@
-use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
-use diesel::SqliteConnection;
 use std::env;
 use std::sync::{OnceLock, RwLock};
 
+use crate::database::backend::{database_url, DbConnectionManager, DbPool, DbPooledConnection};
+
 struct PoolState {
-    pool: Pool<ConnectionManager<SqliteConnection>>,
+    pool: DbPool,
     database_url: String,
 }
 
 static POOL: OnceLock<RwLock<Option<PoolState>>> = OnceLock::new();
 
-pub fn get_connection() -> PooledConnection<ConnectionManager<SqliteConnection>> {
-    let current_db_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "database/database.sqlite".to_string());
+pub fn get_connection() -> DbPooledConnection {
+    let current_db_url = database_url();
 
     let pool_state = POOL.get_or_init(|| RwLock::new(Some(create_pool_state(&current_db_url))));
 
@@ -46,9 +45,8 @@ pub fn get_connection() -> PooledConnection<ConnectionManager<SqliteConnection>>
 }
 
 #[allow(dead_code)]
-pub fn get_connection_pool() -> Pool<ConnectionManager<SqliteConnection>> {
-    let current_db_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "database/database.sqlite".to_string());
+pub fn get_connection_pool() -> DbPool {
+    let current_db_url = database_url();
 
     let pool_state = POOL.get_or_init(|| RwLock::new(Some(create_pool_state(&current_db_url))));
 
@@ -90,9 +88,9 @@ fn create_pool_state(database_url: &str) -> PoolState {
         .parse()
         .expect("DATABASE_POOL_LIMIT must be a number");
 
-    let manager = ConnectionManager::<SqliteConnection>::new(database_url);
+    let manager = DbConnectionManager::new(database_url);
 
-    let pool = Pool::builder()
+    let pool = DbPool::builder()
         .max_size(pool_limit)
         .test_on_check_out(true)
         .build(manager)

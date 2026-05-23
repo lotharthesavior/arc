@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Mutex;
 use std::{env, fs};
+use tracing::{debug, error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod routes;
 mod http {
@@ -20,6 +22,8 @@ mod http {
 }
 
 mod database {
+    pub mod backend;
+
     pub mod seeders {
         pub mod create_users;
 
@@ -50,6 +54,8 @@ mod services {
     pub mod user_service;
 }
 
+mod validation;
+
 mod commands;
 pub mod websocket;
 #[derive(Debug)]
@@ -59,29 +65,58 @@ pub struct AppState {
 }
 
 fn check_app_health() {
-    println!("Checking App's Health.");
+    info!("Checking app health");
     if !fs::exists(PathBuf::from(".env")).unwrap() {
+        info!("Creating .env file from .env.example");
         fs::copy(PathBuf::from(".env.example"), PathBuf::from(".env"))
             .expect("Failed to copy .env.example to .env");
     }
 }
 
 pub fn check_database_health() {
-    println!("Checking Database Health.");
-    let database: String =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "database/database.sqlite".to_string());
-
-    if !fs::exists(PathBuf::from(database)).unwrap() {
-        println!("Database file not found. Please run `cargo run migrate` to create the database.");
+    info!("Checking database health");
+    if let Err(err) = database::backend::validate_backend_configuration() {
+        error!("{}", err);
         exit(1);
+    }
+
+    let database = database::backend::database_url();
+
+    if !database::backend::database_exists(&database) {
+        error!("Database file not found at: {}", database);
+        error!("Please run `cargo run migrate` to create the database");
+        exit(1);
+    }
+    debug!("Database file found at: {}", database);
+}
+
+fn check_jwt_health() {
+    match helpers::jwt::validate_jwt_configuration() {
+        Ok(_) => {}
+        Err(err) => {
+            error!("{}", err);
+            exit(1);
+        }
     }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Initialize tracing subscriber with environment-based filtering
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "arc=info,actix_web=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     check_app_health();
 
     dotenv().ok();
+    check_jwt_health();
+
+    info!("Arc application starting");
 
     let args: Vec<String> = env::args().collect();
     let app_url: String = env::var("APP_URL").expect("APP_URL must be set");
@@ -104,7 +139,7 @@ async fn main() -> std::io::Result<()> {
         "migrate" => commands::migrate::run(&args),
         "seed" => commands::seed::run(),
         _ => {
-            eprintln!("Unknown command");
+            error!("Unknown command: {}", command);
             Ok(())
         }
     }

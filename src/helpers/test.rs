@@ -1,5 +1,7 @@
 use std::env;
 
+use crate::database::backend::database_url;
+
 #[cfg(test)]
 use crate::helpers::database::reset_pool;
 
@@ -11,8 +13,7 @@ impl Drop for TestFinalizer {
         #[cfg(test)]
         reset_pool();
 
-        let database: String =
-            env::var("DATABASE_URL").unwrap_or_else(|_| "database/database.sqlite".to_string());
+        let database = env::var("DATABASE_URL").unwrap_or_else(|_| database_url());
         let _ = std::fs::remove_file(database);
     }
 }
