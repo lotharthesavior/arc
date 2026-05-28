@@ -9,11 +9,14 @@ use crate::schema::users::{email, name, password};
 use crate::services::user_service::{
     prepare_password, validate_user_credentials, UserValidationResult,
 };
+use crate::validation::user_validation::{ChangePasswordForm, UpdateProfileForm};
+use crate::validation::ValidationError;
 use crate::AppState;
 use actix_session::Session;
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder, ResponseError};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 #[get("")] // /admin - The Dashboard
 pub async fn dashboard(data: web::Data<AppState>, session: Session) -> HttpResponse {
@@ -113,6 +116,15 @@ pub async fn profile_post(form: web::Form<UserForm>, session: Session) -> impl R
             .json(serde_json::json!({"errors": {"csrf": "Invalid request. Please refresh and try again."}}));
     }
 
+    let profile_form = UpdateProfileForm {
+        name: form.name.clone(),
+        email: form.email.clone(),
+    };
+
+    if let Err(errors) = profile_form.validate() {
+        return ValidationError::from(errors).error_response();
+    }
+
     let user: User = get_session_user(&session).unwrap();
 
     let user_name: String = form.name.clone();
@@ -149,6 +161,16 @@ pub async fn profile_password_post(
             .json(serde_json::json!({"errors": {"csrf": "Invalid request. Please refresh and try again."}}));
     }
 
+    let password_form = ChangePasswordForm {
+        current_password: form.old_password.clone(),
+        new_password: form.new_password.clone(),
+        confirm_password: form.new_password.clone(),
+    };
+
+    if let Err(errors) = password_form.validate() {
+        return ValidationError::from(errors).error_response();
+    }
+
     let user: User = get_session_user(&session).unwrap();
 
     let current_email: String = form.current_email.clone();
@@ -163,7 +185,7 @@ pub async fn profile_password_post(
     }
 
     let result = diesel::update(users.find(user.id))
-        .set(password.eq(prepare_password(&*new_password)))
+        .set(password.eq(prepare_password(&new_password)))
         .execute(&mut get_connection())
         .unwrap();
 
@@ -177,6 +199,7 @@ pub async fn profile_password_post(
 
 #[cfg(test)]
 mod tests {
+    use crate::database::backend::DbPooledConnection;
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
@@ -191,16 +214,15 @@ mod tests {
     use actix_session::SessionMiddleware;
     use actix_web::cookie::{Cookie, Key};
     use actix_web::{http, test, web, App};
-    use diesel::r2d2::{ConnectionManager, PooledConnection};
-    use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
+    use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
     use diesel_migrations::MigrationHarness;
     use serial_test::serial;
     use std::env;
     use std::sync::Mutex;
 
-    fn prepare_test_db() -> PooledConnection<ConnectionManager<SqliteConnection>> {
+    fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = get_connection();
+        let mut conn: DbPooledConnection = get_connection();
         conn.revert_all_migrations(MIGRATIONS)
             .expect("Failed to revert migrations");
         conn.run_pending_migrations(MIGRATIONS)
@@ -210,7 +232,7 @@ mod tests {
     }
 
     fn seed_users_table() {
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = prepare_test_db();
+        let mut conn: DbPooledConnection = prepare_test_db();
         UserSeeder::execute(&mut conn).expect("Failed to seed users table");
     }
 
@@ -281,7 +303,7 @@ mod tests {
         let req_login = test::TestRequest::post()
             .uri("/signin")
             .cookie(session_cookie.clone())
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token.as_str()),
                 ("email", "jekyll@example.com"),
                 ("password", "password"),
@@ -356,7 +378,7 @@ mod tests {
         let req_login = test::TestRequest::post()
             .uri("/signin")
             .cookie(session_cookie.clone())
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token.as_str()),
                 ("email", "jekyll@example.com"),
                 ("password", "password"),
@@ -426,7 +448,7 @@ mod tests {
         let req_login = test::TestRequest::post()
             .uri("/signin")
             .cookie(session_cookie.clone())
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token.as_str()),
                 ("email", "jekyll@example.com"),
                 ("password", "password"),
@@ -462,7 +484,7 @@ mod tests {
         let req4 = test::TestRequest::post()
             .cookie(parsed_cookie)
             .uri("/admin/profile")
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token),
                 ("name", "Hyde"),
                 ("email", new_email),
@@ -531,7 +553,7 @@ mod tests {
         let req_login = test::TestRequest::post()
             .uri("/signin")
             .cookie(session_cookie.clone())
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token.as_str()),
                 ("email", "jekyll@example.com"),
                 ("password", "password"),
@@ -565,17 +587,17 @@ mod tests {
         let req4 = test::TestRequest::post()
             .cookie(parsed_cookie)
             .uri("/admin/profile-password")
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token),
                 ("current_email", user_email),
                 ("old_password", "password"),
-                ("new_password", "new-password"),
+                ("new_password", "SecurePass123"),
             ])
             .to_request();
         let resp4 = test::call_service(&app, req4).await;
         assert_eq!(resp4.status(), http::StatusCode::OK);
         assert_eq!(
-            validate_user_credentials(user_email, "new-password"),
+            validate_user_credentials(user_email, "SecurePass123"),
             UserValidationResult::Valid
         );
     }

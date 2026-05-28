@@ -3,6 +3,7 @@ use actix_session::Session;
 use actix_web::{web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use std::time::{Duration, Instant};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::websocket::server::{Connect, Disconnect, Subscribe, Unsubscribe, WsMessage, WsServer};
@@ -40,10 +41,7 @@ impl WsConnection {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             // Check client heartbeat
             if Instant::now().duration_since(act.heartbeat) > CLIENT_TIMEOUT {
-                eprintln!(
-                    "WebSocket client heartbeat failed, disconnecting: {}",
-                    act.id
-                );
+                warn!(connection_id = %act.id, "WebSocket client heartbeat timeout, disconnecting");
                 ctx.stop();
                 return;
             }
@@ -94,7 +92,7 @@ impl Actor for WsConnection {
             addr: addr.recipient(),
         });
 
-        println!("WebSocket connection started: {}", self.id);
+        info!(connection_id = %self.id, user_id = ?self.user_id, "WebSocket connection actor started");
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {

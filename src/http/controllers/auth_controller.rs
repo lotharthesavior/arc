@@ -8,10 +8,12 @@ use crate::helpers::template::load_template;
 use crate::models::user::User;
 use crate::schema::users::dsl::*;
 use crate::services::user_service::{validate_user_credentials, UserValidationResult};
+use crate::validation::user_validation::LoginForm;
 use crate::AppState;
 use actix_session::Session;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use validator::Validate;
 
 #[get("/signin")]
 pub async fn signin(data: web::Data<AppState>, session: Session) -> impl Responder {
@@ -73,12 +75,17 @@ pub async fn signin_post(req_body: String, session: Session) -> impl Responder {
     let email_param: String = get_from_form_body("email".to_string(), req_body.clone());
     let password_param: String = get_from_form_body("password".to_string(), req_body);
 
-    if email_param.is_empty() || password_param.is_empty() {
+    let login_form = LoginForm {
+        email: email_param.clone(),
+        password: password_param.clone(),
+    };
+
+    if login_form.validate().is_err() {
         session
             .insert(
                 "message",
                 serde_json::json!({
-                    "error": "Email and password are required",
+                    "error": "Valid email and password are required",
                     "success": ""
                 }),
             )
@@ -106,7 +113,7 @@ pub async fn signin_post(req_body: String, session: Session) -> impl Responder {
                 .finish()
         }
         UserValidationResult::InvalidPasswordHash => {
-            println!("Invalid credentials: Couldn't parse password hash");
+            // Security: Don't log details to avoid information disclosure
             session
                 .insert(
                     "message",
@@ -156,6 +163,7 @@ pub async fn signin_post(req_body: String, session: Session) -> impl Responder {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::backend::DbPooledConnection;
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
@@ -170,16 +178,15 @@ mod tests {
     use actix_session::{Session, SessionMiddleware};
     use actix_web::cookie::{Cookie, Key};
     use actix_web::{http, test, web, App, HttpRequest, HttpResponse};
-    use diesel::r2d2::{ConnectionManager, PooledConnection};
-    use diesel::{QueryDsl, RunQueryDsl, SqliteConnection};
+    use diesel::{QueryDsl, RunQueryDsl};
     use diesel_migrations::MigrationHarness;
     use serial_test::serial;
     use std::env;
     use std::sync::Mutex;
 
-    fn prepare_test_db() -> PooledConnection<ConnectionManager<SqliteConnection>> {
+    fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = get_connection();
+        let mut conn: DbPooledConnection = get_connection();
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
 
@@ -187,7 +194,7 @@ mod tests {
     }
 
     fn seed_users_table() {
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = prepare_test_db();
+        let mut conn: DbPooledConnection = prepare_test_db();
         UserSeeder::execute(&mut conn).expect("Failed to seed users table");
     }
 
@@ -196,7 +203,7 @@ mod tests {
     async fn test_signin_route() {
         let _finalizer = TestFinalizer;
 
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = prepare_test_db();
+        let mut conn: DbPooledConnection = prepare_test_db();
         seed_users_table();
         let all_users: Vec<i32> = users.select(id).load::<i32>(&mut conn).unwrap();
         let user_id: i32 = all_users[0];
@@ -222,20 +229,19 @@ mod tests {
                 .service(auth_controller::signout)
                 .service(
                     web::resource("/check-data")
-                        .route(web::get().to({
-                            let user_id: i32 = user_id.clone();
-                            move |req: HttpRequest, session: Session| async move {
+                        .route(web::get().to(
+                            move |_req: HttpRequest, session: Session| async move {
                                 let session_user_id: i32 = session
                                     .get::<i32>("user_id")
                                     .unwrap_or(Some(0))
                                     .unwrap_or(0);
                                 if user_id == session_user_id {
-                                    HttpResponse::Ok()
+                                    HttpResponse::Ok().finish()
                                 } else {
-                                    HttpResponse::BadRequest()
+                                    HttpResponse::BadRequest().finish()
                                 }
-                            }
-                        }))
+                            },
+                        ))
                         .wrap(AuthMiddleware),
                 ),
         )
@@ -266,7 +272,7 @@ mod tests {
         let req2 = test::TestRequest::post()
             .uri("/signin")
             .cookie(session_cookie.clone())
-            .set_form(&[
+            .set_form([
                 ("csrf_token", csrf_token),
                 ("email", "jekyll@example.com"),
                 ("password", "password"),

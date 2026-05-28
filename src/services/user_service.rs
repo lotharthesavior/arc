@@ -5,6 +5,7 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use tracing::warn;
 
 #[derive(PartialEq, Debug)]
 pub enum UserValidationResult {
@@ -23,19 +24,19 @@ pub fn validate_user_credentials(user_email: &str, user_password: &str) -> UserV
         .load::<User>(conn)
         .expect("Failed to load users");
 
-    if user.len() == 0 {
+    if user.is_empty() {
         return UserValidationResult::InvalidEmail;
     }
 
     let user: &User = user.first().unwrap();
     let parsed_hash = PasswordHash::new(&user.password);
     if parsed_hash.is_err() {
-        println!("Invalid credentials: Couldn't parse password hash");
+        warn!("Failed to parse password hash for user ID: {}", user.id);
         return UserValidationResult::InvalidPasswordHash;
     }
 
     let password_verified: bool = Argon2::default()
-        .verify_password((&*user_password).as_ref(), &parsed_hash.unwrap())
+        .verify_password(user_password.as_ref(), &parsed_hash.unwrap())
         .is_ok();
 
     if password_verified {

@@ -5,25 +5,24 @@ use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::process::{ChildStderr, ChildStdout, Command};
 use tokio::task::JoinHandle;
 use tokio::try_join;
+use tracing::{debug, error, info};
 
 pub async fn run_development() -> io::Result<()> {
-    println!("Running develop...");
+    info!("Starting development mode");
 
     let cargo_watch_task: JoinHandle<io::Result<()>> = tokio::spawn(run_cargo_watch());
     let bundle_task: JoinHandle<io::Result<()>> = tokio::spawn(run_vite_bundle());
 
     match try_join!(cargo_watch_task, bundle_task) {
-        Ok(_) => println!("Development environment running successfully."),
+        Ok(_) => {
+            info!("Development environment running successfully");
+            Ok(())
+        }
         Err(e) => {
-            eprintln!("Error: {:?}", e);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to run development tasks",
-            ));
+            error!("Development environment error: {:?}", e);
+            Err(io::Error::other("Failed to run development tasks"))
         }
     }
-
-    Ok(())
 }
 
 async fn run_cargo_watch() -> io::Result<()> {
@@ -54,14 +53,14 @@ async fn run_cargo_watch() -> io::Result<()> {
     let stdout_task = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStdout>> = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            eprintln!("stdout: {}", line);
+            debug!("[cargo-watch] {}", line);
         }
     });
 
     let stderr_task = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStderr>> = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            eprintln!("stderr: {}", line);
+            error!("[cargo-watch] {}", line);
         }
     });
 
@@ -74,10 +73,10 @@ async fn run_cargo_watch() -> io::Result<()> {
     stderr_task.await.expect("Failed to handle stderr");
 
     if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Cargo Watch process exited with status: {:?}", status),
-        ));
+        return Err(io::Error::other(format!(
+            "Cargo Watch process exited with status: {:?}",
+            status
+        )));
     }
 
     Ok(())
@@ -98,10 +97,10 @@ async fn run_vite_bundle() -> io::Result<()> {
             .expect("Npm Install wasn't running");
 
         if !status.success() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Npm Install process exited with status: {:?}", status),
-            ));
+            return Err(io::Error::other(format!(
+                "Npm Install process exited with status: {:?}",
+                status
+            )));
         }
     }
 
@@ -126,14 +125,14 @@ async fn run_vite_bundle() -> io::Result<()> {
     let stdout_task = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStdout>> = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            eprintln!("stdout: {}", line);
+            debug!("[vite] {}", line);
         }
     });
 
     let stderr_task: JoinHandle<()> = tokio::spawn(async move {
         let mut reader: Lines<BufReader<ChildStderr>> = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            eprintln!("stderr: {}", line);
+            error!("[vite] {}", line);
         }
     });
 
@@ -146,10 +145,10 @@ async fn run_vite_bundle() -> io::Result<()> {
     stderr_task.await.expect("Failed to handle stderr");
 
     if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Vite process exited with status: {:?}", status),
-        ));
+        return Err(io::Error::other(format!(
+            "Vite process exited with status: {:?}",
+            status
+        )));
     }
 
     Ok(())

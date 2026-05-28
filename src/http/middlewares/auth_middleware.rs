@@ -65,6 +65,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::database::backend::DbPooledConnection;
     use crate::database::seeders::create_users::UserSeeder;
     use crate::database::seeders::traits::seeder::Seeder;
     use crate::helpers::database::get_connection;
@@ -78,16 +79,15 @@ mod tests {
     use actix_session::{Session, SessionMiddleware};
     use actix_web::cookie::{Cookie, Key};
     use actix_web::{http, test, web, App, HttpRequest, HttpResponse};
-    use diesel::r2d2::{ConnectionManager, PooledConnection};
-    use diesel::{QueryDsl, RunQueryDsl, SqliteConnection};
+    use diesel::{QueryDsl, RunQueryDsl};
     use diesel_migrations::MigrationHarness;
     use serial_test::serial;
     use std::env;
     use std::sync::Mutex;
 
-    fn prepare_test_db() -> PooledConnection<ConnectionManager<SqliteConnection>> {
+    fn prepare_test_db() -> DbPooledConnection {
         dotenv::from_filename(".env.test").ok();
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = get_connection();
+        let mut conn: DbPooledConnection = get_connection();
         conn.run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
 
@@ -95,7 +95,7 @@ mod tests {
     }
 
     fn seed_users_table() {
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = prepare_test_db();
+        let mut conn: DbPooledConnection = prepare_test_db();
         UserSeeder::execute(&mut conn).expect("Failed to seed users table");
     }
 
@@ -104,7 +104,7 @@ mod tests {
     async fn test_auth_middleware() {
         let _finalizer = TestFinalizer;
 
-        let mut conn: PooledConnection<ConnectionManager<SqliteConnection>> = prepare_test_db();
+        let mut conn: DbPooledConnection = prepare_test_db();
         seed_users_table();
         let all_users: Vec<i32> = users.select(id).load::<i32>(&mut conn).unwrap();
         let user_id: i32 = all_users[0];
@@ -115,43 +115,40 @@ mod tests {
                 .as_bytes(),
         );
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(AppState {
-                    app_name: Mutex::from(env::var("APP_NAME").unwrap_or_else(|_| "".to_string())),
-                    _user_id: Mutex::from(None),
-                }))
-                .wrap(SessionMiddleware::new(
-                    CookieSessionStore::default(),
-                    secret_key.clone(),
-                ))
-                .service(web::resource("/force-auth").route(web::get().to({
-                    let user_id: i32 = user_id.clone();
-                    move |req: HttpRequest, session: Session| async move {
-                        session.insert("user_id", user_id).unwrap();
-                        HttpResponse::Ok()
-                    }
-                })))
-                .service(
-                    web::resource("/check-data")
-                        .wrap(AuthMiddleware)
-                        .route(web::get().to({
-                            let user_id: i32 = user_id.clone();
-                            move |req: HttpRequest, session: Session| async move {
-                                let session_user_id: i32 = session
-                                    .get::<i32>("user_id")
-                                    .unwrap_or(Some(0))
-                                    .unwrap_or(0);
-                                if user_id == session_user_id {
-                                    HttpResponse::Ok()
-                                } else {
-                                    HttpResponse::BadRequest()
-                                }
+        let app =
+            test::init_service(
+                App::new()
+                    .app_data(web::Data::new(AppState {
+                        app_name: Mutex::from(
+                            env::var("APP_NAME").unwrap_or_else(|_| "".to_string()),
+                        ),
+                        _user_id: Mutex::from(None),
+                    }))
+                    .wrap(SessionMiddleware::new(
+                        CookieSessionStore::default(),
+                        secret_key.clone(),
+                    ))
+                    .service(web::resource("/force-auth").route(web::get().to(
+                        move |_req: HttpRequest, session: Session| async move {
+                            session.insert("user_id", user_id).unwrap();
+                            HttpResponse::Ok().finish()
+                        },
+                    )))
+                    .service(web::resource("/check-data").wrap(AuthMiddleware).route(
+                        web::get().to(move |_req: HttpRequest, session: Session| async move {
+                            let session_user_id: i32 = session
+                                .get::<i32>("user_id")
+                                .unwrap_or(Some(0))
+                                .unwrap_or(0);
+                            if user_id == session_user_id {
+                                HttpResponse::Ok().finish()
+                            } else {
+                                HttpResponse::BadRequest().finish()
                             }
-                        })),
-                ),
-        )
-        .await;
+                        }),
+                    )),
+            )
+            .await;
 
         let req1 = test::TestRequest::get().uri("/force-auth").to_request();
         let resp1 = test::call_service(&app, req1).await;

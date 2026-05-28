@@ -1,5 +1,5 @@
 [package]
-name = "nineties"
+name = "arc"
 version = "0.2.2"
 edition = "2021"
 authors = ["Savio Resende <savio@savioresende.com>"]

@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test clean format check lint docker-build docker-up docker-down
+.PHONY: help install build dev serve migrate seed test test-e2e test-confidence clean format check lint docker-build docker-up docker-down
 
 # Default target
 .DEFAULT_GOAL := help
@@ -97,6 +97,17 @@ diesel-migration: ## Create a new Diesel migration (usage: make diesel-migration
 test: ## Run all tests
 	@echo "$(GREEN)Running tests...$(NC)"
 	cargo test
+
+# Run browser-level confidence tests against a real app server using Playwright
+test-e2e: ## Run Playwright end-to-end confidence tests
+	@echo "$(GREEN)Running Playwright confidence tests...$(NC)"
+	npm run test:e2e
+
+# Run both Rust tests and browser confidence tests
+test-confidence: ## Run Rust tests and Playwright confidence tests
+	@echo "$(GREEN)Running full confidence suite...$(NC)"
+	cargo test
+	npm run test:e2e
 
 # Run tests with full output including println! statements
 test-verbose: ## Run tests with verbose output

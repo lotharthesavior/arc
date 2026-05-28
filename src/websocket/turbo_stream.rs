@@ -1,7 +1,6 @@
 /// Turbo Stream HTML generation utilities
 /// These functions generate Turbo Stream-formatted HTML that can be sent
 /// over WebSocket to update the DOM in real-time.
-
 /// Generate a Turbo Stream append action
 /// Appends content to the end of the target element
 pub fn turbo_stream_append(target: &str, html: &str) -> String {

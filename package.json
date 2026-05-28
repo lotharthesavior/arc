@@ -1,19 +1,26 @@
 {
-  "devDependencies": {
-    "@tailwindcss/forms": "^0.5.9",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "rollup-plugin-copy": "^3.5.0",
-    "tailwindcss": "^3.4.17",
-    "vite": "^6.0.7"
-  },
   "scripts": {
     "build": "vite build",
-    "dev": "vite dev"
+    "dev": "vite dev",
+    "docs:serve": "docsify serve docs --port 3000",
+    "docs:init": "docsify init docs",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:confidence": "cargo test && playwright test"
   },
   "dependencies": {
     "@hotwired/turbo": "^8.0.0",
     "@hotwired/stimulus": "^3.2.0",
     "toastify-js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@tailwindcss/forms": "^0.5.9",
+    "autoprefixer": "^10.4.20",
+    "docsify-cli": "^4.4.4",
+    "postcss": "^8.4.49",
+    "rollup-plugin-copy": "^3.5.0",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.0.7"
   }
 }

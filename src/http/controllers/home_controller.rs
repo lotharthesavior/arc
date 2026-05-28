@@ -17,7 +17,7 @@ pub async fn home(data: web::Data<AppState>, session: Session) -> impl Responder
         "home.html",
         vec![
             ("name", app_name),
-            ("user_authenticated", &user_authenticated),
+            ("user_authenticated", user_authenticated),
             ("session_message", &get_session_message(&session, false).1),
         ],
         None,
