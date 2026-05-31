@@ -922,6 +922,29 @@ pub trait Aggregate: Send + Sync + Default {
         }
         aggregate
     }
+
+    /// Serialize current state for snapshotting.
+    ///
+    /// Default returns `None`: an aggregate opts out and is always reconstructed
+    /// by replaying its stream. Override to return `Some(state)` — typically via
+    /// `serde_json::to_value(self)` — once the aggregate is `Serialize`.
+    fn to_snapshot(&self) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Reconstruct an aggregate from a previously snapshotted state.
+    ///
+    /// Default returns `None` so a loader falls back to stream replay. Override
+    /// to deserialize the value produced by `to_snapshot`. `Option` (rather than
+    /// `Result`) keeps the contract simple: a `None` — whether opted out or a
+    /// failed decode — is always handled by replaying from sequence 0.
+    fn from_snapshot(state: serde_json::Value) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        let _ = state;
+        None
+    }
 }
 
 #[cfg(test)]
@@ -1294,6 +1317,64 @@ mod tests {
         );
         aggregate.apply(&event2);
         assert_eq!(aggregate.version(), 2);
+    }
+
+    // An aggregate that opts into snapshots by serializing its own state.
+    #[derive(Default, Serialize, Deserialize, PartialEq, Debug)]
+    struct SnapshotCounter {
+        value: i32,
+        version: i64,
+    }
+
+    #[async_trait]
+    impl Aggregate for SnapshotCounter {
+        type Command = CounterCommand;
+        type Event = CounterEvent;
+        type Error = CounterError;
+
+        fn aggregate_type() -> &'static str {
+            "SnapshotCounter"
+        }
+
+        fn version(&self) -> i64 {
+            self.version
+        }
+
+        async fn handle(&self, _command: Self::Command) -> Result<Vec<Event>, Self::Error> {
+            Ok(vec![])
+        }
+
+        fn apply(&mut self, event: &Event) {
+            self.version = event.sequence;
+        }
+
+        fn to_snapshot(&self) -> Option<serde_json::Value> {
+            serde_json::to_value(self).ok()
+        }
+
+        fn from_snapshot(state: serde_json::Value) -> Option<Self> {
+            serde_json::from_value(state).ok()
+        }
+    }
+
+    #[test]
+    fn test_snapshot_round_trip_reconstructs_state() {
+        let original = SnapshotCounter {
+            value: 42,
+            version: 7,
+        };
+        let state = original
+            .to_snapshot()
+            .expect("opted-in aggregate snapshots");
+        let restored = SnapshotCounter::from_snapshot(state).expect("snapshot decodes");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_default_snapshot_methods_opt_out() {
+        // CounterAggregate does not override the snapshot hooks.
+        assert!(CounterAggregate::default().to_snapshot().is_none());
+        assert!(CounterAggregate::from_snapshot(serde_json::json!({})).is_none());
     }
 
     #[tokio::test]

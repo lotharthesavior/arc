@@ -13,6 +13,7 @@ use arc_core::event::Event;
 use arc_core::event_store::{
     validate_audit_batch, EventStore, EventStoreError, EventStoreResult, VersionCheck,
 };
+use arc_core::snapshot::Snapshot;
 use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
@@ -135,6 +136,55 @@ impl EventRecord {
     }
 }
 
+/// Database row used for upserting snapshots. `state` holds the aggregate's
+/// serialized JSON; `created_at` is milliseconds since epoch (same unit as the
+/// core `Snapshot`), stored as i64 to match the events table's `timestamp`.
+#[derive(Debug, Insertable, Clone)]
+#[diesel(table_name = snapshots)]
+struct NewSnapshotRecord {
+    pub aggregate_id: String,
+    pub aggregate_type: String,
+    pub version: i64,
+    pub state: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Queryable, Clone)]
+struct SnapshotRecord {
+    pub aggregate_id: String,
+    pub aggregate_type: String,
+    pub version: i64,
+    pub state: String,
+    pub created_at: i64,
+}
+
+impl NewSnapshotRecord {
+    fn from_snapshot(snapshot: &Snapshot) -> Result<Self, EventStoreError> {
+        Ok(NewSnapshotRecord {
+            aggregate_id: snapshot.aggregate_id.clone(),
+            aggregate_type: snapshot.aggregate_type.clone(),
+            version: snapshot.version,
+            state: serde_json::to_string(&snapshot.state)
+                .map_err(|e| EventStoreError::serialization(e.to_string()))?,
+            created_at: snapshot.created_at as i64,
+        })
+    }
+}
+
+impl SnapshotRecord {
+    fn to_snapshot(&self) -> Result<Snapshot, EventStoreError> {
+        let state: serde_json::Value = serde_json::from_str(&self.state)
+            .map_err(|e| EventStoreError::serialization(e.to_string()))?;
+        Ok(Snapshot {
+            aggregate_id: self.aggregate_id.clone(),
+            aggregate_type: self.aggregate_type.clone(),
+            version: self.version,
+            state,
+            created_at: self.created_at as u64,
+        })
+    }
+}
+
 mod schema {
     diesel::table! {
         events (id) {
@@ -155,9 +205,19 @@ mod schema {
             correlation_id -> Text,
         }
     }
+
+    diesel::table! {
+        snapshots (aggregate_id) {
+            aggregate_id -> Text,
+            aggregate_type -> Text,
+            version -> BigInt,
+            state -> Text,
+            created_at -> BigInt,
+        }
+    }
 }
 
-use schema::events;
+use schema::{events, snapshots};
 
 type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
@@ -338,6 +398,57 @@ impl EventStore for SqliteEventStore {
                 .unwrap_or(0);
 
             Ok(version)
+        })
+        .await
+        .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
+    }
+
+    async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
+        let record = NewSnapshotRecord::from_snapshot(snapshot)?;
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || -> EventStoreResult<()> {
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
+
+            // One snapshot per aggregate: replace the stored row in place rather
+            // than accumulating stale versions.
+            diesel::insert_into(snapshots::table)
+                .values(&record)
+                .on_conflict(snapshots::aggregate_id)
+                .do_update()
+                .set((
+                    snapshots::aggregate_type.eq(&record.aggregate_type),
+                    snapshots::version.eq(record.version),
+                    snapshots::state.eq(&record.state),
+                    snapshots::created_at.eq(record.created_at),
+                ))
+                .execute(&mut *conn)
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
+    }
+
+    async fn load_snapshot(&self, aggregate_id: &str) -> EventStoreResult<Option<Snapshot>> {
+        let aggregate_id = aggregate_id.to_string();
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
+
+            let record: Option<SnapshotRecord> = snapshots::table
+                .filter(snapshots::aggregate_id.eq(&aggregate_id))
+                .first::<SnapshotRecord>(&mut conn)
+                .optional()
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+            record.map(|r| r.to_snapshot()).transpose()
         })
         .await
         .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
@@ -922,5 +1033,34 @@ mod tests {
         for (i, e) in loaded.iter().enumerate() {
             assert_eq!(e.sequence, (i + 1) as i64);
         }
+    }
+
+    #[tokio::test]
+    async fn test_save_then_load_snapshot() {
+        let store = setup_test_store().await;
+        let snap = Snapshot::new("agg-1", "User", 5, json!({ "name": "Alice" }));
+        store.save_snapshot(&snap).await.unwrap();
+        let loaded = store.load_snapshot("agg-1").await.unwrap();
+        assert_eq!(loaded, Some(snap));
+    }
+
+    #[tokio::test]
+    async fn test_load_snapshot_unknown_returns_none() {
+        let store = setup_test_store().await;
+        assert_eq!(store.load_snapshot("missing").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_save_snapshot_upserts_newer_version() {
+        let store = setup_test_store().await;
+        store
+            .save_snapshot(&Snapshot::new("agg-2", "User", 3, json!({ "v": 3 })))
+            .await
+            .unwrap();
+        let newer = Snapshot::new("agg-2", "User", 9, json!({ "v": 9 }));
+        store.save_snapshot(&newer).await.unwrap();
+        let loaded = store.load_snapshot("agg-2").await.unwrap().unwrap();
+        assert_eq!(loaded.version, 9);
+        assert_eq!(loaded.state["v"], 9);
     }
 }

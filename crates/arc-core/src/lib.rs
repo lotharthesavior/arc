@@ -28,6 +28,7 @@ pub mod integrity;
 pub mod projection;
 pub mod read_model_store;
 pub mod session;
+pub mod snapshot;
 
 #[cfg(test)]
 mod tests {

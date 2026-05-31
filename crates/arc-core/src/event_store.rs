@@ -19,6 +19,7 @@
 
 use crate::audit::AuditError;
 use crate::event::Event;
+use crate::snapshot::Snapshot;
 use async_trait::async_trait;
 use thiserror::Error;
 
@@ -86,6 +87,11 @@ pub enum EventStoreError {
 
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
+
+    /// The store does not implement snapshot persistence. Callers fall back to
+    /// replaying the full event stream.
+    #[error("snapshots not supported by this store")]
+    Unsupported,
 
     #[error("Event store error: {message}")]
     Other { message: String },
@@ -165,6 +171,25 @@ pub trait EventStore: Send + Sync {
     async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>>;
 
     async fn get_version(&self, aggregate_id: &str) -> EventStoreResult<i64>;
+
+    /// Persist an aggregate snapshot (upsert by `aggregate_id`).
+    ///
+    /// Default returns `EventStoreError::Unsupported` so stores that have not
+    /// implemented snapshotting compile unchanged and fail loudly if a caller
+    /// tries to save one.
+    async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
+        let _ = snapshot;
+        Err(EventStoreError::Unsupported)
+    }
+
+    /// Load the latest snapshot for an aggregate, if one exists.
+    ///
+    /// Default returns `Ok(None)` — safe because the caller then replays the
+    /// stream from sequence 0, which is always correct, just slower.
+    async fn load_snapshot(&self, aggregate_id: &str) -> EventStoreResult<Option<Snapshot>> {
+        let _ = aggregate_id;
+        Ok(None)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,6 +199,7 @@ pub trait EventStore: Send + Sync {
 #[cfg(any(test, feature = "test-utils"))]
 mod in_memory {
     use super::*;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex as TokioMutex;
 
@@ -185,6 +211,7 @@ mod in_memory {
     #[derive(Clone, Default)]
     pub struct InMemoryEventStore {
         events: Arc<TokioMutex<Vec<Event>>>,
+        snapshots: Arc<TokioMutex<HashMap<String, Snapshot>>>,
     }
 
     impl InMemoryEventStore {
@@ -261,6 +288,17 @@ mod in_memory {
                 .map(|e| e.sequence)
                 .max()
                 .unwrap_or(0))
+        }
+
+        async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
+            let mut snapshots = self.snapshots.lock().await;
+            snapshots.insert(snapshot.aggregate_id.clone(), snapshot.clone());
+            Ok(())
+        }
+
+        async fn load_snapshot(&self, aggregate_id: &str) -> EventStoreResult<Option<Snapshot>> {
+            let snapshots = self.snapshots.lock().await;
+            Ok(snapshots.get(aggregate_id).cloned())
         }
     }
 }
@@ -348,5 +386,34 @@ mod tests {
             .unwrap();
         let loaded = store.load("u1").await.unwrap();
         assert_eq!(loaded.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_snapshot_save_then_load() {
+        let store = InMemoryEventStore::new();
+        let snap = Snapshot::new("u1", "User", 3, json!({ "name": "Alice" }));
+        store.save_snapshot(&snap).await.unwrap();
+        let loaded = store.load_snapshot("u1").await.unwrap();
+        assert_eq!(loaded, Some(snap));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_load_snapshot_unknown_returns_none() {
+        let store = InMemoryEventStore::new();
+        assert_eq!(store.load_snapshot("missing").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_snapshot_overwrites_on_resave() {
+        let store = InMemoryEventStore::new();
+        store
+            .save_snapshot(&Snapshot::new("u1", "User", 3, json!({ "v": 3 })))
+            .await
+            .unwrap();
+        let newer = Snapshot::new("u1", "User", 9, json!({ "v": 9 }));
+        store.save_snapshot(&newer).await.unwrap();
+        let loaded = store.load_snapshot("u1").await.unwrap().unwrap();
+        assert_eq!(loaded.version, 9);
+        assert_eq!(loaded.state["v"], 9);
     }
 }
