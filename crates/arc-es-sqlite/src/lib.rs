@@ -234,8 +234,7 @@ impl EventStore for SqliteEventStore {
                     }
                 }
 
-                let mut expected_sequence = current_version + 1;
-                for event in &new_events {
+                for (expected_sequence, event) in (current_version + 1..).zip(new_events.iter()) {
                     if event.sequence != expected_sequence {
                         return Err(EventStoreError::InvalidSequence {
                             aggregate_id: aggregate_id.clone(),
@@ -243,7 +242,6 @@ impl EventStore for SqliteEventStore {
                             actual: event.sequence,
                         });
                     }
-                    expected_sequence += 1;
                 }
 
                 for event in &new_events {
