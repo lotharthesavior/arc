@@ -28,7 +28,7 @@ Interface-level work; full implementation may extend into Step 2.
 - [ ] `docs/02-architecture.md` — post-refactor layer diagram
 - [ ] `docs/03-backend.md` — write-path change note
 - [ ] `docs/06-testing.md` — "Testing Event-Sourced Domain Logic" section
-- [ ] `docs/roadmap.md` — stale status entries
+- [x] `docs/roadmap.md` — stale status entries reconciled against master (Phase 1.3 migration, Phase 7 CI/CD, Phase 4.3 clippy, Phase 9.3 snapshot store).
 
 ## 🟡 Infra (Step 1 deliverable, used by Step 3)
 
@@ -38,7 +38,7 @@ Interface-level work; full implementation may extend into Step 2.
 
 - [x] `es-sqlite/lib.rs` — `i64 → i32` cast on sequence/timestamp removed. Schema migrated via `2026-04-26-000001_widen_event_int_columns` (recreate table with `BIGINT` columns + index restoration). Diesel schema, record types, and queries widened to `i64`. New regression test `test_sequence_above_i32_max_roundtrips_without_truncation` confirms `i32::MAX + N` round-trips intact. ✅
 - [x] `ReadModelStore::execute(sql, params)` SQL-dialect leak — redesigned to typed `upsert/delete/get/find_by/list/truncate` before any projector multiplied. ✅
-- [ ] Snapshot support — `EventStore::save_snapshot/load_snapshot`, `Aggregate::to_snapshot/from_snapshot`. Defer until Step 5 alongside Postgres.
+- [~] Snapshot support — interface + SQLite persistence landed at Step 1: `Snapshot` struct + `EventStore::save_snapshot/load_snapshot` (`arc-core::snapshot`, `event_store.rs`), `Aggregate::to_snapshot/from_snapshot` (`aggregate.rs`), `arc-es-sqlite` upsert/load impl, migration `2026-05-31-000001_create_snapshots`. **Remaining:** CommandBus load-path wiring (shortcut replay from latest snapshot) — still pending.
 - [ ] `InProcessEventBus::publish` blocks write path. Separate synchronous in-transaction handlers from async side-effects (email/Stripe/JetStream). Fold into Step 3.
 
 ## ⚪ Transitional Debt (closed)
@@ -47,12 +47,12 @@ Interface-level work; full implementation may extend into Step 2.
 
 ## ✅ Done (cumulative)
 
-Architecture skeleton · single-hash register · email index · UUID JWT · ES login · aggregate-loaded profile · DELETE path · `CONVENTIONS.md` · `scripts/new-aggregate.sh` · HIPAA-1 audit · HIPAA-2 access logger (incl. 2a failure policy) · HIPAA-3 idle timeout · HIPAA-4 server-side session store + jti + logout · HIPAA-5 integrity chain · es-sqlite i64 widening · `Dockerfile` + compose audit · `users_view` projection + `SqliteReadModelStore` + `UserProjector` + replay-from-zero · cookie `/signin` cutover (SessionUser POD, projection-backed auth, `CommandBus`-driven admin mutations, legacy `users`/`user_email_index` dropped) · **197 Rust workspace tests pass**
+Architecture skeleton · single-hash register · email index · UUID JWT · ES login · aggregate-loaded profile · DELETE path · `CONVENTIONS.md` · `scripts/new-aggregate.sh` · HIPAA-1 audit · HIPAA-2 access logger (incl. 2a failure policy) · HIPAA-3 idle timeout · HIPAA-4 server-side session store + jti + logout · HIPAA-5 integrity chain · es-sqlite i64 widening · `Dockerfile` + compose audit · `users_view` projection + `SqliteReadModelStore` + `UserProjector` + replay-from-zero · cookie `/signin` cutover (SessionUser POD, projection-backed auth, `CommandBus`-driven admin mutations, legacy `users`/`user_email_index` dropped) · snapshot interface + SQLite persistence (migration `2026-05-31-000001_create_snapshots`; CommandBus wiring pending) · CI/CD workflows (`ci.yml` clippy/fmt/matrix/tests/frontend + `security.yml` cargo-audit) · **197 Rust workspace tests pass**
 
 ## Recommended Next
 
 1. **Step 3 — `arc-es-nats` (JetStream `EventBus`).** Split `InProcessEventBus` into sync (in-tx projectors + integrity chain) vs async (JetStream + email/Stripe).
 2. **Step 4 — `arc-worker` crate** (durable consumer driving `ProjectionEngine` out-of-process).
-3. **Snapshot interface** — defer to Step 5 alongside Postgres.
+3. **Snapshot CommandBus wiring** — interface + SQLite persistence already on master; remaining work is wiring the CommandBus load path to shortcut replay from the latest snapshot.
 4. **HIPAA-2b** — compile-time read-logging guarantee. Revisit when read surface grows beyond `/profile`.
 5. **Documentation cluster** — `docs/tutorials/02-adding-a-projection.md` plus reference doc reconciliation.

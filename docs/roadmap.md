@@ -2,7 +2,7 @@
 
 > Comprehensive development plan synthesized from architecture, security, reliability, QA, UX/DX, and CI/CD specialist reviews.
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-05-31
 
 ---
 
@@ -196,32 +196,24 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
   - **Dependencies**: Core library ✅
   - **Status**: Deferred to Phase 2
 
-### 1.3 Migration from Current MVC (0% Complete - Ready to Start)
+### 1.3 Migration from Current MVC (Complete)
 
-**Progress**: 0 of 3 phases completed
-**Current**: All writes use direct Diesel ORM mutations
+**Progress**: Migration complete; dual-write phase skipped (went straight to projection-backed writes)
+**Current**: All writes go through `CommandBus`; reads served from the `users_view` projection (`UserProjector`). Legacy Diesel `users`/`user_email_index` tables dropped (migration `2026-05-08-000001_drop_legacy_users`); `User`/`NewUser` Diesel structs removed.
 
-- [ ] **Phase 1: Dual-write mode** (0%)
-  - Keep Diesel for reads
-  - Add EventStore for writes
-  - Write events AND update DB directly
-  - **Effort**: 2 weeks
-  - **Dependencies**: EventStore implementation
-  - **Status**: Not started - requires EventStore to be built first
+- [~] **Phase 1: Dual-write mode** (skipped)
+  - Dual-write was not implemented; the cutover went directly to projection-backed writes.
+  - **Status**: Skipped - superseded by Phase 2/3
 
-- [ ] **Phase 2: Projection-based writes** (0%)
-  - Remove direct DB writes
-  - Projections update read models from events
-  - **Effort**: 2 weeks
-  - **Dependencies**: Projections
-  - **Status**: Not started - requires Projection system
+- [x] **Phase 2: Projection-based writes** ✅
+  - Direct DB writes removed; `UserProjector` updates the `users_view` read model from events.
+  - **File**: `crates/arc-app/src/domain/user/projector.rs`, wired in `commands/serve.rs`
+  - **Status**: Complete
 
-- [ ] **Phase 3: Full ES** (0%)
-  - All state changes via events
-  - Diesel only in projections
-  - **Effort**: 1 week
-  - **Dependencies**: All components stable
-  - **Status**: Not started - future milestone
+- [x] **Phase 3: Full ES** ✅
+  - All state changes flow through `CommandBus`; Diesel survives only in the projection store (`SqliteReadModelStore`).
+  - Legacy `users`/`user_email_index` tables dropped (migration `2026-05-08-000001_drop_legacy_users`).
+  - **Status**: Complete
 
 ---
 
@@ -392,11 +384,9 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 ### 4.3 Quality Tools
 
-- [ ] **Add clippy to CI**
-  - Enforce Rust best practices
-  - Custom lint rules
-  - **Effort**: 1 day
-  - **Assignee**: DevOps
+- [x] **Add clippy to CI** ✅
+  - `.github/workflows/ci.yml` runs `cargo clippy --all-targets --all-features -- -D warnings` and `cargo fmt -- --check` in the Code Quality job.
+  - **Status**: Complete
 
 - [ ] **Add code coverage reporting**
   - Use `tarpaulin` or `grcov`
@@ -513,28 +503,21 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 ## Phase 7: CI/CD Pipeline (P2)
 
 **Timeline**: 1-2 weeks
-**Status**: 🔴 Not Started
+**Status**: 🟡 CI complete; CD (staging/production deploy) pending
 
 ### 7.1 Continuous Integration
 
-- [ ] **Set up GitHub Actions**
-  - Rust build matrix (stable, nightly)
-  - Run tests on PR
-  - Run clippy lints
-  - **Effort**: 1 week
-  - **Assignee**: CI/CD specialist
+- [x] **Set up GitHub Actions** ✅
+  - `.github/workflows/ci.yml`: Code Quality (fmt + clippy `-D warnings`), Build matrix (`stable`, `nightly`), and Test Suite jobs.
+  - **Status**: Complete
 
-- [ ] **Add frontend build**
-  - Build Vite assets
-  - Run frontend tests
-  - **Effort**: 2-3 days
-  - **Assignee**: CI/CD specialist
+- [x] **Add frontend build** ✅
+  - `ci.yml` Frontend Build job: Node 20, `npm ci`, `npm run build`.
+  - **Status**: Complete
 
-- [ ] **Add security scanning**
-  - `cargo audit` for vulnerabilities
-  - Dependency license checks
-  - **Effort**: 1-2 days
-  - **Assignee**: CI/CD + Security specialist
+- [x] **Add security scanning** ✅
+  - `.github/workflows/security.yml`: `cargo audit --deny warnings` + dependency review.
+  - **Status**: Complete
 
 ### 7.2 Continuous Deployment
 
@@ -659,9 +642,9 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 ### 9.3 Advanced Cluster Features
 
-- [ ] **Snapshot store**
-  - Avoid replaying long event streams
-  - **Effort**: 2 weeks
+- [~] **Snapshot store** (interface + SQLite persistence landed at Step 1)
+  - `Snapshot` struct + `EventStore::save_snapshot/load_snapshot` (`crates/arc-core/src/snapshot.rs`, `event_store.rs`); `Aggregate::to_snapshot/from_snapshot` (`aggregate.rs`); `arc-es-sqlite` upsert/load impl; migration `2026-05-31-000001_create_snapshots`.
+  - **Remaining**: CommandBus load-path wiring to shortcut replay from the latest snapshot.
   - **Dependencies**: ES core
 
 - [ ] **Event retention & archival**
@@ -924,6 +907,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 | 2026-02-28 | 1.1 | Phase 0 complete; HIPAA/Government compliance section added; 35/37 issues resolved | Multi-specialist team |
 | 2026-03-01 | 1.2 | Phase 1 status assessment complete; Progress tracking added (0% implementation confirmed); Multi-agent analysis complete; Next Steps updated with 12-week breakdown | 7-agent team (Rust engineer, Actix specialist, Architect, System designer, QA, Documentation specialist, Technical writer) |
 | 2026-03-01 | 1.3 | **Phase 1 COMPLETE**: Core Event Sourcing Library fully implemented; 7/7 components complete; 4,383 lines of code; 62 tests passing; Zero warnings; Production-ready quality | 14-agent team (Senior Rust engineer, Actix specialist, Diesel specialist, Data access specialist, Event sourcing architect, UX specialist, DX specialist, QA specialist, Technical writer, Documentation specialist, Git specialist, Simplicity architect, No-code specialist, Workflows specialist) |
+| 2026-05-31 | 1.4 | Status reconciliation against `master`: Phase 1.3 MVC→ES migration marked complete (CommandBus write path, `users_view` projection, legacy `users` dropped); Phase 7.1 CI + Phase 4.3 clippy marked complete (`ci.yml`/`security.yml`); Phase 9.3 snapshot store marked partial (interface + SQLite done, CommandBus wiring pending) | Status reconciliation |
 
 ---
 
