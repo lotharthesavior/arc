@@ -25,6 +25,7 @@ use crate::audit::{AuditError, AuditMetadata, SYSTEM_ACTOR};
 use crate::event::Event;
 use crate::event_bus::{EventBus, EventBusError};
 use crate::event_store::{EventStore, EventStoreError, VersionCheck};
+use crate::snapshot::Snapshot;
 use std::marker::PhantomData;
 use thiserror::Error;
 use uuid::Uuid;
@@ -170,10 +171,29 @@ impl CommandBusError {
 
 pub type CommandBusResult<T> = Result<T, CommandBusError>;
 
+/// Controls whether [`CommandBus`] maintains snapshots on the command/write
+/// rehydrate path.
+///
+/// `Disabled` is the default and reproduces the original behavior exactly: every
+/// dispatch replays the full event stream and no snapshot is ever read or
+/// written. The event log stays the immutable source of truth in both modes —
+/// a snapshot only short-circuits the rehydrate read, so enabling it can never
+/// change correctness, only the cost of loading a long-lived aggregate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SnapshotPolicy {
+    /// No snapshot reads or writes; full from-zero replay on every dispatch.
+    #[default]
+    Disabled,
+    /// Snapshot an aggregate once it has accumulated at least this many events
+    /// since its last snapshot, and rehydrate from snapshot + event tail.
+    EveryNEvents(i64),
+}
+
 /// Command bus for dispatching commands to aggregates.
 pub struct CommandBus<A: Aggregate> {
     event_store: Box<dyn EventStore>,
     event_bus: Box<dyn EventBus>,
+    snapshot_policy: SnapshotPolicy,
     _phantom: PhantomData<A>,
 }
 
@@ -182,8 +202,34 @@ impl<A: Aggregate> CommandBus<A> {
         Self {
             event_store,
             event_bus,
+            // Off by default: a freshly constructed bus behaves exactly as it did
+            // before snapshots existed.
+            snapshot_policy: SnapshotPolicy::Disabled,
             _phantom: PhantomData,
         }
+    }
+
+    /// Enable (or change) the snapshot policy for this bus. Snapshots are a
+    /// rehydrate-path cache only; toggling this never alters command results.
+    pub fn with_snapshot_policy(mut self, policy: SnapshotPolicy) -> Self {
+        self.snapshot_policy = policy;
+        self
+    }
+
+    /// Reconstruct an aggregate by replaying its entire stream from sequence 0.
+    /// Always correct; this is the only path when snapshots are disabled and the
+    /// fallback whenever a snapshot is missing, undecodable, or unreadable.
+    async fn full_replay(&self, aggregate_id: &str) -> CommandBusResult<(A, i64)> {
+        let events = self
+            .event_store
+            .load(aggregate_id)
+            .await
+            .map_err(|source| CommandBusError::LoadFailed {
+                aggregate_id: aggregate_id.to_string(),
+                source,
+            })?;
+        let current_version = events.last().map(|e| e.sequence).unwrap_or(0);
+        Ok((A::from_events(events), current_version))
     }
 
     /// Dispatch a command with its request-scoped [`CommandContext`].
@@ -199,20 +245,49 @@ impl<A: Aggregate> CommandBus<A> {
     ) -> CommandBusResult<Vec<Event>> {
         let aggregate_id = command.aggregate_id().to_string();
 
-        // Step 1: Load existing events
-        let events = self
-            .event_store
-            .load(&aggregate_id)
-            .await
-            .map_err(|source| CommandBusError::LoadFailed {
-                aggregate_id: aggregate_id.clone(),
-                source,
-            })?;
-
-        let current_version = events.last().map(|e| e.sequence).unwrap_or(0);
-
-        // Step 2: Reconstruct
-        let aggregate = A::from_events(events);
+        // Steps 1-2: Load existing events and reconstruct aggregate state.
+        //
+        // With snapshots disabled this is a full from-zero replay — byte-for-byte
+        // the original behavior. When a policy is enabled we resume from the
+        // latest snapshot plus the event tail, but the event log is the source of
+        // truth: any missing, undecodable, or unreadable snapshot falls back to a
+        // full replay. Both paths yield identical final state and version.
+        //
+        // `loaded_snapshot_version` is the version of the snapshot we rehydrated
+        // from (0 when none was used); the create path measures growth against it.
+        let mut loaded_snapshot_version = 0i64;
+        let (aggregate, current_version) = match self.snapshot_policy {
+            SnapshotPolicy::Disabled => self.full_replay(&aggregate_id).await?,
+            SnapshotPolicy::EveryNEvents(_) => {
+                match self.event_store.load_snapshot(&aggregate_id).await {
+                    Ok(Some(snap)) => match A::from_snapshot(snap.state.clone()) {
+                        Some(mut agg) => {
+                            let tail = self
+                                .event_store
+                                .load_from(&aggregate_id, snap.version + 1)
+                                .await
+                                .map_err(|source| CommandBusError::LoadFailed {
+                                    aggregate_id: aggregate_id.clone(),
+                                    source,
+                                })?;
+                            let current_version =
+                                tail.last().map(|e| e.sequence).unwrap_or(snap.version);
+                            for event in &tail {
+                                agg.apply(event);
+                            }
+                            loaded_snapshot_version = snap.version;
+                            (agg, current_version)
+                        }
+                        // Snapshot present but its state no longer decodes (e.g. the
+                        // aggregate's shape drifted): replay the immutable log.
+                        None => self.full_replay(&aggregate_id).await?,
+                    },
+                    // No snapshot yet, or the store failed to read one — the log
+                    // replay is always a correct (if slower) substitute.
+                    Ok(None) | Err(_) => self.full_replay(&aggregate_id).await?,
+                }
+            }
+        };
 
         // Step 3: Handle
         let new_events = aggregate
@@ -260,6 +335,35 @@ impl<A: Aggregate> CommandBus<A> {
                 source,
             })?;
 
+        // Step 7: Snapshot (best-effort cache write). The command's events are
+        // already durably appended and published; the snapshot is a rebuildable
+        // read cache, so a failure here must never fail the dispatch.
+        if let SnapshotPolicy::EveryNEvents(n) = self.snapshot_policy {
+            let new_version = new_events
+                .last()
+                .map(|e| e.sequence)
+                .unwrap_or(current_version);
+            if new_version - loaded_snapshot_version >= n {
+                // Fold the just-appended events onto the rehydrated state to get
+                // the post-append aggregate, then let it serialize itself. An
+                // aggregate that opts out (`to_snapshot` -> None) simply gets no
+                // snapshot, and we skip silently.
+                let mut post = aggregate;
+                for event in &new_events {
+                    post.apply(event);
+                }
+                if let Some(state) = post.to_snapshot() {
+                    let snapshot = Snapshot::new(
+                        aggregate_id.clone(),
+                        A::aggregate_type(),
+                        new_version,
+                        state,
+                    );
+                    let _ = self.event_store.save_snapshot(&snapshot).await;
+                }
+            }
+        }
+
         Ok(new_events)
     }
 
@@ -282,6 +386,7 @@ mod tests {
         EventStore, EventStoreError, EventStoreResult, InMemoryEventStore, VersionCheck,
     };
     use async_trait::async_trait;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex as TokioMutex;
@@ -298,7 +403,9 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Clone, Default)]
+    // Serialize/Deserialize so this aggregate opts into snapshotting, exercising
+    // the snapshot create + load paths through the bus.
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     struct CounterAggregate {
         id: Option<String>,
         value: i64,
@@ -344,6 +451,14 @@ mod tests {
                 self.value += event.payload["increment"].as_i64().unwrap_or(0);
                 self.version = event.sequence;
             }
+        }
+
+        fn to_snapshot(&self) -> Option<serde_json::Value> {
+            serde_json::to_value(self).ok()
+        }
+
+        fn from_snapshot(state: serde_json::Value) -> Option<Self> {
+            serde_json::from_value(state).ok()
         }
     }
 
@@ -746,5 +861,183 @@ mod tests {
         assert!(e.to_string().contains("user-123"));
         assert!(e.to_string().contains("Invalid email"));
         assert!(CommandBusError::other("X").to_string().contains("X"));
+    }
+
+    // A default-constructed bus (Disabled) must never read or write snapshots, so
+    // existing behavior is preserved byte-for-byte.
+    #[tokio::test]
+    async fn test_snapshot_disabled_by_default_writes_nothing() {
+        let bus = CommandBus::<CounterAggregate>::new(
+            Box::new(InMemoryEventStore::new()),
+            Box::new(InProcessEventBus::new()),
+        );
+        for _ in 0..5 {
+            bus.dispatch(
+                CounterCommand {
+                    id: "c1".into(),
+                    increment: 1,
+                },
+                ctx(),
+            )
+            .await
+            .unwrap();
+        }
+        assert!(bus
+            .event_store()
+            .load_snapshot("c1")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    // Crossing the per-aggregate event threshold creates a snapshot stamped at the
+    // last appended sequence.
+    #[tokio::test]
+    async fn test_snapshot_created_when_threshold_crossed() {
+        let bus = CommandBus::<CounterAggregate>::new(
+            Box::new(InMemoryEventStore::new()),
+            Box::new(InProcessEventBus::new()),
+        )
+        .with_snapshot_policy(SnapshotPolicy::EveryNEvents(3));
+
+        // Versions 1 and 2 sit below the threshold of 3 — no snapshot yet.
+        for _ in 0..2 {
+            bus.dispatch(
+                CounterCommand {
+                    id: "c1".into(),
+                    increment: 1,
+                },
+                ctx(),
+            )
+            .await
+            .unwrap();
+        }
+        assert!(bus
+            .event_store()
+            .load_snapshot("c1")
+            .await
+            .unwrap()
+            .is_none());
+
+        // Version 3: 3 - 0 >= 3, so a snapshot is written at version 3.
+        bus.dispatch(
+            CounterCommand {
+                id: "c1".into(),
+                increment: 1,
+            },
+            ctx(),
+        )
+        .await
+        .unwrap();
+        let snap = bus
+            .event_store()
+            .load_snapshot("c1")
+            .await
+            .unwrap()
+            .expect("snapshot at threshold");
+        assert_eq!(snap.version, 3);
+        assert_eq!(snap.aggregate_type, "Counter");
+    }
+
+    // With a snapshot present, the snapshot+tail rehydrate path must produce the
+    // exact same stream and final state as a Disabled bus over identical commands.
+    #[tokio::test]
+    async fn test_snapshot_load_path_matches_full_replay() {
+        let enabled = CommandBus::<CounterAggregate>::new(
+            Box::new(InMemoryEventStore::new()),
+            Box::new(InProcessEventBus::new()),
+        )
+        .with_snapshot_policy(SnapshotPolicy::EveryNEvents(2));
+        let disabled = CommandBus::<CounterAggregate>::new(
+            Box::new(InMemoryEventStore::new()),
+            Box::new(InProcessEventBus::new()),
+        );
+
+        for inc in [3, 4, 5, 6, 7] {
+            enabled
+                .dispatch(
+                    CounterCommand {
+                        id: "c1".into(),
+                        increment: inc,
+                    },
+                    ctx(),
+                )
+                .await
+                .unwrap();
+            disabled
+                .dispatch(
+                    CounterCommand {
+                        id: "c1".into(),
+                        increment: inc,
+                    },
+                    ctx(),
+                )
+                .await
+                .unwrap();
+        }
+
+        // A snapshot exists, so later dispatches rehydrated through it.
+        assert!(enabled
+            .event_store()
+            .load_snapshot("c1")
+            .await
+            .unwrap()
+            .is_some());
+
+        let enabled_state =
+            CounterAggregate::from_events(enabled.event_store().load("c1").await.unwrap());
+        let disabled_state =
+            CounterAggregate::from_events(disabled.event_store().load("c1").await.unwrap());
+        assert_eq!(enabled_state.value, disabled_state.value);
+        assert_eq!(enabled_state.version, disabled_state.version);
+        assert_eq!(enabled_state.value, 25);
+        assert_eq!(enabled_state.version, 5);
+    }
+
+    // An enabled bus with no snapshot present must still dispatch correctly via the
+    // from-zero fallback (and across multiple commands).
+    #[tokio::test]
+    async fn test_enabled_falls_back_to_replay_without_snapshot() {
+        // Threshold high enough that a snapshot is never written, so every
+        // rehydrate exercises the fallback replay path.
+        let bus = CommandBus::<CounterAggregate>::new(
+            Box::new(InMemoryEventStore::new()),
+            Box::new(InProcessEventBus::new()),
+        )
+        .with_snapshot_policy(SnapshotPolicy::EveryNEvents(100));
+
+        let e1 = bus
+            .dispatch(
+                CounterCommand {
+                    id: "c1".into(),
+                    increment: 5,
+                },
+                ctx(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(e1[0].sequence, 1);
+
+        let e2 = bus
+            .dispatch(
+                CounterCommand {
+                    id: "c1".into(),
+                    increment: 3,
+                },
+                ctx(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(e2[0].sequence, 2);
+
+        assert!(bus
+            .event_store()
+            .load_snapshot("c1")
+            .await
+            .unwrap()
+            .is_none());
+        let state = CounterAggregate::from_events(bus.event_store().load("c1").await.unwrap());
+        assert_eq!(state.value, 8);
+        assert_eq!(state.version, 2);
     }
 }
