@@ -1,0 +1,21 @@
+[package]
+name = "arc-es-nats"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "NATS JetStream EventBus implementation for arc event sourcing"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arc-core = { path = "../arc-core" }
+
+async-nats.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+arc-core = { path = "../arc-core", features = ["test-utils"] }
+futures-util.workspace = true
+tokio.workspace = true
+uuid.workspace = true

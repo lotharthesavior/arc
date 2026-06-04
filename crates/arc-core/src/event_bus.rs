@@ -60,6 +60,15 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+/// Delivery lane selected by an [`EventHandler`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandlerLane {
+    /// Runs inline on the caller's publish path. Failure propagates.
+    Sync,
+    /// Runs through an off-path carrier. Failure is logged and does not fail publish.
+    Async,
+}
+
 /// Errors that can occur during event bus operations.
 #[derive(Debug, Error)]
 pub enum EventBusError {
@@ -191,6 +200,11 @@ pub trait EventHandler: Send + Sync {
     /// handlers. Consider logging errors and returning Ok(()) if you want
     /// to allow other handlers to continue.
     async fn handle(&self, event: &Event) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    /// Selects the delivery lane for this handler.
+    fn lane(&self) -> HandlerLane {
+        HandlerLane::Sync
+    }
 }
 
 /// Trait for event bus implementations.
@@ -403,6 +417,92 @@ impl EventBus for InProcessEventBus {
     }
 }
 
+/// In-process two-lane event bus with synchronous and asynchronous handlers.
+///
+/// Sync-lane handlers run inline and preserve [`InProcessEventBus`] failure and
+/// ordering semantics. Async-lane handlers are handed to a detached in-process
+/// carrier so their failures never propagate to the publisher.
+#[derive(Clone)]
+pub struct TwoLaneEventBus {
+    sync: InProcessEventBus,
+    async_lane: AsyncLaneEventBus,
+}
+
+#[derive(Clone)]
+enum AsyncLaneEventBus {
+    InProcess(InProcessEventBus),
+    External(Arc<dyn EventBus>),
+}
+
+impl TwoLaneEventBus {
+    /// Create a new two-lane event bus.
+    pub fn new() -> Self {
+        Self {
+            sync: InProcessEventBus::new(),
+            async_lane: AsyncLaneEventBus::InProcess(InProcessEventBus::new()),
+        }
+    }
+
+    /// Create a two-lane bus whose async lane uses an external carrier.
+    pub fn with_async_bus(async_bus: Arc<dyn EventBus>) -> Self {
+        Self {
+            sync: InProcessEventBus::new(),
+            async_lane: AsyncLaneEventBus::External(async_bus),
+        }
+    }
+
+    /// Get the number of sync-lane handlers.
+    pub async fn sync_handler_count(&self) -> usize {
+        self.sync.handler_count().await
+    }
+
+    /// Get the number of async-lane handlers.
+    pub async fn async_handler_count(&self) -> usize {
+        match &self.async_lane {
+            AsyncLaneEventBus::InProcess(async_lane) => async_lane.handler_count().await,
+            AsyncLaneEventBus::External(_) => 0,
+        }
+    }
+}
+
+impl Default for TwoLaneEventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl EventBus for TwoLaneEventBus {
+    async fn publish(&self, events: Vec<Event>) -> EventBusResult<()> {
+        self.sync.publish(events.clone()).await?;
+
+        let async_lane = self.async_lane.clone();
+        match async_lane {
+            AsyncLaneEventBus::InProcess(async_lane) => {
+                let handle = tokio::spawn(async move {
+                    if let Err(error) = async_lane.publish(events).await {
+                        tracing::warn!(error = ?error, "async event handler failed");
+                    }
+                });
+                drop(handle);
+            }
+            AsyncLaneEventBus::External(async_bus) => async_bus.publish(events).await?,
+        }
+
+        Ok(())
+    }
+
+    async fn subscribe(&mut self, handler: Box<dyn EventHandler>) -> EventBusResult<()> {
+        match handler.lane() {
+            HandlerLane::Sync => self.sync.subscribe(handler).await,
+            HandlerLane::Async => match &mut self.async_lane {
+                AsyncLaneEventBus::InProcess(async_lane) => async_lane.subscribe(handler).await,
+                AsyncLaneEventBus::External(_) => Ok(()),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,6 +522,32 @@ mod tests {
                 count: Arc::new(TokioMutex::new(0)),
                 event_types,
             }
+        }
+    }
+
+    struct LaneCountingHandler {
+        count: Arc<TokioMutex<usize>>,
+        event_types: Vec<String>,
+        lane: HandlerLane,
+    }
+
+    #[async_trait]
+    impl EventHandler for LaneCountingHandler {
+        fn handles(&self) -> Vec<String> {
+            self.event_types.clone()
+        }
+
+        async fn handle(
+            &self,
+            _event: &Event,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let mut count = self.count.lock().await;
+            *count += 1;
+            Ok(())
+        }
+
+        fn lane(&self) -> HandlerLane {
+            self.lane
         }
     }
 
@@ -446,6 +572,11 @@ mod tests {
         fail_on: String,
     }
 
+    struct LaneFailingHandler {
+        fail_on: String,
+        lane: HandlerLane,
+    }
+
     #[async_trait]
     impl EventHandler for FailingHandler {
         fn handles(&self) -> Vec<String> {
@@ -457,6 +588,24 @@ mod tests {
             _event: &Event,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Err("Intentional test failure".into())
+        }
+    }
+
+    #[async_trait]
+    impl EventHandler for LaneFailingHandler {
+        fn handles(&self) -> Vec<String> {
+            vec![self.fail_on.clone()]
+        }
+
+        async fn handle(
+            &self,
+            _event: &Event,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Err("Intentional test failure".into())
+        }
+
+        fn lane(&self) -> HandlerLane {
+            self.lane
         }
     }
 
@@ -640,6 +789,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_event_handler_default_lane_is_sync() {
+        let handler = CountingHandler::new(vec!["UserCreated".to_string()]);
+
+        assert_eq!(handler.lane(), HandlerLane::Sync);
+    }
+
+    #[tokio::test]
+    async fn test_two_lane_sync_handler_failure_propagates() {
+        let mut bus = TwoLaneEventBus::new();
+
+        bus.subscribe(Box::new(LaneFailingHandler {
+            fail_on: "UserCreated".to_string(),
+            lane: HandlerLane::Sync,
+        }))
+        .await
+        .unwrap();
+
+        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let result = bus.publish(vec![event]).await;
+
+        assert!(matches!(result, Err(EventBusError::HandlerFailed { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_two_lane_async_handler_failure_does_not_propagate() {
+        let mut bus = TwoLaneEventBus::new();
+
+        bus.subscribe(Box::new(LaneFailingHandler {
+            fail_on: "UserCreated".to_string(),
+            lane: HandlerLane::Async,
+        }))
+        .await
+        .unwrap();
+
+        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let result = bus.publish(vec![event]).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_two_lane_routes_handlers_by_lane() {
+        let mut bus = TwoLaneEventBus::new();
+        let sync_count = Arc::new(TokioMutex::new(0));
+        let async_count = Arc::new(TokioMutex::new(0));
+
+        bus.subscribe(Box::new(LaneCountingHandler {
+            count: sync_count,
+            event_types: vec!["UserCreated".to_string()],
+            lane: HandlerLane::Sync,
+        }))
+        .await
+        .unwrap();
+        bus.subscribe(Box::new(LaneCountingHandler {
+            count: async_count,
+            event_types: vec!["UserCreated".to_string()],
+            lane: HandlerLane::Async,
+        }))
+        .await
+        .unwrap();
+
+        assert_eq!(bus.sync_handler_count().await, 1);
+        assert_eq!(bus.async_handler_count().await, 1);
+    }
+
+    #[tokio::test]
     async fn test_no_handlers_for_event_type() {
         let bus = InProcessEventBus::new();
 
@@ -690,6 +905,47 @@ mod tests {
         bus.publish(vec![event]).await.unwrap();
 
         // Handlers should be called in subscription order
+        let call_order = order.lock().await;
+        assert_eq!(*call_order, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_two_lane_sync_handlers_called_in_order() {
+        let mut bus = TwoLaneEventBus::new();
+        let order = Arc::new(TokioMutex::new(Vec::new()));
+
+        struct OrderTracker {
+            id: usize,
+            order: Arc<TokioMutex<Vec<usize>>>,
+        }
+
+        #[async_trait]
+        impl EventHandler for OrderTracker {
+            fn handles(&self) -> Vec<String> {
+                vec!["TestEvent".to_string()]
+            }
+
+            async fn handle(
+                &self,
+                _event: &Event,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                self.order.lock().await.push(self.id);
+                Ok(())
+            }
+        }
+
+        for i in 1..=3 {
+            bus.subscribe(Box::new(OrderTracker {
+                id: i,
+                order: order.clone(),
+            }))
+            .await
+            .unwrap();
+        }
+
+        let event = Event::new("Test", "test-1", 1, "TestEvent", json!({}));
+        bus.publish(vec![event]).await.unwrap();
+
         let call_order = order.lock().await;
         assert_eq!(*call_order, vec![1, 2, 3]);
     }

@@ -18,10 +18,14 @@ use crate::domain::user::aggregate::UserAggregate;
 use crate::domain::user::projector::{UserProjector, USERS_VIEW};
 use arc_core::access_log::{AccessLogger, NoOpAccessLogger};
 use arc_core::command_bus::CommandBus;
+#[cfg(feature = "nats")]
+use arc_core::event_bus::TwoLaneEventBus;
 use arc_core::event_bus::{EventBus, InProcessEventBus};
 use arc_core::projection::{ProjectionEngine, ProjectionEngineHandler};
 use arc_core::read_model_store::ReadModelStore;
 use arc_core::session::SessionStore;
+#[cfg(feature = "nats")]
+use arc_es_nats::NatsEventBus;
 use arc_es_sqlite::{SqliteEventStore, SqliteReadModelStore, SqliteSessionStore};
 use std::sync::Arc;
 
@@ -79,10 +83,9 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
         .await
         .expect("Failed to init event store");
 
-    // Read-model store + projection engine. The engine subscribes to the
-    // in-process event bus through a thin adapter so every committed event
-    // drives `UserProjector` synchronously into `users_view`. Step 3 will
-    // split this lane out as JetStream consumers move into a worker.
+    // Read-model store + projection engine. Inprocess mode keeps projections
+    // read-after-write consistent; NATS mode leaves projection ownership to
+    // arc-worker after the event is durably published.
     let read_model_store: Arc<dyn ReadModelStore> = Arc::new(
         SqliteReadModelStore::new(&db_url)
             .await
@@ -96,27 +99,28 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     );
     let projection_engine = Arc::new(projection_engine);
 
-    let mut event_bus = InProcessEventBus::new();
-    event_bus
-        .subscribe(Box::new(ProjectionEngineHandler::new(
-            projection_engine.clone(),
-        )))
-        .await
-        .expect("Failed to subscribe ProjectionEngine to event bus");
+    let event_bus_mode = event_bus_mode();
+    let mut event_bus = build_event_bus(&event_bus_mode).await;
+    if event_bus_mode == EventBusMode::InProcess {
+        event_bus
+            .subscribe(Box::new(ProjectionEngineHandler::new(
+                projection_engine.clone(),
+            )))
+            .await
+            .expect("Failed to subscribe ProjectionEngine to event bus");
 
-    // Backfill the read model from the event store on every start. Cheap on
-    // SQLite, idempotent under the version-gated upsert, and removes the need
-    // for a separate one-shot CLI when an operator is recovering from a
-    // truncated read model. Step 4's worker will own this for distributed
-    // deployments.
-    if let Err(e) = projection_engine.rebuild_all().await {
-        tracing::error!(error = ?e, "ProjectionEngine.rebuild_all failed at startup");
+        // Backfill remains in the writer only for the single-process topology.
+        if let Err(e) = projection_engine.rebuild_all().await {
+            tracing::error!(error = ?e, "ProjectionEngine.rebuild_all failed at startup");
+        } else {
+            info!("Projections rebuilt from event store");
+        }
     } else {
-        info!("Projections rebuilt from event store");
+        info!("EVENT_BUS=nats selected; arc-worker owns projection rebuild and delivery");
     }
 
     let command_bus =
-        CommandBus::<UserAggregate>::new(Box::new(sqlite_event_store.clone()), Box::new(event_bus));
+        CommandBus::<UserAggregate>::new(Box::new(sqlite_event_store.clone()), event_bus);
     let command_bus_data = web::Data::new(command_bus);
     let read_model_store_data = web::Data::from(read_model_store);
 
@@ -176,4 +180,60 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     .bind((app_url, app_port))?
     .run()
     .await
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EventBusMode {
+    InProcess,
+    Nats,
+}
+
+fn event_bus_mode() -> EventBusMode {
+    let event_bus = env::var("EVENT_BUS")
+        .unwrap_or_else(|_| "inprocess".to_string())
+        .to_ascii_lowercase();
+
+    match event_bus.as_str() {
+        "inprocess" => EventBusMode::InProcess,
+        "nats" => EventBusMode::Nats,
+        other => {
+            warn!(
+                event_bus = other,
+                "Unknown EVENT_BUS value; falling back to inprocess"
+            );
+            EventBusMode::InProcess
+        }
+    }
+}
+
+async fn build_event_bus(mode: &EventBusMode) -> Box<dyn EventBus> {
+    match mode {
+        EventBusMode::InProcess => Box::new(InProcessEventBus::new()),
+        EventBusMode::Nats => build_nats_event_bus().await,
+    }
+}
+
+#[cfg(feature = "nats")]
+async fn build_nats_event_bus() -> Box<dyn EventBus> {
+    let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
+    let nats_stream = env::var("NATS_STREAM").unwrap_or_else(|_| "EVENTS".to_string());
+    let async_bus = Arc::new(
+        NatsEventBus::new(&nats_url, &nats_stream)
+            .await
+            .expect("Failed to initialize NATS event bus"),
+    );
+
+    info!(
+        nats_url = nats_url,
+        nats_stream = nats_stream,
+        "Using NATS JetStream event bus"
+    );
+
+    Box::new(TwoLaneEventBus::with_async_bus(async_bus))
+}
+
+#[cfg(not(feature = "nats"))]
+async fn build_nats_event_bus() -> Box<dyn EventBus> {
+    warn!("EVENT_BUS=nats requested without the nats cargo feature; falling back to inprocess");
+    Box::new(InProcessEventBus::new())
 }

@@ -11,14 +11,22 @@ repository.workspace = true
 name = "arc"
 path = "src/main.rs"
 
+[lib]
+name = "arc"
+path = "src/lib.rs"
+test = false
+doctest = false
+
 [features]
 default = ["sqlite"]
 sqlite = []
+nats = ["dep:arc-es-nats"]
 
 [dependencies]
 # Workspace crates
 arc-core = { path = "../arc-core" }
 arc-es-sqlite = { path = "../arc-es-sqlite" }
+arc-es-nats = { path = "../arc-es-nats", optional = true }
 
 # Web framework
 actix-web.workspace = true

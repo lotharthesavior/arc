@@ -1,0 +1,30 @@
+[package]
+name = "arc-worker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Durable JetStream projection worker for arc event sourcing"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "arc-worker"
+path = "src/main.rs"
+
+[dependencies]
+arc-app = { package = "arc", path = "../arc-app", default-features = false }
+arc-core = { path = "../arc-core" }
+arc-es-sqlite = { path = "../arc-es-sqlite" }
+
+async-nats.workspace = true
+dotenv.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+arc-core = { path = "../arc-core", features = ["test-utils"] }
+arc-es-nats = { path = "../arc-es-nats" }
+uuid.workspace = true

@@ -36,6 +36,8 @@ services:
     environment:
       DATABASE_URL: database/arc_dev.db
       NATS_URL: nats://nats:4222
+      NATS_STREAM: EVENTS
+      EVENT_BUS: nats
       APP_URL: 0.0.0.0
       APP_PORT: 8080
       APP_ENV: development
@@ -52,12 +54,21 @@ services:
       timeout: 3s
       retries: 5
 
-  # Stub for Step 3-4 arc-worker. Sleeps until that crate exists.
   worker:
-    image: alpine:3.20
-    command: ["sh", "-c", "echo 'worker stub — replace with arc-worker once Step 4 lands' && sleep infinity"]
+    build: .
+    command: ["/usr/local/bin/arc-worker"]
+    volumes:
+      - app-db:/app/database
+    environment:
+      DATABASE_URL: database/arc_dev.db
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: EVENTS
+      NATS_CONSUMER: arc-worker
+      APP_ENV: development
     depends_on:
       nats:
+        condition: service_healthy
+      app:
         condition: service_healthy
 
 volumes:
