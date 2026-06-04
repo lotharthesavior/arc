@@ -231,6 +231,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 - [x] **NATS/worker integration tests and gate** ✅
   - Phase 1 gate passed workspace tests and clippy with all features after adding publish/consume, redelivery, durable consumer, and worker projection coverage.
+  - GitHub Actions installs `nats-server` before Rust test jobs so those integration tests run against live JetStream instead of skipping.
   - **Status**: Complete
 
 ### 1.5 Production Storage Driver Switch (Next)
@@ -872,6 +873,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 1. ✅ Step 3 complete: `arc-es-nats` JetStream event bus.
 2. ✅ Step 4 complete: `arc-worker` durable projector.
 3. ✅ NATS/worker integration tests and workspace clippy gate passed in Phase 1.
+4. ✅ CI provisions `nats-server` for Rust test jobs so JetStream integration tests run live.
 4. 🔲 Begin Step 5: Postgres event/read-model stores and `DATABASE_DRIVER=sqlite|postgres`.
 5. 🔲 Continue HIPAA-2b and documentation/reference reconciliation.
 

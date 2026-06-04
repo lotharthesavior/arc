@@ -98,6 +98,12 @@ jobs:
           mkdir -p database
           touch database/database.sqlite
 
+      - name: Install NATS server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nats-server
+          nats-server --version
+
       - name: Run tests
         run: cargo test --verbose --all-features
 
@@ -124,6 +130,12 @@ jobs:
         run: |
           mkdir -p database
           touch database/database.sqlite
+
+      - name: Install NATS server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nats-server
+          nats-server --version
 
       - name: Generate coverage
         run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
@@ -222,6 +234,12 @@ jobs:
         run: |
           mkdir -p database
           cargo run migrate
+
+      - name: Install NATS server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nats-server
+          nats-server --version
 
       - name: Run integration tests
         run: cargo test --test '*' --verbose
