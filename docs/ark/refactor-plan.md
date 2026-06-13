@@ -50,15 +50,28 @@ Create `crates/arc-es-nats`: implement `EventBus` using `async-nats` JetStream. 
 
 **Validation — Automated:** Run NATS container integration tests: publish/consume roundtrip, stream/consumer idempotent creation, at-least-once redelivery behavior, and per-aggregate ordering checks. Keep `EventStoreContract` suite green across stores.
 
-### Step 4 — Add `arc-worker` Crate (JetStream Projector)
+### Step 4 — Benthos as Primary Event Routing and Projection Delivery Layer
 
-Create `crates/arc-worker`: standalone binary connecting to NATS with a durable consumer (`AckExplicit`, `DeliverAll`, 30s `ack_wait`) and driving `ProjectionEngine`. Per message: deserialize `Event` → `projection_engine.process(&event).await` → `msg.ack()` on Ok, `msg.nak()` on Err. Proves the full async event-driven projection pipeline before swapping the storage layer in Step 5.
+Adopt **Benthos** (Redpanda Connect) pipelines as the primary durable consumer, router, filter, transformer, and projection delivery mechanism for events published to NATS JetStream.
 
-**Why fourth:** All correctness properties (command validation, event ordering, optimistic concurrency, idempotent projection, JetStream delivery, durable consumption) must be verified against SQLite before touching the storage layer. Mixing a storage migration with consumer architecture introduces the hardest-to-diagnose replay bugs.
+- Benthos consumes from the JetStream subjects created in Step 3.
+- Benthos pipelines handle routing, filtering, enrichment, deduplication, and transformation of events using its declarative configuration (inputs → processors → outputs).
+- Projection delivery: Benthos outputs drive `ProjectionEngine` (or directly update read models via SQL/gRPC/HTTP) for `SqliteReadModelStore` / future stores. This replaces the custom `arc-worker` as the core durable consumer + `ProjectionEngine` driver.
+- The lightweight `arc-worker` (or equivalent thin Rust consumer) becomes optional — used only for specific low-latency or tightly-coupled use cases — rather than the default routing layer.
+- Add Benthos configuration as code (YAML pipelines) under the project (e.g. `benthos/` or `config/benthos/`), with support for NATS JetStream input, Bloblang processors, and outputs targeting read-model stores or further topics.
+- Update `docker-compose.yml` and deployment manifests to run Benthos as the main event routing service (alongside or instead of the custom worker stub).
 
-**Validation — Visual:** Run app + worker in separate terminals. Perform writes while tailing worker logs; verify each event transitions `received -> projected -> acked`. Stop worker, issue writes, restart worker, and confirm backlog replays to correct UI/read-model state.
+**Why fourth:** Benthos provides a far more powerful, maintainable, and declarative way to implement complex event routing, filtering, and delivery logic than a custom Rust worker. It reduces bespoke code, improves observability (Benthos metrics/tracing), and makes the event handling strategy evolvable without constant Rust changes. This aligns with the goal of keeping the core Rust crates (arc-core, arc-es-*) focused and headless while using best-of-breed tools for the routing plane.
 
-**Validation — Automated:** Run worker lifecycle tests (happy path ACK, NAK+redelivery retry, graceful shutdown with in-flight message), plus concurrent dispatch stress test confirming no duplicate aggregate versions and no ordering violations.
+**Validation — Visual:** Deploy Benthos pipeline(s) that consume from the relevant JetStream subjects (`events.<aggregate_type>.<event_type>`). Trigger user writes (register, update profile, etc.) and observe events flowing through Benthos (use Benthos HTTP server/metrics, NATS monitoring, or output logs). Confirm that projections / read models are updated correctly and that complex routing/filtering rules (e.g. by sensitivity, purpose, or aggregate type) are applied declaratively in the Benthos config.
+
+**Validation — Automated:**
+- Define Benthos pipeline configs as versioned files and test them with NATS JetStream test containers (or Redpanda).
+- Verify end-to-end: publish via `arc-es-nats` → Benthos consumes/routes → projection updates (or read-model changes) are observable.
+- Test idempotency, at-least-once delivery, ordering guarantees where required, and error handling / dead-lettering.
+- Run Benthos linter / config validation in CI.
+- Keep `EventStoreContract` and projection tests green; add Benthos-specific integration tests for routing behavior.
+- Verify that the custom `arc-worker` is no longer required for the primary projection path (it may still exist for fallback scenarios).
 
 ### Step 5 — Production Storage, Reusable Crates, HIPAA Foundations
 
@@ -67,6 +80,8 @@ Create `crates/arc-es-postgres`: `PostgresEventStore` via `sqlx::PgPool`, schema
 **Validation — Visual:** Start app once with `DATABASE_DRIVER=sqlite` and once with `DATABASE_DRIVER=postgres`; execute identical user flow and compare output/event-log behavior. Demo projection rebuild and audit view to show parity and compliance fields present in UI/admin output.
 
 **Validation — Automated:** Run full workspace tests under both drivers, per-crate independent CI build/test, `cargo publish --dry-run`, migration tests for Postgres schema constraints, and HIPAA audit assertions for required metadata (`user_id`, command type, timestamp, source info). 
+
+**Dependencies**: Step 3 `arc-es-nats` (reliable JetStream publishing) and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, and projection delivery. The custom `arc-worker` is no longer a hard dependency for the core path.
 
 ---
 

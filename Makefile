@@ -107,12 +107,12 @@ migrate-new: ## Create a new Diesel migration (usage: make migrate-new NAME=migr
 # Execute all unit and integration tests
 test: ## Run all tests
 	@echo "$(GREEN)Running tests...$(NC)"
-	cargo test
+	cargo test --workspace --all-features
 
 # Run tests with full output including println! statements
 test-verbose: ## Run tests with verbose output
 	@echo "$(GREEN)Running tests (verbose)...$(NC)"
-	cargo test -- --nocapture
+	cargo test --workspace --all-features -- --nocapture
 
 # Generate HTML coverage report using cargo-tarpaulin (auto-installs if needed)
 coverage: ## Generate test coverage report (requires cargo-tarpaulin)
@@ -141,7 +141,7 @@ format-check: ## Check code formatting without making changes
 # Run Clippy linter with warnings treated as errors for strict quality checks
 lint: ## Run clippy linter
 	@echo "$(GREEN)Running clippy...$(NC)"
-	cargo clippy -- -D warnings
+	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Scan dependencies for known security vulnerabilities (auto-installs cargo-audit)
 audit: ## Audit dependencies for security vulnerabilities

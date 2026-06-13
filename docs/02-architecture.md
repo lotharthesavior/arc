@@ -2,7 +2,9 @@
 
 ## Overview
 
-Arc follows a traditional **MVC (Model-View-Controller)** architecture pattern with additional layers for services and helpers. The application is built around the Actix Web framework, which provides an actor-based, asynchronous HTTP server.
+Arc now follows an **event-sourced workspace architecture**: HTTP handlers dispatch commands, aggregates emit events, event stores persist those events, and projections build read models for HTML/API reads. The Actix/Tera web app remains the primary user-facing surface.
+
+> Historical note: some diagrams and examples below still describe the original single-crate MVC starter. Treat them as historical context unless they are explicitly tied to files under `crates/`.
 
 ## Architectural Diagram
 
@@ -10,21 +12,32 @@ Arc follows a traditional **MVC (Model-View-Controller)** architecture pattern w
 
 ## Design Patterns
 
-### 1. MVC Pattern
+### 1. Event-Sourced Write Path
 
-**Models** (`src/models/`)
-- Define data structures that map to database tables
-- Handle ORM-related logic via Diesel derives
-- Example: `User` struct with `Queryable`, `Selectable`, `Insertable` derives
+**Commands and aggregates** (`crates/arc-app/src/domain/user/`, `crates/arc-core/src/aggregate.rs`)
+- Validate state transitions
+- Emit immutable domain events
+- Rehydrate state from the event log
 
-**Views** (`src/resources/views/`)
+**Command bus** (`crates/arc-core/src/command_bus.rs`)
+- Loads aggregate history
+- Persists new events through `EventStore`
+- Publishes persisted events through `EventBus`
+
+**Projections** (`crates/arc-core/src/projection.rs`, `crates/arc-app/src/domain/user/projector.rs`)
+- Consume events and build read-model rows such as `users_view`
+- Can run in-process or through Benthos pipelines (primary durable routing layer); custom worker is optional/fallback
+
+### 2. Server-Rendered Web Surface
+
+**Views** (`crates/arc-app/src/resources/views/`)
 - Tera HTML templates for server-side rendering
 - Organized by section (admin, parts)
 - Support for template inheritance and includes
 
-**Controllers** (`src/http/controllers/`)
+**Controllers** (`crates/arc-app/src/http/controllers/`)
 - Handle HTTP requests and responses
-- Orchestrate data flow between models and views
+- Dispatch commands and read projection rows
 - Return rendered templates or JSON responses
 
 ### 2. Service Layer Pattern

@@ -8,7 +8,7 @@
 //! ## Behavior
 //!
 //! On each request:
-//! 1. If the session has no `user_id`, pass through unchanged.
+//! 1. If the session has no post-cutover `SessionUser`, pass through unchanged.
 //! 2. If `last_active_at` is missing (first authenticated hit), stamp `now`
 //!    and continue.
 //! 3. If `now - last_active_at > idle_timeout`, purge the session and
@@ -33,11 +33,12 @@ use futures_util::future::LocalBoxFuture;
 use std::future::{ready, Ready};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::helpers::session::get_session_user;
+
 /// Default per HHS OCR guidance for PHI-bearing systems.
 pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 900;
 
 const SESSION_KEY_LAST_ACTIVE: &str = "last_active_at";
-const SESSION_KEY_USER_ID: &str = "user_id";
 
 /// Idle-timeout enforcement middleware.
 #[derive(Debug, Clone, Copy)]
@@ -115,12 +116,8 @@ where
         let session = req.get_session();
         let limit = self.seconds;
 
-        // No authenticated user → nothing to enforce.
-        let user_present = session
-            .get::<i32>(SESSION_KEY_USER_ID)
-            .ok()
-            .flatten()
-            .is_some();
+        // No authenticated post-cutover session user -> nothing to enforce.
+        let user_present = get_session_user(&session).is_some();
         if !user_present {
             let fut = self.service.call(req);
             return Box::pin(async move { fut.await.map(ServiceResponse::map_into_left_body) });
@@ -197,7 +194,14 @@ mod tests {
                 .route(
                     "/seed",
                     web::get().to(|s: Session| async move {
-                        s.insert(SESSION_KEY_USER_ID, 42i32).unwrap();
+                        crate::helpers::session::set_session_user(
+                            &s,
+                            &crate::helpers::session::SessionUser {
+                                id: "42".to_string(),
+                                name: "Ada".to_string(),
+                                email: "ada@example.test".to_string(),
+                            },
+                        );
                         // last_active_at = 100s ago — already past the 1s limit
                         s.insert(SESSION_KEY_LAST_ACTIVE, now_secs().saturating_sub(100))
                             .unwrap();
@@ -249,7 +253,14 @@ mod tests {
                 .route(
                     "/seed",
                     web::get().to(|s: Session| async move {
-                        s.insert(SESSION_KEY_USER_ID, 42i32).unwrap();
+                        crate::helpers::session::set_session_user(
+                            &s,
+                            &crate::helpers::session::SessionUser {
+                                id: "42".to_string(),
+                                name: "Ada".to_string(),
+                                email: "ada@example.test".to_string(),
+                            },
+                        );
                         s.insert(SESSION_KEY_LAST_ACTIVE, now_secs().saturating_sub(10))
                             .unwrap();
                         HttpResponse::Ok().finish()

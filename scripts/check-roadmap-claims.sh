@@ -69,6 +69,7 @@ need_grep "cargo clippy"        ".github/workflows/ci.yml" "clippy in CI"
 need_grep "cargo fmt"           ".github/workflows/ci.yml" "fmt check in CI"
 need_grep "cargo test"          ".github/workflows/ci.yml" "tests in CI"
 need_grep "npm run build"       ".github/workflows/ci.yml" "frontend build in CI"
+need_grep "nats-server-.+linux-amd64" ".github/workflows/ci.yml" "NATS server release binary install"
 need_file ".github/workflows/security.yml" "Security workflow"
 need_grep "cargo audit"         ".github/workflows/security.yml" "cargo audit"
 
@@ -82,6 +83,7 @@ need_grep "FailHard|FailOpenWarn"    "crates/arc-core/src/access_log.rs"  "HIPAA
 need_grep "for_sensitivity"          "crates/arc-core/src/access_log.rs"  "HIPAA-2a for_sensitivity"
 need_file "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 idle timeout"
 need_grep "SESSION_IDLE_TIMEOUT_SECS" "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 env knob"
+need_grep "get_session_user"     "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 post-cutover session user"
 need_grep "trait SessionStore"       "crates/arc-core/src/session.rs"     "HIPAA-4 SessionStore"
 need_grep "SqliteSessionStore"       "crates/arc-es-sqlite/src/session.rs" "HIPAA-4 SQLite session store"
 need_grep "jti"                      "crates/arc-app/src/helpers/jwt.rs"  "HIPAA-4 jti claim"
@@ -99,6 +101,22 @@ need_grep "fn upsert"  "crates/arc-core/src/read_model_store.rs" "typed ReadMode
 need_grep "fn find_by" "crates/arc-core/src/read_model_store.rs" "typed ReadModelStore::find_by"
 need_file "Dockerfile"          "Dockerfile present"
 need_file "docker-compose.yml"  "compose present"
+
+# ---------------------------------------------------------------------------
+# Drift checks added after nineties-status-audit
+# ---------------------------------------------------------------------------
+if [ -f ".github/workflows/tests.yml" ]; then
+  echo "STALE WORKFLOW: .github/workflows/tests.yml should not duplicate ci.yml" >&2
+  fail=1
+fi
+
+if grep -R "apt-get install .*nats-server" .github/workflows 2>/dev/null; then
+  echo "BROKEN CI ASSUMPTION: use upstream NATS release binary, not apt nats-server" >&2
+  fail=1
+fi
+
+need_grep "cargo test --workspace --all-features" "Makefile" "make test matches CI feature/workspace coverage"
+need_grep "cargo clippy --workspace --all-targets --all-features -- -D warnings" "Makefile" "make lint matches CI"
 
 if [ "$fail" -ne 0 ]; then
   echo "" >&2

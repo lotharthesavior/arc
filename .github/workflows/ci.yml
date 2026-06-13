@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  NATS_SERVER_VERSION: v2.14.1
 
 jobs:
   # Job 1: Code Quality Checks
@@ -52,9 +53,9 @@ jobs:
       - name: Check for common issues
         run: |
           echo "Checking for println! in non-test code..."
-          ! grep -r "println!" src/ --include="*.rs" | grep -v test | grep -v "mod tests" || {
+          ! grep -R --include="*.rs" -nE '^[[:space:]]*(println!|eprintln!)' crates | grep -v '/tests/' || {
             echo "⚠️  Found println! statements. Use tracing instead."
-            exit 0  # Warning only
+            exit 1
           }
 
   # Job 2: Build
@@ -100,8 +101,9 @@ jobs:
 
       - name: Install NATS server
         run: |
-          sudo apt-get update
-          sudo apt-get install -y nats-server
+          curl -fsSL -o /tmp/nats-server.tar.gz "https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/nats-server.tar.gz -C /tmp
+          sudo install "/tmp/nats-server-${NATS_SERVER_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
           nats-server --version
 
       - name: Run tests
@@ -133,8 +135,9 @@ jobs:
 
       - name: Install NATS server
         run: |
-          sudo apt-get update
-          sudo apt-get install -y nats-server
+          curl -fsSL -o /tmp/nats-server.tar.gz "https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/nats-server.tar.gz -C /tmp
+          sudo install "/tmp/nats-server-${NATS_SERVER_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
           nats-server --version
 
       - name: Generate coverage
@@ -237,8 +240,9 @@ jobs:
 
       - name: Install NATS server
         run: |
-          sudo apt-get update
-          sudo apt-get install -y nats-server
+          curl -fsSL -o /tmp/nats-server.tar.gz "https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/nats-server.tar.gz -C /tmp
+          sudo install "/tmp/nats-server-${NATS_SERVER_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
           nats-server --version
 
       - name: Run integration tests

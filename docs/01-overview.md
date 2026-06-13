@@ -2,7 +2,9 @@
 
 ## Introduction
 
-**Arc** is a web application starter/framework built with Rust and the Actix Web framework. It provides a solid, production-ready foundation for building traditional server-rendered web applications.
+**Arc** is a web application starter/framework built with Rust and the Actix Web framework. It now uses a workspace-based, event-sourced architecture for writes and projections while keeping server-rendered HTML as the default web surface.
+
+> Current architecture note: older sections in this document may still describe the original single-crate MVC starter. The live code is organized under `crates/` with `arc-core`, `arc-es-sqlite`, `arc-es-nats`, `arc-app`, and `arc-worker`.
 
 **Philosophy:** "Spend time with your ideas on top of a solid foundation" - The project aims to reduce boilerplate setup and provide a complete MVC structure with authentication, database integration, and frontend tooling pre-configured.
 
@@ -11,7 +13,9 @@
 - **Authentication System**: Complete login/logout flow with Argon2 password hashing
 - **Session Management**: Cookie-based sessions for user state
 - **Admin Dashboard**: Protected admin area with dashboard, settings, and profile pages
-- **Database ORM**: Diesel ORM with SQLite for type-safe queries
+- **Event Sourcing**: Commands, aggregates, append-only events, projections, and read models
+- **Storage**: SQLite event/read-model stores via Diesel, with Postgres planned next
+- **Distributed Event Lane**: NATS JetStream publisher (arc-es-nats) with Benthos pipelines as the primary durable routing, filtering, and projection delivery mechanism (custom worker optional/fallback)
 - **Migration System**: Versioned database migrations
 - **Seeder Pattern**: Database population with initial data
 - **Template Engine**: Tera templates for server-side rendering
@@ -25,7 +29,8 @@
 ### Backend
 
 - **Framework**: Actix Web 4.x
-- **Database**: SQLite with Diesel ORM 2.2.6
+- **Database**: SQLite with Diesel ORM 2.2.6 for event and read-model storage
+- **Event Bus**: In-process by default, optional NATS JetStream
 - **Template Engine**: Tera 1.20.0
 - **Password Hashing**: Argon2 0.5.3
 - **Session Management**: actix-session 0.10.1
@@ -80,17 +85,12 @@ cargo install cargo-watch
 
 ```
 arc/
-├── src/                    # Main source code
-│   ├── console/           # CLI commands
-│   ├── database/          # Seeders
-│   ├── helpers/           # Utility functions
-│   ├── http/              # Controllers & middlewares
-│   ├── models/            # Data models
-│   ├── resources/         # Frontend assets & views
-│   ├── services/          # Business logic
-│   ├── main.rs            # Application entry point
-│   ├── routes.rs          # Route definitions
-│   └── schema.rs          # Diesel ORM schema
+├── crates/
+│   ├── arc-core/          # Event sourcing primitives and framework traits
+│   ├── arc-es-sqlite/     # SQLite event/read-model/session stores
+│   ├── arc-es-nats/       # NATS JetStream EventBus
+│   ├── arc-app/           # Actix/Tera application
+│   └── arc-worker/        # Durable JetStream projection worker
 ├── migrations/            # Database migrations
 ├── database/              # SQLite database files
 ├── dist/                  # Compiled frontend assets

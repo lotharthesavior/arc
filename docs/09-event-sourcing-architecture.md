@@ -2,14 +2,22 @@
 
 ## 1. Current State Analysis
 
-Arc is a Rust/Actix-Web MVC starter with:
-- Diesel ORM + SQLite (CRUD, mutable state)
+Arc began as a Rust/Actix-Web MVC starter. The current code has moved to a workspace-based event-sourced model:
+
+- `arc-core` provides events, aggregates, command bus, event bus traits, projections, read-model traits, and compliance primitives.
+- `arc-es-sqlite` provides SQLite event/read-model/session/snapshot persistence.
+- `arc-es-nats` provides a NATS JetStream event bus (publishing foundation).
+- `arc-app` provides the Actix/Tera web surface and User domain wiring.
+- Benthos (Redpanda Connect) pipelines provide the primary durable event consumption, routing, filtering, transformation, and projection delivery mechanism (evolved Step 4). The lightweight `arc-worker` exists as an optional/fallback component rather than the core routing layer.
+
+Historical gaps that motivated this architecture were:
+- Diesel ORM + SQLite CRUD as mutable state
 - Tera templates, Tailwind, Alpine.js, HTMX
 - WebSocket support (Turbo Streams)
 - Planned plugin system (`the-hook` filters)
 - Monolithic binary with feature flags
 
-### Current Architecture
+### Historical Architecture
 
 ![Architecture Diagram - Current Arc MVC - HTTP requests flow through middleware to routes, controllers, and services, using Diesel ORM for SQLite database access and Tera for template rendering](diagrams/architecture-04-current-arc-mvc.svg)
 

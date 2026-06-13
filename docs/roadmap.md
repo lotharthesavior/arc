@@ -81,7 +81,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 **Status**: 🟢 Core Library Complete (100% of Core Components)
 **Last Updated**: 2026-03-01 (14-agent team implementation complete)
 
-**Current Architecture**: Traditional MVC with Diesel ORM (see `docs/02-architecture.md`)
+**Current Architecture**: Event-sourced workspace for writes and projections, with Actix/Tera as the web surface.
 **Target Architecture**: Event-sourced CQRS (see `docs/09-event-sourcing-architecture.md`)
 
 **Implementation Summary**:
@@ -215,31 +215,41 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
   - Legacy `users`/`user_email_index` tables dropped (migration `2026-05-08-000001_drop_legacy_users`).
   - **Status**: Complete
 
-### 1.4 Distributed Event Bus and Worker (Complete)
+### 1.4 Distributed Event Bus and Worker (Foundation Complete; Routing Layer Evolving)
 
-**Progress**: Refactor Steps 3 and 4 complete; Step 5 is the next architectural storage item.
+**Progress**: Step 3 (`arc-es-nats` publishing) is complete and remains the solid foundation. The original Step 4 (custom `arc-worker` as primary durable consumer + `ProjectionEngine` driver) is now superseded for the core path. Event routing strategy is evolving to Benthos (see 1.4.1). Step 5 is the next major architectural storage item.
 
 - [x] **Step 3: `arc-es-nats` JetStream EventBus** ✅
   - `NatsEventBus` publishes full Arc `Event` payloads to `events.<aggregate_type>.<event_type>` subjects and idempotently ensures the JetStream stream exists.
   - **File**: `crates/arc-es-nats/src/lib.rs`
-  - **Status**: Complete
+  - **Status**: Complete (foundation for all downstream routing)
 
-- [x] **Step 4: `arc-worker` durable projector** ✅
+- [~] **Step 4: Custom `arc-worker` durable projector** (Initial / Fallback)
   - `arc-worker` connects to NATS, creates a durable pull consumer, rebuilds projections at startup, processes JetStream events through `ProjectionEngine`, and ACKs/NAKs by outcome.
   - **File**: `crates/arc-worker/src/main.rs`
-  - **Status**: Complete
+  - **Status**: Implemented as initial approach; now treated as optional/fallback rather than the primary routing mechanism.
 
 - [x] **NATS/worker integration tests and gate** ✅
   - Phase 1 gate passed workspace tests and clippy with all features after adding publish/consume, redelivery, durable consumer, and worker projection coverage.
-  - GitHub Actions installs `nats-server` before Rust test jobs so those integration tests run against live JetStream instead of skipping.
-  - **Status**: Complete
+  - GitHub Actions installs the pinned upstream `nats-server` release binary before Rust test jobs so those integration tests run against live JetStream instead of skipping.
+  - **Status**: Complete (validates the NATS publishing foundation)
+
+### 1.4.1 Benthos as Primary Event Routing Strategy (Proposed / In Definition)
+
+- [ ] Adopt **Benthos** (Redpanda Connect / formerly Benthos) as the main tool for routing, filtering, transforming, and delivering events from NATS JetStream.
+- Goal: Use Benthos for complex event handling and projection routing instead of custom `arc-worker` as the core design.
+- `arc-es-nats` remains the publishing side.
+- Custom workers (`arc-worker`) become optional / use-case specific rather than the primary durable consumer + ProjectionEngine driver.
+- This changes the event handling strategy to be more declarative and powerful via Benthos pipelines (inputs → processors → outputs), reducing custom Rust code for routing logic.
+- **Dependencies**: Step 3 `arc-es-nats` (publishing to JetStream) and NATS JetStream topics.
+- **Status**: Detailed definition in progress in `docs/ark/refactor-plan.md` (evolved Step 4). High-level direction captured here.
 
 ### 1.5 Production Storage Driver Switch (Next)
 
 - [ ] **Step 5: Postgres event/read-model stores**
   - Add `crates/arc-es-postgres` and `arc-rm-postgres`.
   - Add `DATABASE_DRIVER=sqlite|postgres` startup config so the app can swap event and read-model stores behind existing domain traits.
-  - **Dependencies**: Step 3 `arc-es-nats` ✅, Step 4 `arc-worker` ✅
+  - **Dependencies**: Step 3 `arc-es-nats` (publishing) ✅ and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, filtering, and projection delivery. The custom `arc-worker` is no longer a hard dependency for the primary path.
   - **Status**: Recommended next architectural work
 
 ---
@@ -669,10 +679,10 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 ### 9.3 Advanced Cluster Features
 
-- [x] **Snapshot store** ✅ (interface + SQLite persistence + CommandBus wiring landed)
+- [~] **Snapshot store** (infrastructure landed; User activation deferred)
   - `Snapshot` struct + `EventStore::save_snapshot/load_snapshot` (`crates/arc-core/src/snapshot.rs`, `event_store.rs`); `Aggregate::to_snapshot/from_snapshot` (`aggregate.rs`); `arc-es-sqlite` upsert/load impl; migration `2026-05-31-000001_create_snapshots`.
-  - CommandBus rehydrates via snapshot+tail with from-zero fallback, gated by `SnapshotPolicy` (default `Disabled` = unchanged; `EveryNEvents(N)` creates snapshots best-effort after append). Event log stays the source of truth; audit/rebuild/temporal paths always read from zero.
-  - **Status**: Complete
+  - CommandBus can rehydrate via snapshot+tail with from-zero fallback, gated by `SnapshotPolicy` (default `Disabled` = unchanged; `EveryNEvents(N)` creates snapshots best-effort after append). Production `UserAggregate` currently opts out, so real user writes still rehydrate from zero.
+  - **Status**: Partial - infrastructure complete; production activation deferred
   - **Dependencies**: ES core
 
 - [ ] **Event retention & archival**
@@ -873,9 +883,9 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 1. ✅ Step 3 complete: `arc-es-nats` JetStream event bus.
 2. ✅ Step 4 complete: `arc-worker` durable projector.
 3. ✅ NATS/worker integration tests and workspace clippy gate passed in Phase 1.
-4. ✅ CI provisions `nats-server` for Rust test jobs so JetStream integration tests run live.
-4. 🔲 Begin Step 5: Postgres event/read-model stores and `DATABASE_DRIVER=sqlite|postgres`.
-5. 🔲 Continue HIPAA-2b and documentation/reference reconciliation.
+4. ✅ CI installs pinned upstream `nats-server` for Rust test jobs so JetStream integration tests run live.
+5. 🔲 Begin Step 5: Postgres event/read-model stores and `DATABASE_DRIVER=sqlite|postgres`.
+6. 🔲 Continue HIPAA-2b and documentation/reference reconciliation.
 
 ### Short-term (Next 2-4 Weeks) - **✅ PHASE 1 COMPLETE**
 **Week 1: Foundation Setup** ✅ COMPLETE
