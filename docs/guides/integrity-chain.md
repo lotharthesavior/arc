@@ -58,33 +58,33 @@ secret only the application owns is enough evidence of tampering — and
 Step 5 may add a public-verifiable mode for cross-organization audit
 hand-off; the trait surface accommodates it without breaking changes.
 
-## Status
+## Runtime enforcement
 
-The trait + reference impl + 12 unit tests (including pinned test vectors)
-land in HIPAA-5. **Wiring into `EventStore` is not yet done** — that's
-Step 2. Until then projections can verify externally:
+SQLite event integrity is opt-in. When `EVENT_INTEGRITY_KEY` is configured,
+`SqliteEventStore` signs newly appended events and stores both
+`integrity_signature` and `integrity_key_id` with the row. `load`,
+`load_from`, and `stream_all` recompute the chain and return
+`EventStoreError::Integrity` when a signature is missing or does not match.
 
-```rust
-// load events for an aggregate (audit field excluded by canonical_bytes)
-let events = store.load(&aggregate_id).await?;
+Without `EVENT_INTEGRITY_KEY`, SQLite keeps the compatibility behavior:
+events append and load without signature enforcement.
 
-// expect signatures alongside (Step 2 will return them in the same load)
-let pairs: Vec<(Event, EventSignature)> = pair_events_with_signatures(events);
+Existing databases need a backfill before enabling enforcement. The signature
+columns are nullable so the migration can land without rewriting historical
+events, but an enabled store intentionally rejects unsigned historical rows.
 
-let chain = HmacSha256Chain::from_hex(&env::var("INTEGRITY_KEY")?)?;
-match chain.verify_chain(&pairs) {
-    IntegrityResult::Valid => log::info!("audit chain intact"),
-    IntegrityResult::Broken(e) => alert(&e),
-}
-```
+Postgres parity is still pending. Until Postgres stores persist and verify the
+same fields, treat HIPAA-5 enforcement as SQLite-only.
 
 ## Key management
 
 Out of scope here. Real deployments:
 
-- Load `INTEGRITY_KEY` from a KMS / Vault / sealed-secret at startup.
-- Rotate by versioning: store `key_id` alongside the signature; `verify_chain`
-  picks the right key per event.
+- Load `EVENT_INTEGRITY_KEY` from a KMS / Vault / sealed-secret at startup.
+- Keep `EVENT_INTEGRITY_KEY_ID` stable for a key and change it only as part of
+  a documented rotation/backfill procedure.
+- Rotate by versioning: store `key_id` alongside the signature; verification
+  can pick the right key per event once multi-key lookup is added.
 - Never log the key. The `Debug` impl on `EventSignature` already truncates
   output to avoid leaking full hashes into telemetry.
 

@@ -7,6 +7,7 @@
 
 use crate::domain::user::aggregate::UserAggregate;
 use crate::domain::user::projector::{UserProjector, USERS_VIEW};
+use crate::helpers::config;
 use crate::helpers::config::DatabaseDriver;
 use arc_core::command_bus::CommandBus;
 use arc_core::event_bus::{EventBus, InProcessEventBus};
@@ -50,7 +51,7 @@ pub async fn build_stores(
 }
 
 async fn build_sqlite_stores(database_url: &str) -> Result<EsStores, Box<dyn std::error::Error>> {
-    let event_store = SqliteEventStore::new(database_url).await?;
+    let event_store = build_sqlite_event_store(database_url).await?;
     let read_model_store: Arc<dyn ReadModelStore> =
         Arc::new(SqliteReadModelStore::new(database_url).await?);
 
@@ -59,6 +60,20 @@ async fn build_sqlite_stores(database_url: &str) -> Result<EsStores, Box<dyn std
         projection_event_store: Box::new(event_store),
         read_model_store,
     })
+}
+
+async fn build_sqlite_event_store(
+    database_url: &str,
+) -> Result<SqliteEventStore, Box<dyn std::error::Error>> {
+    match config::event_integrity_key() {
+        Some(key) => Ok(SqliteEventStore::new_with_integrity_key(
+            database_url,
+            key,
+            config::event_integrity_key_id(),
+        )
+        .await?),
+        None => Ok(SqliteEventStore::new(database_url).await?),
+    }
 }
 
 #[cfg(feature = "postgres")]

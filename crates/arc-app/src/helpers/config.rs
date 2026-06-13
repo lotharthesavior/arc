@@ -65,6 +65,21 @@ pub fn session_store_url(driver: DatabaseDriver) -> String {
     }
 }
 
+/// Optional HMAC key enabling HIPAA-5 event integrity signing/enforcement.
+/// The storage layer validates length and rejects keys shorter than 32 bytes.
+pub fn event_integrity_key() -> Option<Vec<u8>> {
+    env::var("EVENT_INTEGRITY_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.into_bytes())
+}
+
+/// Identifier stored with each event signature so future key rotation can
+/// distinguish which key signed a row.
+pub fn event_integrity_key_id() -> String {
+    env::var("EVENT_INTEGRITY_KEY_ID").unwrap_or_else(|_| "default".to_string())
+}
+
 /// Get the database pool limit from environment or use default
 pub fn database_pool_limit() -> u32 {
     env::var("DATABASE_POOL_LIMIT")

@@ -19,6 +19,7 @@
 
 use crate::audit::AuditError;
 use crate::event::Event;
+use crate::integrity::IntegrityError;
 use crate::snapshot::Snapshot;
 use async_trait::async_trait;
 use thiserror::Error;
@@ -77,6 +78,14 @@ pub enum EventStoreError {
         event_index: usize,
         #[source]
         source: AuditError,
+    },
+
+    /// Stored event signatures are missing or do not match the recomputed
+    /// integrity chain.
+    #[error("Integrity validation failed: {source}")]
+    Integrity {
+        #[from]
+        source: IntegrityError,
     },
 
     #[error("Database error: {message}")]

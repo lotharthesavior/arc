@@ -13,6 +13,7 @@ use arc_core::event::Event;
 use arc_core::event_store::{
     validate_audit_batch, EventStore, EventStoreError, EventStoreResult, VersionCheck,
 };
+use arc_core::integrity::{EventSignature, HmacSha256Chain, IntegrityChain, IntegrityError};
 use arc_core::snapshot::Snapshot;
 use async_trait::async_trait;
 use diesel::prelude::*;
@@ -48,6 +49,8 @@ struct NewEventRecord {
     pub timestamp_utc_us: i64,
     pub causation_id: Option<String>,
     pub correlation_id: String,
+    pub integrity_signature: Option<String>,
+    pub integrity_key_id: Option<String>,
 }
 
 #[derive(Debug, Queryable, Clone)]
@@ -68,10 +71,16 @@ struct EventRecord {
     pub timestamp_utc_us: i64,
     pub causation_id: Option<String>,
     pub correlation_id: String,
+    pub integrity_signature: Option<String>,
+    pub integrity_key_id: Option<String>,
 }
 
 impl NewEventRecord {
-    fn from_event(event: &Event) -> Result<Self, EventStoreError> {
+    fn from_event(
+        event: &Event,
+        integrity_signature: Option<String>,
+        integrity_key_id: Option<String>,
+    ) -> Result<Self, EventStoreError> {
         // sequence and timestamp are i64 end-to-end now — no truncation.
         let timestamp_seconds: i64 = (event.timestamp / 1000) as i64;
         Ok(NewEventRecord {
@@ -90,6 +99,8 @@ impl NewEventRecord {
             timestamp_utc_us: event.audit.timestamp_utc_us,
             causation_id: event.audit.causation_id.map(|u| u.to_string()),
             correlation_id: event.audit.correlation_id.to_string(),
+            integrity_signature,
+            integrity_key_id,
         })
     }
 }
@@ -203,6 +214,8 @@ mod schema {
             timestamp_utc_us -> BigInt,
             causation_id -> Nullable<Text>,
             correlation_id -> Text,
+            integrity_signature -> Nullable<Text>,
+            integrity_key_id -> Nullable<Text>,
         }
     }
 
@@ -225,6 +238,12 @@ type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 #[derive(Clone)]
 pub struct SqliteEventStore {
     pool: Arc<Pool>,
+    integrity: Option<Arc<IntegrityConfig>>,
+}
+
+struct IntegrityConfig {
+    chain: Arc<dyn IntegrityChain>,
+    key_id: String,
 }
 
 impl SqliteEventStore {
@@ -237,14 +256,151 @@ impl SqliteEventStore {
 
         Ok(SqliteEventStore {
             pool: Arc::new(pool),
+            integrity: None,
         })
+    }
+
+    pub async fn new_with_integrity_key(
+        database_url: &str,
+        key: impl Into<Vec<u8>>,
+        key_id: impl Into<String>,
+    ) -> EventStoreResult<Self> {
+        let mut store = Self::new(database_url).await?;
+        store.integrity = Some(Arc::new(IntegrityConfig {
+            chain: Arc::new(HmacSha256Chain::new(key).map_err(EventStoreError::from)?),
+            key_id: key_id.into(),
+        }));
+        Ok(store)
     }
 
     pub fn with_pool(pool: Pool) -> Self {
         SqliteEventStore {
             pool: Arc::new(pool),
+            integrity: None,
         }
     }
+
+    pub fn with_pool_and_integrity_key(
+        pool: Pool,
+        key: impl Into<Vec<u8>>,
+        key_id: impl Into<String>,
+    ) -> EventStoreResult<Self> {
+        Ok(SqliteEventStore {
+            pool: Arc::new(pool),
+            integrity: Some(Arc::new(IntegrityConfig {
+                chain: Arc::new(HmacSha256Chain::new(key).map_err(EventStoreError::from)?),
+                key_id: key_id.into(),
+            })),
+        })
+    }
+}
+
+fn required_signature(
+    record: &EventRecord,
+    aggregate_id: &str,
+    sequence: i64,
+) -> EventStoreResult<EventSignature> {
+    let _key_id = record.integrity_key_id.as_ref().ok_or_else(|| {
+        EventStoreError::from(IntegrityError::BrokenAt {
+            aggregate_id: aggregate_id.to_string(),
+            sequence,
+        })
+    })?;
+
+    record
+        .integrity_signature
+        .as_ref()
+        .map(|s| EventSignature(s.clone()))
+        .ok_or_else(|| {
+            EventStoreError::from(IntegrityError::BrokenAt {
+                aggregate_id: aggregate_id.to_string(),
+                sequence,
+            })
+        })
+}
+
+fn verify_integrity_records(
+    integrity: &IntegrityConfig,
+    records: &[EventRecord],
+    previous_signature: EventSignature,
+) -> EventStoreResult<Vec<Event>> {
+    let mut previous = previous_signature;
+    let mut events = Vec::with_capacity(records.len());
+
+    for record in records {
+        let event = record.to_event()?;
+        let expected = integrity.chain.sign_event(&previous, &event)?;
+        let claimed = required_signature(record, &event.aggregate_id, event.sequence)?;
+
+        if expected != claimed {
+            return Err(EventStoreError::from(IntegrityError::BrokenAt {
+                aggregate_id: event.aggregate_id,
+                sequence: event.sequence,
+            }));
+        }
+
+        previous = claimed;
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
+fn previous_signature_for_aggregate(
+    conn: &mut SqliteConnection,
+    aggregate_id: &str,
+    before_sequence: i64,
+) -> EventStoreResult<EventSignature> {
+    if before_sequence <= 1 {
+        return Ok(EventSignature::genesis());
+    }
+
+    let record = events::table
+        .filter(events::aggregate_id.eq(aggregate_id))
+        .filter(events::sequence.lt(before_sequence))
+        .order(events::sequence.desc())
+        .first::<EventRecord>(conn)
+        .optional()
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+    match record {
+        Some(record) => required_signature(&record, aggregate_id, record.sequence),
+        None => Ok(EventSignature::genesis()),
+    }
+}
+
+fn verify_stream_integrity_records(
+    conn: &mut SqliteConnection,
+    integrity: &IntegrityConfig,
+    records: &[EventRecord],
+) -> EventStoreResult<Vec<Event>> {
+    use std::collections::HashMap;
+
+    let mut previous_by_aggregate: HashMap<String, EventSignature> = HashMap::new();
+    let mut events = Vec::with_capacity(records.len());
+
+    for record in records {
+        let event = record.to_event()?;
+        let previous = match previous_by_aggregate.get(&event.aggregate_id) {
+            Some(sig) => sig.clone(),
+            None => previous_signature_for_aggregate(conn, &event.aggregate_id, event.sequence)?,
+        };
+
+        let expected = integrity.chain.sign_event(&previous, &event)?;
+        let claimed = required_signature(record, &event.aggregate_id, event.sequence)?;
+
+        if expected != claimed {
+            return Err(EventStoreError::from(IntegrityError::BrokenAt {
+                aggregate_id: event.aggregate_id,
+                sequence: event.sequence,
+            }));
+        }
+
+        previous_by_aggregate.insert(event.aggregate_id.clone(), claimed);
+        events.push(event);
+    }
+
+    Ok(events)
 }
 
 #[async_trait]
@@ -264,6 +420,7 @@ impl EventStore for SqliteEventStore {
 
         let aggregate_id = aggregate_id.to_string();
         let pool = self.pool.clone();
+        let integrity = self.integrity.clone();
 
         tokio::task::spawn_blocking(move || -> EventStoreResult<()> {
             use diesel::connection::AnsiTransactionManager;
@@ -304,8 +461,27 @@ impl EventStore for SqliteEventStore {
                     }
                 }
 
+                let mut previous_signature = if integrity.is_some() {
+                    previous_signature_for_aggregate(&mut conn, &aggregate_id, current_version + 1)?
+                } else {
+                    EventSignature::genesis()
+                };
+
                 for event in &new_events {
-                    let record = NewEventRecord::from_event(event)?;
+                    let mut record = NewEventRecord::from_event(event, None, None)?;
+
+                    if let Some(integrity) = integrity.as_ref() {
+                        let mut persisted_event = event.clone();
+                        persisted_event.timestamp = (record.timestamp as u64) * 1000;
+                        let signature = integrity
+                            .chain
+                            .sign_event(&previous_signature, &persisted_event)
+                            .map_err(EventStoreError::from)?;
+                        previous_signature = signature.clone();
+                        record.integrity_signature = Some(signature.0);
+                        record.integrity_key_id = Some(integrity.key_id.clone());
+                    }
+
                     diesel::insert_into(events::table)
                         .values(&record)
                         .execute(&mut *conn)
@@ -342,6 +518,7 @@ impl EventStore for SqliteEventStore {
     ) -> EventStoreResult<Vec<Event>> {
         let aggregate_id = aggregate_id.to_string();
         let pool = self.pool.clone();
+        let integrity = self.integrity.clone();
 
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get().map_err(|e| {
@@ -355,7 +532,14 @@ impl EventStore for SqliteEventStore {
                 .load(&mut conn)
                 .map_err(|e| EventStoreError::database(e.to_string()))?;
 
-            records.iter().map(|r| r.to_event()).collect()
+            match integrity.as_ref() {
+                Some(integrity) => {
+                    let previous =
+                        previous_signature_for_aggregate(&mut conn, &aggregate_id, from_sequence)?;
+                    verify_integrity_records(integrity, &records, previous)
+                }
+                None => records.iter().map(|r| r.to_event()).collect(),
+            }
         })
         .await
         .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
@@ -363,6 +547,7 @@ impl EventStore for SqliteEventStore {
 
     async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>> {
         let pool = self.pool.clone();
+        let integrity = self.integrity.clone();
 
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get().map_err(|e| {
@@ -375,7 +560,10 @@ impl EventStore for SqliteEventStore {
                 .load(&mut conn)
                 .map_err(|e| EventStoreError::database(e.to_string()))?;
 
-            records.iter().map(|r| r.to_event()).collect()
+            match integrity.as_ref() {
+                Some(integrity) => verify_stream_integrity_records(&mut conn, integrity, &records),
+                None => records.iter().map(|r| r.to_event()).collect(),
+            }
         })
         .await
         .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
@@ -479,6 +667,26 @@ mod tests {
         SqliteEventStore::with_pool(pool)
     }
 
+    async fn setup_integrity_test_store() -> SqliteEventStore {
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("Failed to create pool");
+
+        let mut conn = pool.get().expect("Failed to get connection");
+        conn.run_pending_migrations(MIGRATIONS)
+            .expect("Failed to run migrations");
+        drop(conn);
+
+        SqliteEventStore::with_pool_and_integrity_key(pool, integrity_key(), "test-key")
+            .expect("integrity store")
+    }
+
+    fn integrity_key() -> Vec<u8> {
+        b"012345678901234567890123456789AB".to_vec()
+    }
+
     /// Helper: build an event with stamped audit.
     fn stamped_event(
         agg_type: &str,
@@ -489,6 +697,14 @@ mod tests {
     ) -> Event {
         Event::new(agg_type, agg_id, sequence, event_type, payload)
             .with_audit(AuditMetadata::test_default())
+    }
+
+    #[derive(QueryableByName, Debug)]
+    struct SignatureRow {
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+        integrity_signature: Option<String>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+        integrity_key_id: Option<String>,
     }
 
     #[tokio::test]
@@ -533,6 +749,196 @@ mod tests {
         assert_eq!(loaded.len(), 3);
         assert_eq!(loaded[0].sequence, 1);
         assert_eq!(loaded[2].sequence, 3);
+    }
+
+    #[tokio::test]
+    async fn test_integrity_append_persists_signatures() {
+        let store = setup_integrity_test_store().await;
+        store
+            .append(
+                "signed-1",
+                VersionCheck::New,
+                vec![
+                    stamped_event("User", "signed-1", 1, "UserCreated", json!({})),
+                    stamped_event("User", "signed-1", 2, "ProfileUpdated", json!({})),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let pool = store.pool.clone();
+        let rows = tokio::task::spawn_blocking(move || -> EventStoreResult<Vec<SignatureRow>> {
+            let mut conn = pool
+                .get()
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+            diesel::sql_query(
+                "SELECT integrity_signature, integrity_key_id
+                 FROM events WHERE aggregate_id = 'signed-1' ORDER BY sequence",
+            )
+            .load(&mut *conn)
+            .map_err(|e| EventStoreError::database(e.to_string()))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            assert_eq!(row.integrity_signature.as_deref().map(str::len), Some(64));
+            assert_eq!(row.integrity_key_id.as_deref(), Some("test-key"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_integrity_load_rejects_tampered_payload() {
+        let store = setup_integrity_test_store().await;
+        store
+            .append(
+                "tamper-1",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "tamper-1",
+                    1,
+                    "UserCreated",
+                    json!({"ok": true}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        let pool = store.pool.clone();
+        tokio::task::spawn_blocking(move || -> EventStoreResult<()> {
+            let mut conn = pool
+                .get()
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+            diesel::sql_query(
+                "UPDATE events SET payload = '{\"ok\": false}' WHERE aggregate_id = 'tamper-1'",
+            )
+            .execute(&mut *conn)
+            .map_err(|e| EventStoreError::database(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let err = store.load("tamper-1").await.unwrap_err();
+        assert!(
+            matches!(err, EventStoreError::Integrity { .. }),
+            "expected integrity error, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_integrity_load_rejects_missing_signature() {
+        let store = setup_integrity_test_store().await;
+        store
+            .append(
+                "missing-sig",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "missing-sig",
+                    1,
+                    "UserCreated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        let pool = store.pool.clone();
+        tokio::task::spawn_blocking(move || -> EventStoreResult<()> {
+            let mut conn = pool
+                .get()
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+            diesel::sql_query(
+                "UPDATE events SET integrity_signature = NULL WHERE aggregate_id = 'missing-sig'",
+            )
+            .execute(&mut *conn)
+            .map_err(|e| EventStoreError::database(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let err = store.load("missing-sig").await.unwrap_err();
+        assert!(
+            matches!(err, EventStoreError::Integrity { .. }),
+            "expected integrity error, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_integrity_load_from_uses_previous_signature() {
+        let store = setup_integrity_test_store().await;
+        store
+            .append(
+                "load-from-signed",
+                VersionCheck::New,
+                vec![
+                    stamped_event("User", "load-from-signed", 1, "UserCreated", json!({})),
+                    stamped_event("User", "load-from-signed", 2, "ProfileUpdated", json!({})),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let loaded = store.load_from("load-from-signed", 2).await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].sequence, 2);
+    }
+
+    #[tokio::test]
+    async fn test_integrity_stream_all_verifies_per_aggregate() {
+        let store = setup_integrity_test_store().await;
+        store
+            .append(
+                "signed-a",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "signed-a",
+                    1,
+                    "UserCreated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+        store
+            .append(
+                "signed-b",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "signed-b",
+                    1,
+                    "UserCreated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+        store
+            .append(
+                "signed-a",
+                VersionCheck::Expected(1),
+                vec![stamped_event(
+                    "User",
+                    "signed-a",
+                    2,
+                    "ProfileUpdated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        let loaded = store.stream_all(0).await.unwrap();
+        assert_eq!(loaded.len(), 3);
     }
 
     #[tokio::test]

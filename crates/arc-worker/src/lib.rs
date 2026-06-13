@@ -65,7 +65,7 @@ pub async fn build_projection_engine(
 async fn build_sqlite_projection_engine(
     database_url: &str,
 ) -> Result<Arc<ProjectionEngine>, Box<dyn Error + Send + Sync>> {
-    let event_store = SqliteEventStore::new(database_url).await?;
+    let event_store = build_sqlite_event_store(database_url).await?;
     let read_model_store: Arc<dyn ReadModelStore> =
         Arc::new(SqliteReadModelStore::new(database_url).await?);
 
@@ -73,6 +73,31 @@ async fn build_sqlite_projection_engine(
     engine.register_projector(Box::new(UserProjector::new()), read_model_store, USERS_VIEW);
 
     Ok(Arc::new(engine))
+}
+
+async fn build_sqlite_event_store(
+    database_url: &str,
+) -> Result<SqliteEventStore, Box<dyn Error + Send + Sync>> {
+    match event_integrity_key() {
+        Some(key) => Ok(SqliteEventStore::new_with_integrity_key(
+            database_url,
+            key,
+            event_integrity_key_id(),
+        )
+        .await?),
+        None => Ok(SqliteEventStore::new(database_url).await?),
+    }
+}
+
+fn event_integrity_key() -> Option<Vec<u8>> {
+    env::var("EVENT_INTEGRITY_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.into_bytes())
+}
+
+fn event_integrity_key_id() -> String {
+    env::var("EVENT_INTEGRITY_KEY_ID").unwrap_or_else(|_| "default".to_string())
 }
 
 #[cfg(feature = "postgres")]
