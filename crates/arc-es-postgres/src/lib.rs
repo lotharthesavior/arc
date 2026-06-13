@@ -506,6 +506,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_append_and_load() {
         let Some(store) = live_store().await else {
             return;
@@ -521,6 +522,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_optimistic_concurrency() {
         let Some(store) = live_store().await else {
             return;
@@ -537,6 +539,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_rejects_pending_audit() {
         let Some(store) = live_store().await else {
             return;
@@ -551,6 +554,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_snapshot_save_then_load() {
         let Some(store) = live_store().await else {
             return;

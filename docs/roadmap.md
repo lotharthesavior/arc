@@ -246,11 +246,10 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 ### 1.5 Production Storage Driver Switch (Next)
 
-- [ ] **Step 5: Postgres event/read-model stores**
+- [x] **Step 5: Postgres event/read-model stores** ✅
   - Add `crates/arc-es-postgres` and `arc-rm-postgres`.
   - Add `DATABASE_DRIVER=sqlite|postgres` startup config so the app can swap event and read-model stores behind existing domain traits.
-  - **Dependencies**: Step 3 `arc-es-nats` (publishing) ✅ and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, filtering, and projection delivery. The custom `arc-worker` is no longer a hard dependency for the primary path.
-  - **Status**: Recommended next architectural work
+  - **Status**: Complete (validated against live DB, app/worker wiring verified)
 
 ---
 

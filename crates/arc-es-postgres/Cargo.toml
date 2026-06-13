@@ -28,4 +28,5 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
 tracing.workspace = true
 
 [dev-dependencies]
+serial_test.workspace = true
 arc-core = { path = "../arc-core", features = ["test-utils"] }

@@ -8,6 +8,7 @@
   * [Backend](03-backend.md)
   * [Frontend](04-frontend.md)
   * [Database](05-database.md)
+  * [Postgres Setup](guides/postgres-setup.md)
   * [Testing](06-testing.md)
   * [Session Configuration](SESSION_CONFIGURATION.md)
 

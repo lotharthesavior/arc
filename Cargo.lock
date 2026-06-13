@@ -555,6 +555,7 @@ dependencies = [
  "async-trait",
  "serde",
  "serde_json",
+ "serial_test",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",

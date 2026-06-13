@@ -297,6 +297,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_upsert_and_get() {
         let Some(store) = live_store().await else {
             return;
@@ -315,6 +316,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_upsert_version_gate() {
         let Some(store) = live_store().await else {
             return;
@@ -342,6 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_find_by_email() {
         let Some(store) = live_store().await else {
             return;
@@ -371,6 +374,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_live_delete_and_truncate() {
         let Some(store) = live_store().await else {
             return;
