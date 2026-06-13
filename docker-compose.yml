@@ -34,7 +34,13 @@ services:
     volumes:
       - app-db:/app/database
     environment:
+      DATABASE_DRIVER: sqlite
       DATABASE_URL: database/arc_dev.db
+      # To use the bundled postgres service instead, build the image with the
+      # `postgres` cargo feature and switch to:
+      #   DATABASE_DRIVER: postgres
+      #   DATABASE_URL: postgres://arc:password@postgres:5432/arc_dev
+      # then add `postgres: { condition: service_healthy }` under depends_on.
       NATS_URL: nats://nats:4222
       NATS_STREAM: EVENTS
       EVENT_BUS: nats
@@ -60,7 +66,10 @@ services:
     volumes:
       - app-db:/app/database
     environment:
+      DATABASE_DRIVER: sqlite
       DATABASE_URL: database/arc_dev.db
+      # Mirror the app service to target postgres: build with the `postgres`
+      # feature, then set DATABASE_DRIVER=postgres and a postgres:// DATABASE_URL.
       NATS_URL: nats://nats:4222
       NATS_STREAM: EVENTS
       NATS_CONSUMER: arc-worker

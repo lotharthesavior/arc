@@ -95,12 +95,23 @@ fn validate_environment() {
     debug!("All required environment variables present");
 }
 
-/// Verifies the SQLite database file exists at the configured `DATABASE_URL`.
-/// Exits with code 1 and a helpful message if the file is missing.
+/// Verifies database availability for the configured driver. For SQLite this
+/// checks that the `DATABASE_URL` file exists and exits with code 1 if missing.
+/// For non-file drivers (Postgres) `DATABASE_URL` is a connection string, so no
+/// filesystem check is performed.
 pub fn check_database_health() {
     info!("Checking database health");
-    let database: String = helpers::config::database_url();
+    let driver = helpers::config::DatabaseDriver::from_env();
 
+    if !driver.is_file_backed() {
+        debug!(
+            driver = driver.as_str(),
+            "Database driver uses a connection string; skipping filesystem check"
+        );
+        return;
+    }
+
+    let database: String = helpers::config::database_url();
     if !fs::exists(PathBuf::from(&database)).unwrap() {
         error!("Database file not found at: {}", database);
         error!("Please run `cargo run migrate` to create the database");

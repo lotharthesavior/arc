@@ -489,6 +489,7 @@ dependencies = [
  "actix-web-lab",
  "arc-core",
  "arc-es-nats",
+ "arc-es-postgres",
  "arc-es-sqlite",
  "argon2",
  "async-trait",
@@ -547,6 +548,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-es-postgres"
+version = "0.2.2"
+dependencies = [
+ "arc-core",
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "arc-es-sqlite"
 version = "0.2.2"
 dependencies = [
@@ -578,6 +594,7 @@ dependencies = [
  "arc",
  "arc-core",
  "arc-es-nats",
+ "arc-es-postgres",
  "arc-es-sqlite",
  "async-nats",
  "dotenv",

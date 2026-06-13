@@ -21,12 +21,14 @@ doctest = false
 default = ["sqlite"]
 sqlite = []
 nats = ["dep:arc-es-nats"]
+postgres = ["dep:arc-es-postgres"]
 
 [dependencies]
 # Workspace crates
 arc-core = { path = "../arc-core" }
 arc-es-sqlite = { path = "../arc-es-sqlite" }
 arc-es-nats = { path = "../arc-es-nats", optional = true }
+arc-es-postgres = { path = "../arc-es-postgres", optional = true }
 
 # Web framework
 actix-web.workspace = true

@@ -33,7 +33,36 @@ impl WorkerConfig {
     }
 }
 
+/// Storage backend selected via `DATABASE_DRIVER`. The Postgres path requires
+/// the worker's `postgres` cargo feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DatabaseDriver {
+    Sqlite,
+    Postgres,
+}
+
+fn database_driver() -> DatabaseDriver {
+    match env::var("DATABASE_DRIVER")
+        .unwrap_or_else(|_| "sqlite".into())
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "postgres" | "postgresql" | "pg" => DatabaseDriver::Postgres,
+        _ => DatabaseDriver::Sqlite,
+    }
+}
+
 pub async fn build_projection_engine(
+    database_url: &str,
+) -> Result<Arc<ProjectionEngine>, Box<dyn Error + Send + Sync>> {
+    match database_driver() {
+        DatabaseDriver::Sqlite => build_sqlite_projection_engine(database_url).await,
+        DatabaseDriver::Postgres => build_postgres_projection_engine(database_url).await,
+    }
+}
+
+async fn build_sqlite_projection_engine(
     database_url: &str,
 ) -> Result<Arc<ProjectionEngine>, Box<dyn Error + Send + Sync>> {
     let event_store = SqliteEventStore::new(database_url).await?;
@@ -44,6 +73,34 @@ pub async fn build_projection_engine(
     engine.register_projector(Box::new(UserProjector::new()), read_model_store, USERS_VIEW);
 
     Ok(Arc::new(engine))
+}
+
+#[cfg(feature = "postgres")]
+async fn build_postgres_projection_engine(
+    database_url: &str,
+) -> Result<Arc<ProjectionEngine>, Box<dyn Error + Send + Sync>> {
+    use arc_es_postgres::{PostgresEventStore, PostgresReadModelStore};
+
+    let event_store = PostgresEventStore::new(database_url).await?;
+    event_store.initialize_schema().await?;
+    let read_model_store_impl = PostgresReadModelStore::new(database_url).await?;
+    read_model_store_impl.initialize_schema().await?;
+    let read_model_store: Arc<dyn ReadModelStore> = Arc::new(read_model_store_impl);
+
+    let mut engine = ProjectionEngine::new(Box::new(event_store));
+    engine.register_projector(Box::new(UserProjector::new()), read_model_store, USERS_VIEW);
+
+    Ok(Arc::new(engine))
+}
+
+#[cfg(not(feature = "postgres"))]
+async fn build_postgres_projection_engine(
+    _database_url: &str,
+) -> Result<Arc<ProjectionEngine>, Box<dyn Error + Send + Sync>> {
+    Err(
+        "DATABASE_DRIVER=postgres requires building arc-worker with the `postgres` cargo feature"
+            .into(),
+    )
 }
 
 pub async fn connect_consumer(

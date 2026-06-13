@@ -11,10 +11,15 @@ repository.workspace = true
 name = "arc-worker"
 path = "src/main.rs"
 
+[features]
+default = []
+postgres = ["dep:arc-es-postgres"]
+
 [dependencies]
 arc-app = { package = "arc", path = "../arc-app", default-features = false }
 arc-core = { path = "../arc-core" }
 arc-es-sqlite = { path = "../arc-es-sqlite" }
+arc-es-postgres = { path = "../arc-es-postgres", optional = true }
 
 async-nats.workspace = true
 dotenv.workspace = true

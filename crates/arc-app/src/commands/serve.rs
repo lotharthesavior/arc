@@ -1,3 +1,5 @@
+use crate::helpers::config::DatabaseDriver;
+use crate::helpers::es_stack;
 use crate::helpers::rate_limit;
 use crate::http::middlewares::rate_limit_middleware::GlobalRateLimit;
 use crate::routes;
@@ -22,11 +24,10 @@ use arc_core::command_bus::CommandBus;
 use arc_core::event_bus::TwoLaneEventBus;
 use arc_core::event_bus::{EventBus, InProcessEventBus};
 use arc_core::projection::{ProjectionEngine, ProjectionEngineHandler};
-use arc_core::read_model_store::ReadModelStore;
 use arc_core::session::SessionStore;
 #[cfg(feature = "nats")]
 use arc_es_nats::NatsEventBus;
-use arc_es_sqlite::{SqliteEventStore, SqliteReadModelStore, SqliteSessionStore};
+use arc_es_sqlite::SqliteSessionStore;
 use std::sync::Arc;
 
 /// Starts the Actix-Web HTTP server with all middleware, session management,
@@ -76,22 +77,21 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     let login_rate_limiter = rate_limit::create_rate_limiter(); // 5 requests per 60s
     let global_rate_limiter = rate_limit::create_global_rate_limiter(); // 100 requests per 60s
 
-    // Set up Event Sourced CQRS
+    // Set up Event Sourced CQRS behind the configured driver. Domain wiring
+    // sees only `Box<dyn EventStore>` / `Arc<dyn ReadModelStore>`.
+    let driver = DatabaseDriver::from_env();
     let db_url = crate::helpers::config::database_url();
+    info!(driver = driver.as_str(), "Selected database driver");
 
-    let sqlite_event_store = SqliteEventStore::new(&db_url)
+    let stores = es_stack::build_stores(driver, &db_url)
         .await
-        .expect("Failed to init event store");
+        .expect("Failed to init event-sourced stores");
+    let read_model_store = stores.read_model_store.clone();
 
     // Read-model store + projection engine. Inprocess mode keeps projections
     // read-after-write consistent; NATS mode leaves projection ownership to
     // arc-worker after the event is durably published.
-    let read_model_store: Arc<dyn ReadModelStore> = Arc::new(
-        SqliteReadModelStore::new(&db_url)
-            .await
-            .expect("Failed to init read-model store"),
-    );
-    let mut projection_engine = ProjectionEngine::new(Box::new(sqlite_event_store.clone()));
+    let mut projection_engine = ProjectionEngine::new(stores.projection_event_store);
     projection_engine.register_projector(
         Box::new(UserProjector::new()),
         read_model_store.clone(),
@@ -119,8 +119,7 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
         info!("EVENT_BUS=nats selected; arc-worker owns projection rebuild and delivery");
     }
 
-    let command_bus =
-        CommandBus::<UserAggregate>::new(Box::new(sqlite_event_store.clone()), event_bus);
+    let command_bus = CommandBus::<UserAggregate>::new(stores.command_event_store, event_bus);
     let command_bus_data = web::Data::new(command_bus);
     let read_model_store_data = web::Data::from(read_model_store);
 
@@ -129,8 +128,16 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     let access_logger: Arc<dyn AccessLogger> = Arc::new(NoOpAccessLogger);
     let access_logger_data = web::Data::from(access_logger);
 
-    // HIPAA-4 server-side JWT session registry.
-    let session_store_impl = SqliteSessionStore::new(&db_url)
+    // HIPAA-4 server-side JWT session registry. SQLite-only today; under a
+    // non-SQLite primary driver it keeps its own local SQLite database.
+    let session_db_url = crate::helpers::config::session_store_url(driver);
+    if !driver.is_file_backed() {
+        warn!(
+            session_db_url = session_db_url,
+            "JWT session registry is SQLite-backed; Postgres session store is not yet implemented"
+        );
+    }
+    let session_store_impl = SqliteSessionStore::new(&session_db_url)
         .await
         .expect("Failed to init session store");
     let session_store: Arc<dyn SessionStore> = Arc::new(session_store_impl);
