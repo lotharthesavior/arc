@@ -1,7 +1,7 @@
 use crate::domain::user::aggregate::UserAggregate;
 use crate::domain::user::commands::UserCommand;
 use crate::domain::user::projector::USERS_VIEW;
-use crate::helpers::access_log;
+use crate::helpers::access_log::{self, AccessLogged, Sensitive};
 use crate::helpers::audit_context;
 use crate::helpers::jwt::create_token;
 use crate::helpers::rate_limit::LoginRateLimiter;
@@ -179,21 +179,31 @@ pub async fn profile(
     req: HttpRequest,
     read_model_store: web::Data<dyn ReadModelStore>,
     access_logger: web::Data<dyn AccessLogger>,
-) -> impl Responder {
+) -> Result<AccessLogged<serde_json::Value>, AppError> {
     let agg_id = match req.extensions().get::<String>() {
         Some(id) => id.clone(),
         None => {
-            return HttpResponse::Unauthorized().json(json!({"error": "No authenticated user"}))
+            return Err(AppError::AuditFailed {
+                status: actix_web::http::StatusCode::UNAUTHORIZED,
+                message: "No authenticated user".into(),
+            })
         }
     };
 
     let row = match read_model_store.get(USERS_VIEW, &agg_id).await {
         Ok(Some(r)) => r,
-        Ok(None) => return HttpResponse::NotFound().json(json!({"error": "User not found"})),
+        Ok(None) => {
+            return Err(AppError::AuditFailed {
+                status: actix_web::http::StatusCode::NOT_FOUND,
+                message: "User not found".into(),
+            })
+        }
         Err(e) => {
             tracing::error!(error = ?e, "users_view read failed");
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": "Failed to load user"}));
+            return Err(AppError::AuditFailed {
+                status: actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                message: "Failed to load user".into(),
+            });
         }
     };
 
@@ -202,24 +212,22 @@ pub async fn profile(
     // same helper without further wiring.
     let resource = AccessedResource::new("UserProfile", agg_id.clone(), Sensitivity::Pii)
         .with_fields(["id", "name", "email"]);
-    let outcome = access_log::record_read(
+
+    let data = json!({
+        "id": row.get("id"),
+        "name": row.get("name"),
+        "email": row.get("email"),
+    });
+
+    access_log::record_read(
         access_logger.as_ref(),
         &req,
         agg_id,
         resource,
         PurposeOfUse::UserInitiated,
+        Sensitive::pii(data),
     )
-    .await;
-
-    if outcome == access_log::RecordReadOutcome::FailHard {
-        return HttpResponse::ServiceUnavailable().json(json!({"error": "Audit sink unavailable"}));
-    }
-
-    HttpResponse::Ok().json(json!({
-        "id": row.get("id"),
-        "name": row.get("name"),
-        "email": row.get("email"),
-    }))
+    .await
 }
 
 #[patch("/profile")]
@@ -883,28 +891,32 @@ mod tests {
         // by calling it directly with a custom-built request handled via a
         // hand-written route. Easier: assert using a probe handler that runs
         // the same record_read path.
-        use crate::helpers::access_log::{record_read, RecordReadOutcome};
+        use crate::helpers::access_log::{record_read, Sensitive};
         let logger: Arc<dyn AccessLogger> = Arc::new(FailingLogger);
 
         // Forge a fake HttpRequest via the test helper.
         let req = test::TestRequest::get().uri("/probe").to_http_request();
-        let resource = AccessedResource::new(
-            "PatientRecord",
-            "pat-1",
-            arc_core::access_log::Sensitivity::Phi,
-        )
-        .with_fields(["vitals"]);
+        let resource = AccessedResource::new("PatientRecord", "pat-1", Sensitivity::Phi)
+            .with_fields(["vitals"]);
 
-        let outcome = record_read(
+        let res = record_read(
             logger.as_ref(),
             &req,
             "alice",
             resource,
             PurposeOfUse::Treatment,
+            Sensitive::phi(json!({"vitals": "ok"})),
         )
         .await;
 
-        assert_eq!(outcome, RecordReadOutcome::FailHard);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        match err {
+            crate::http::errors::AppError::AuditFailed { status, .. } => {
+                assert_eq!(status, http::StatusCode::SERVICE_UNAVAILABLE);
+            }
+            _ => panic!("Expected AuditFailed error, got {:?}", err),
+        }
     }
 
     #[serial]
@@ -928,7 +940,7 @@ mod tests {
             }
         }
 
-        use crate::helpers::access_log::{record_read, RecordReadOutcome};
+        use crate::helpers::access_log::{record_read, Sensitive};
         let logger: Arc<dyn AccessLogger> = Arc::new(FailingLogger);
 
         let req = test::TestRequest::get().uri("/probe").to_http_request();
@@ -936,16 +948,19 @@ mod tests {
             AccessedResource::new("UserProfile", "u-1", arc_core::access_log::Sensitivity::Pii)
                 .with_fields(["email"]);
 
-        let outcome = record_read(
+        let res = record_read(
             logger.as_ref(),
             &req,
             "alice",
             resource,
             PurposeOfUse::UserInitiated,
+            Sensitive::pii(json!({"email": "alice@example.com"})),
         )
         .await;
 
-        assert_eq!(outcome, RecordReadOutcome::Ok);
+        assert!(res.is_ok());
+        let logged = res.unwrap();
+        assert_eq!(logged.into_inner()["email"], "alice@example.com");
     }
 
     #[serial]

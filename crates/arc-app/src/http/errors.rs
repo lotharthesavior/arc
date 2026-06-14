@@ -6,12 +6,23 @@ use arc_core::event_store::EventStoreError;
 pub enum AppError {
     #[error("Command failed: {0}")]
     CommandFailed(#[from] CommandBusError),
+    #[error("Audit failed: {message}")]
+    AuditFailed {
+        status: actix_web::http::StatusCode,
+        message: String,
+    },
 }
 
 // AppError is already handled by derive(thiserror::Error) for Display
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
         match self {
+            AppError::AuditFailed { status, message } => {
+                HttpResponse::build(*status).json(serde_json::json!({
+                    "error": "AuditFailed",
+                    "message": message
+                }))
+            }
             AppError::CommandFailed(err) => match err {
                 CommandBusError::HandleFailed { message, .. } => {
                     HttpResponse::UnprocessableEntity().json(serde_json::json!({
