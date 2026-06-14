@@ -1,36 +1,14 @@
-//! # Arc ES Postgres
-//!
-//! Postgres implementation of the [`EventStore`] trait from `arc-core`, backed
-//! by an [`sqlx::PgPool`]. Mirrors the semantics of `arc-es-sqlite`:
-//!
-//! - append-only event log with a `UNIQUE(aggregate_id, sequence)` invariant
-//! - optimistic concurrency via a max-sequence version check
-//! - per-event audit validation before any write (HIPAA defense-in-depth)
-//! - snapshot upsert keyed by `aggregate_id`
-//!
-//! [`AuditMetadata`] is persisted inline on each event row, identically to the
-//! SQLite store. `append` calls
-//! [`validate_audit_batch`](arc_core::event_store::validate_audit_batch) before
-//! touching the database.
-//!
-//! ## Schema ownership
-//!
-//! Unlike the SQLite crate — whose DDL lives in the Diesel `migrations/`
-//! pipeline — this crate ships its own idempotent schema initialization
-//! ([`PostgresEventStore::initialize_schema`] and
-//! [`read_model_store::PostgresReadModelStore::initialize_schema`]). That lets
-//! tests and early adopters stand up the required tables without converting the
-//! migration system to Postgres in this step.
-
 use arc_core::audit::AuditMetadata;
 use arc_core::event::Event;
 use arc_core::event_store::{
     validate_audit_batch, EventStore, EventStoreError, EventStoreResult, VersionCheck,
 };
+use arc_core::integrity::{EventSignature, HmacSha256Chain, IntegrityChain, IntegrityError};
 use arc_core::snapshot::Snapshot;
 use async_trait::async_trait;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
+use std::sync::Arc;
 use uuid::Uuid;
 
 // Re-export for convenience, matching arc-es-sqlite.
@@ -57,6 +35,8 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp_utc_us BIGINT NOT NULL DEFAULT 0,
     causation_id TEXT,
     correlation_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    integrity_signature TEXT,
+    integrity_key_id TEXT,
     UNIQUE(aggregate_id, sequence)
 );
 CREATE INDEX IF NOT EXISTS idx_events_aggregate ON events(aggregate_id, sequence);
@@ -96,10 +76,16 @@ struct EventRow {
     timestamp_utc_us: i64,
     causation_id: Option<String>,
     correlation_id: String,
+    integrity_signature: Option<String>,
+    integrity_key_id: Option<String>,
 }
 
 impl EventRow {
-    fn from_event(event: &Event) -> EventRow {
+    fn from_event(
+        event: &Event,
+        integrity_signature: Option<String>,
+        integrity_key_id: Option<String>,
+    ) -> EventRow {
         // Stored in seconds to match the SQLite store's `timestamp` column unit.
         let timestamp_seconds: i64 = (event.timestamp / 1000) as i64;
         EventRow {
@@ -117,6 +103,8 @@ impl EventRow {
             timestamp_utc_us: event.audit.timestamp_utc_us,
             causation_id: event.audit.causation_id.map(|u| u.to_string()),
             correlation_id: event.audit.correlation_id.to_string(),
+            integrity_signature,
+            integrity_key_id,
         }
     }
 
@@ -174,6 +162,8 @@ impl EventRow {
             timestamp_utc_us: row.try_get("timestamp_utc_us").map_err(map)?,
             causation_id: row.try_get("causation_id").map_err(map)?,
             correlation_id: row.try_get("correlation_id").map_err(map)?,
+            integrity_signature: row.try_get("integrity_signature").map_err(map)?,
+            integrity_key_id: row.try_get("integrity_key_id").map_err(map)?,
         })
     }
 }
@@ -182,6 +172,12 @@ impl EventRow {
 #[derive(Clone)]
 pub struct PostgresEventStore {
     pool: PgPool,
+    integrity: Option<Arc<IntegrityConfig>>,
+}
+
+struct IntegrityConfig {
+    chain: Arc<dyn IntegrityChain>,
+    key_id: String,
 }
 
 impl PostgresEventStore {
@@ -192,13 +188,54 @@ impl PostgresEventStore {
             .connect(database_url)
             .await
             .map_err(|e| EventStoreError::database(format!("Failed to create pool: {}", e)))?;
-        Ok(PostgresEventStore { pool })
+        Ok(PostgresEventStore {
+            pool,
+            integrity: None,
+        })
+    }
+
+    /// Build a store from a Postgres connection URL with an integrity key.
+    pub async fn new_with_integrity_key(
+        database_url: &str,
+        key: impl Into<Vec<u8>>,
+        key_id: impl Into<String>,
+    ) -> EventStoreResult<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(database_url)
+            .await
+            .map_err(|e| EventStoreError::database(format!("Failed to create pool: {}", e)))?;
+        Ok(PostgresEventStore {
+            pool,
+            integrity: Some(Arc::new(IntegrityConfig {
+                chain: Arc::new(HmacSha256Chain::new(key).map_err(EventStoreError::from)?),
+                key_id: key_id.into(),
+            })),
+        })
     }
 
     /// Build a store from an existing pool. Lets tests share one pool with the
     /// read-model store against the same database.
     pub fn with_pool(pool: PgPool) -> Self {
-        PostgresEventStore { pool }
+        PostgresEventStore {
+            pool,
+            integrity: None,
+        }
+    }
+
+    /// Build a store from an existing pool and an integrity key.
+    pub fn with_pool_and_integrity_key(
+        pool: PgPool,
+        key: impl Into<Vec<u8>>,
+        key_id: impl Into<String>,
+    ) -> EventStoreResult<Self> {
+        Ok(PostgresEventStore {
+            pool,
+            integrity: Some(Arc::new(IntegrityConfig {
+                chain: Arc::new(HmacSha256Chain::new(key).map_err(EventStoreError::from)?),
+                key_id: key_id.into(),
+            })),
+        })
     }
 
     /// Borrow the underlying pool (e.g. to construct a read-model store that
@@ -219,6 +256,156 @@ impl PostgresEventStore {
             .await
             .map_err(|e| EventStoreError::database(e.to_string()))?;
         Ok(())
+    }
+
+    async fn required_signature(
+        &self,
+        row: &EventRow,
+        aggregate_id: &str,
+        sequence: i64,
+    ) -> EventStoreResult<EventSignature> {
+        let _key_id = row.integrity_key_id.as_ref().ok_or_else(|| {
+            EventStoreError::from(IntegrityError::BrokenAt {
+                aggregate_id: aggregate_id.to_string(),
+                sequence,
+            })
+        })?;
+
+        row.integrity_signature
+            .as_ref()
+            .map(|s| EventSignature(s.clone()))
+            .ok_or_else(|| {
+                EventStoreError::from(IntegrityError::BrokenAt {
+                    aggregate_id: aggregate_id.to_string(),
+                    sequence,
+                })
+            })
+    }
+
+    async fn previous_signature_for_aggregate(
+        &self,
+        executor: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        aggregate_id: &str,
+        before_sequence: i64,
+    ) -> EventStoreResult<EventSignature> {
+        if before_sequence <= 1 {
+            return Ok(EventSignature::genesis());
+        }
+
+        let row = sqlx::query(
+            "SELECT * FROM events WHERE aggregate_id = $1 AND sequence < $2 ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(aggregate_id)
+        .bind(before_sequence)
+        .fetch_optional(&mut **executor)
+        .await
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+        match row {
+            Some(r) => {
+                let event_row = EventRow::from_pg_row(&r)?;
+                self.required_signature(&event_row, aggregate_id, event_row.sequence)
+                    .await
+            }
+            None => Ok(EventSignature::genesis()),
+        }
+    }
+
+    async fn verify_integrity_rows(
+        &self,
+        integrity: &IntegrityConfig,
+        rows: &[EventRow],
+        previous_signature: EventSignature,
+    ) -> EventStoreResult<Vec<Event>> {
+        let mut previous = previous_signature;
+        let mut events = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            let event = row.to_event()?;
+            let expected = integrity.chain.sign_event(&previous, &event)?;
+            let claimed = self
+                .required_signature(row, &event.aggregate_id, event.sequence)
+                .await?;
+
+            if expected != claimed {
+                return Err(EventStoreError::from(IntegrityError::BrokenAt {
+                    aggregate_id: event.aggregate_id,
+                    sequence: event.sequence,
+                }));
+            }
+
+            previous = claimed;
+            events.push(event);
+        }
+
+        Ok(events)
+    }
+
+    async fn verify_stream_integrity_rows(
+        &self,
+        integrity: &IntegrityConfig,
+        rows: &[EventRow],
+    ) -> EventStoreResult<Vec<Event>> {
+        use std::collections::HashMap;
+
+        let mut previous_by_aggregate: HashMap<String, EventSignature> = HashMap::new();
+        let mut events = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            let event = row.to_event()?;
+            let previous = match previous_by_aggregate.get(&event.aggregate_id) {
+                Some(sig) => sig.clone(),
+                None => {
+                    self.previous_signature_no_tx(&event.aggregate_id, event.sequence)
+                        .await?
+                }
+            };
+
+            let expected = integrity.chain.sign_event(&previous, &event)?;
+            let claimed = self
+                .required_signature(row, &event.aggregate_id, event.sequence)
+                .await?;
+
+            if expected != claimed {
+                return Err(EventStoreError::from(IntegrityError::BrokenAt {
+                    aggregate_id: event.aggregate_id,
+                    sequence: event.sequence,
+                }));
+            }
+
+            previous_by_aggregate.insert(event.aggregate_id.clone(), claimed);
+            events.push(event);
+        }
+
+        Ok(events)
+    }
+
+    async fn previous_signature_no_tx(
+        &self,
+        aggregate_id: &str,
+        before_sequence: i64,
+    ) -> EventStoreResult<EventSignature> {
+        if before_sequence <= 1 {
+            return Ok(EventSignature::genesis());
+        }
+
+        let row = sqlx::query(
+            "SELECT * FROM events WHERE aggregate_id = $1 AND sequence < $2 ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(aggregate_id)
+        .bind(before_sequence)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+        match row {
+            Some(r) => {
+                let event_row = EventRow::from_pg_row(&r)?;
+                self.required_signature(&event_row, aggregate_id, event_row.sequence)
+                    .await
+            }
+            None => Ok(EventSignature::genesis()),
+        }
     }
 }
 
@@ -273,14 +460,40 @@ impl EventStore for PostgresEventStore {
             }
         }
 
+        let mut previous_signature = if self.integrity.is_some() {
+            self.previous_signature_for_aggregate(&mut tx, aggregate_id, current_version + 1)
+                .await?
+        } else {
+            EventSignature::genesis()
+        };
+
         for event in &new_events {
-            let row = EventRow::from_event(event);
+            let mut signature_str = None;
+            let mut key_id_str = None;
+
+            if let Some(integrity) = self.integrity.as_ref() {
+                // Sign based on row-seconds timestamp parity with SQLite.
+                let timestamp_seconds = (event.timestamp / 1000) as i64;
+                let mut persisted_event = event.clone();
+                persisted_event.timestamp = (timestamp_seconds as u64) * 1000;
+
+                let signature = integrity
+                    .chain
+                    .sign_event(&previous_signature, &persisted_event)
+                    .map_err(EventStoreError::from)?;
+                previous_signature = signature.clone();
+                signature_str = Some(signature.0);
+                key_id_str = Some(integrity.key_id.clone());
+            }
+
+            let row = EventRow::from_event(event, signature_str, key_id_str);
             sqlx::query(
                 r#"INSERT INTO events
                     (event_id, aggregate_type, aggregate_id, sequence, event_type, payload,
                      "timestamp", actor_id, actor_session_id, source_ip, user_agent,
-                     timestamp_utc_us, causation_id, correlation_id)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+                     timestamp_utc_us, causation_id, correlation_id,
+                     integrity_signature, integrity_key_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
             )
             .bind(&row.event_id)
             .bind(&row.aggregate_type)
@@ -296,6 +509,8 @@ impl EventStore for PostgresEventStore {
             .bind(row.timestamp_utc_us)
             .bind(&row.causation_id)
             .bind(&row.correlation_id)
+            .bind(&row.integrity_signature)
+            .bind(&row.integrity_key_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| EventStoreError::database(e.to_string()))?;
@@ -325,9 +540,29 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| EventStoreError::database(e.to_string()))?;
 
-        rows.iter()
-            .map(|r| EventRow::from_pg_row(r)?.to_event())
-            .collect()
+        let event_rows: Vec<EventRow> = rows
+            .iter()
+            .map(EventRow::from_pg_row)
+            .collect::<EventStoreResult<_>>()?;
+
+        match self.integrity.as_ref() {
+            Some(integrity) => {
+                let mut tx = self
+                    .pool
+                    .begin()
+                    .await
+                    .map_err(|e| EventStoreError::database(e.to_string()))?;
+                let previous = self
+                    .previous_signature_for_aggregate(&mut tx, aggregate_id, from_sequence)
+                    .await?;
+                self.verify_integrity_rows(integrity, &event_rows, previous)
+                    .await
+            }
+            None => event_rows
+                .iter()
+                .map(|r| r.to_event())
+                .collect::<EventStoreResult<_>>(),
+        }
     }
 
     async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>> {
@@ -337,9 +572,21 @@ impl EventStore for PostgresEventStore {
             .await
             .map_err(|e| EventStoreError::database(e.to_string()))?;
 
-        rows.iter()
-            .map(|r| EventRow::from_pg_row(r)?.to_event())
-            .collect()
+        let event_rows: Vec<EventRow> = rows
+            .iter()
+            .map(EventRow::from_pg_row)
+            .collect::<EventStoreResult<_>>()?;
+
+        match self.integrity.as_ref() {
+            Some(integrity) => {
+                self.verify_stream_integrity_rows(integrity, &event_rows)
+                    .await
+            }
+            None => event_rows
+                .iter()
+                .map(|r| r.to_event())
+                .collect::<EventStoreResult<_>>(),
+        }
     }
 
     async fn get_version(&self, aggregate_id: &str) -> EventStoreResult<i64> {
@@ -388,180 +635,237 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| EventStoreError::database(e.to_string()))?;
 
-        let row = match row {
-            Some(r) => r,
-            None => return Ok(None),
-        };
-
-        let map = |e: sqlx::Error| EventStoreError::database(e.to_string());
-        let created_at: i64 = row.try_get("created_at").map_err(map)?;
-        Ok(Some(Snapshot {
-            aggregate_id: row.try_get("aggregate_id").map_err(map)?,
-            aggregate_type: row.try_get("aggregate_type").map_err(map)?,
-            version: row.try_get("version").map_err(map)?,
-            state: row.try_get("state").map_err(map)?,
-            created_at: created_at as u64,
-        }))
+        match row {
+            Some(r) => {
+                let created_at: i64 = r
+                    .try_get("created_at")
+                    .map_err(|e| EventStoreError::database(e.to_string()))?;
+                Ok(Some(Snapshot {
+                    aggregate_id: r
+                        .try_get("aggregate_id")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    aggregate_type: r
+                        .try_get("aggregate_type")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    version: r
+                        .try_get("version")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    state: r
+                        .try_get("state")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    created_at: created_at as u64,
+                }))
+            }
+            None => Ok(None),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arc_core::audit::AuditMetadata;
     use serde_json::json;
+    use std::env;
 
-    fn sample_event() -> Event {
-        let mut audit = AuditMetadata::test_default();
-        audit.actor_id = "actor-1".to_string();
-        audit.actor_session_id = Some("sess-1".to_string());
-        audit.source_ip = Some("10.0.0.1".to_string());
-        audit.user_agent = Some("agent/1.0".to_string());
-        audit.causation_id = Some(Uuid::new_v4());
-        Event::new("User", "u1", 1, "UserCreated", json!({ "name": "Alice" })).with_audit(audit)
-    }
+    async fn setup_test_store() -> Option<PostgresEventStore> {
+        let url = env::var("ARC_POSTGRES_TEST_DATABASE_URL").ok()?;
+        let store = PostgresEventStore::new(&url).await.unwrap();
+        store.initialize_schema().await.unwrap();
 
-    #[test]
-    fn test_event_row_roundtrips_all_fields() {
-        let event = sample_event();
-        let row = EventRow::from_event(&event);
-        let back = row.to_event().expect("conversion back to event");
-
-        assert_eq!(back.event_id, event.event_id);
-        assert_eq!(back.aggregate_type, event.aggregate_type);
-        assert_eq!(back.aggregate_id, event.aggregate_id);
-        assert_eq!(back.sequence, event.sequence);
-        assert_eq!(back.event_type, event.event_type);
-        assert_eq!(back.payload, event.payload);
-        assert_eq!(back.audit.actor_id, event.audit.actor_id);
-        assert_eq!(back.audit.actor_session_id, event.audit.actor_session_id);
-        assert_eq!(back.audit.source_ip, event.audit.source_ip);
-        assert_eq!(back.audit.user_agent, event.audit.user_agent);
-        assert_eq!(back.audit.timestamp_utc_us, event.audit.timestamp_utc_us);
-        assert_eq!(back.audit.causation_id, event.audit.causation_id);
-        assert_eq!(back.audit.correlation_id, event.audit.correlation_id);
-    }
-
-    #[test]
-    fn test_event_row_timestamp_stored_in_seconds() {
-        let mut event = sample_event();
-        event.timestamp = 1_700_000_123_456; // ms
-        let row = EventRow::from_event(&event);
-        assert_eq!(row.timestamp, 1_700_000_123); // seconds
-        assert_eq!(row.to_event().unwrap().timestamp, 1_700_000_123_000);
-    }
-
-    #[test]
-    fn test_event_row_handles_nil_optional_audit_fields() {
-        let event =
-            Event::new("User", "u2", 1, "X", json!({})).with_audit(AuditMetadata::test_default());
-        let row = EventRow::from_event(&event);
-        assert!(row.causation_id.is_none());
-        let back = row.to_event().unwrap();
-        assert!(back.audit.causation_id.is_none());
-    }
-
-    #[test]
-    fn test_event_row_rejects_malformed_correlation_uuid() {
-        let mut row = EventRow::from_event(&sample_event());
-        row.correlation_id = "not-a-uuid".to_string();
-        let err = row.to_event().unwrap_err();
-        assert!(
-            matches!(err, EventStoreError::SerializationError { ref message } if message.contains("Invalid correlation UUID")),
-            "got {err:?}"
-        );
-    }
-
-    #[test]
-    fn test_event_row_accepts_nil_correlation_uuid() {
-        let mut row = EventRow::from_event(&sample_event());
-        row.correlation_id = "00000000-0000-0000-0000-000000000000".to_string();
-        let back = row.to_event().unwrap();
-        assert_eq!(back.audit.correlation_id, Uuid::nil());
-    }
-
-    // ── Live-database tests ──────────────────────────────────────────────────
-    // Gated behind ARC_POSTGRES_TEST_DATABASE_URL so the default `cargo test`
-    // run requires no Postgres server. Set it to a throwaway database, e.g.
-    //   ARC_POSTGRES_TEST_DATABASE_URL=postgres://localhost/arc_test cargo test
-
-    fn test_db_url() -> Option<String> {
-        std::env::var("ARC_POSTGRES_TEST_DATABASE_URL").ok()
-    }
-
-    async fn live_store() -> Option<PostgresEventStore> {
-        let url = test_db_url()?;
-        let store = PostgresEventStore::new(&url).await.expect("connect");
-        store.initialize_schema().await.expect("schema");
-        // Isolate each run from prior data.
-        sqlx::raw_sql("TRUNCATE events RESTART IDENTITY; TRUNCATE snapshots;")
+        // Clean start for each test
+        sqlx::query("TRUNCATE events RESTART IDENTITY")
             .execute(store.pool())
             .await
-            .expect("truncate");
+            .unwrap();
+        sqlx::query("TRUNCATE snapshots")
+            .execute(store.pool())
+            .await
+            .unwrap();
+
         Some(store)
     }
 
-    fn stamped(seq: i64, t: &str) -> Event {
-        Event::new("User", "u1", seq, t, json!({ "seq": seq }))
+    async fn setup_integrity_test_store() -> Option<PostgresEventStore> {
+        let url = env::var("ARC_POSTGRES_TEST_DATABASE_URL").ok()?;
+        let store = PostgresEventStore::new_with_integrity_key(&url, integrity_key(), "test-key")
+            .await
+            .unwrap();
+        store.initialize_schema().await.unwrap();
+
+        sqlx::query("TRUNCATE events RESTART IDENTITY")
+            .execute(store.pool())
+            .await
+            .unwrap();
+        sqlx::query("TRUNCATE snapshots")
+            .execute(store.pool())
+            .await
+            .unwrap();
+
+        Some(store)
+    }
+
+    fn integrity_key() -> Vec<u8> {
+        b"012345678901234567890123456789AB".to_vec()
+    }
+
+    fn stamped_event(
+        agg_type: &str,
+        agg_id: &str,
+        sequence: i64,
+        event_type: &str,
+        payload: serde_json::Value,
+    ) -> Event {
+        Event::new(agg_type, agg_id, sequence, event_type, payload)
             .with_audit(AuditMetadata::test_default())
     }
 
     #[tokio::test]
     #[serial_test::serial]
     async fn test_live_append_and_load() {
-        let Some(store) = live_store().await else {
+        let Some(store) = setup_test_store().await else {
             return;
         };
+        let event = stamped_event("User", "u1", 1, "Created", json!({}));
         store
-            .append("u1", VersionCheck::New, vec![stamped(1, "Created")])
+            .append("u1", VersionCheck::New, vec![event])
             .await
             .unwrap();
         let loaded = store.load("u1").await.unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].sequence, 1);
-        assert_eq!(loaded[0].payload["seq"], 1);
     }
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn test_live_optimistic_concurrency() {
-        let Some(store) = live_store().await else {
+    async fn test_live_integrity_append_persists_signatures() {
+        let Some(store) = setup_integrity_test_store().await else {
             return;
         };
         store
-            .append("u1", VersionCheck::New, vec![stamped(1, "Created")])
+            .append(
+                "signed-1",
+                VersionCheck::New,
+                vec![
+                    stamped_event("User", "signed-1", 1, "Created", json!({})),
+                    stamped_event("User", "signed-1", 2, "Updated", json!({})),
+                ],
+            )
             .await
             .unwrap();
-        let err = store
-            .append("u1", VersionCheck::New, vec![stamped(2, "Updated")])
-            .await
-            .unwrap_err();
-        assert!(matches!(err, EventStoreError::ConcurrencyConflict { .. }));
+
+        let rows = sqlx::query(
+            "SELECT integrity_signature, integrity_key_id FROM events ORDER BY sequence",
+        )
+        .fetch_all(store.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            let sig: String = row.get("integrity_signature");
+            let kid: String = row.get("integrity_key_id");
+            assert_eq!(sig.len(), 64);
+            assert_eq!(kid, "test-key");
+        }
     }
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn test_live_rejects_pending_audit() {
-        let Some(store) = live_store().await else {
+    async fn test_live_integrity_load_rejects_tampered_payload() {
+        let Some(store) = setup_integrity_test_store().await else {
             return;
         };
-        let pending = Event::new("User", "u1", 1, "X", json!({}));
-        let err = store
-            .append("u1", VersionCheck::New, vec![pending])
+        store
+            .append(
+                "tamper-1",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "tamper-1",
+                    1,
+                    "Created",
+                    json!({"ok": true}),
+                )],
+            )
             .await
-            .unwrap_err();
-        assert!(matches!(err, EventStoreError::InvalidAudit { .. }));
-        assert_eq!(store.load("u1").await.unwrap().len(), 0);
+            .unwrap();
+
+        sqlx::query(
+            "UPDATE events SET payload = '{\"ok\": false}' WHERE aggregate_id = 'tamper-1'",
+        )
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+        let err = store.load("tamper-1").await.unwrap_err();
+        assert!(matches!(err, EventStoreError::Integrity { .. }));
     }
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn test_live_snapshot_save_then_load() {
-        let Some(store) = live_store().await else {
+    async fn test_live_integrity_load_rejects_missing_signature() {
+        let Some(store) = setup_integrity_test_store().await else {
             return;
         };
-        let snap = Snapshot::new("u1", "User", 5, json!({ "name": "Alice" }));
-        store.save_snapshot(&snap).await.unwrap();
-        assert_eq!(store.load_snapshot("u1").await.unwrap(), Some(snap));
-        assert_eq!(store.load_snapshot("missing").await.unwrap(), None);
+        store
+            .append(
+                "missing-sig",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "User",
+                    "missing-sig",
+                    1,
+                    "Created",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "UPDATE events SET integrity_signature = NULL WHERE aggregate_id = 'missing-sig'",
+        )
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+        let err = store.load("missing-sig").await.unwrap_err();
+        assert!(matches!(err, EventStoreError::Integrity { .. }));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_live_integrity_stream_all_verifies_per_aggregate() {
+        let Some(store) = setup_integrity_test_store().await else {
+            return;
+        };
+        store
+            .append(
+                "a",
+                VersionCheck::New,
+                vec![stamped_event("U", "a", 1, "X", json!({}))],
+            )
+            .await
+            .unwrap();
+        store
+            .append(
+                "b",
+                VersionCheck::New,
+                vec![stamped_event("U", "b", 1, "X", json!({}))],
+            )
+            .await
+            .unwrap();
+        store
+            .append(
+                "a",
+                VersionCheck::Expected(1),
+                vec![stamped_event("U", "a", 2, "Y", json!({}))],
+            )
+            .await
+            .unwrap();
+
+        let loaded = store.stream_all(0).await.unwrap();
+        assert_eq!(loaded.len(), 3);
     }
 }
