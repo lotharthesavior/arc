@@ -52,8 +52,24 @@ By default, it is configured to use port **5433** to avoid conflicts with local 
 The default connection URL for local development with Docker is:
 `postgres://arc:password@localhost:5433/arc_dev`
 
+## Startup Validation
+
+Use the bundled compose services for a local parity check:
+
+```bash
+docker compose up -d postgres nats
+ARC_POSTGRES_TEST_DATABASE_URL=postgres://arc:password@127.0.0.1:5433/arc_dev cargo test -p arc-es-postgres
+DATABASE_DRIVER=postgres DATABASE_URL=postgres://arc:password@127.0.0.1:5433/arc_dev cargo run -p arc --features postgres -- migrate
+```
+
+For app and worker startup checks, build with the `postgres` feature and set
+`DATABASE_DRIVER=postgres`. The app calls both event-store and read-model
+`initialize_schema()` during `build_stores`; the worker does the same before
+projection rebuild and JetStream consumer setup.
+
 ## Production Readiness
 
 - **Optimistic Concurrency**: Postgres implementation uses `UNIQUE(aggregate_id, sequence)` and a version-check query within a transaction to ensure consistency.
 - **Idempotent Upserts**: Read-model upserts use `ON CONFLICT (id) DO UPDATE ... WHERE version < EXCLUDED.version` to ensure that replay and out-of-order delivery converge to the correct state.
 - **Audit Metadata**: HIPAA-compliant audit fields are persisted inline on each event row.
+- **Integrity Metadata**: When `EVENT_INTEGRITY_KEY` is configured, signatures and key ids are persisted inline on each event row and verified on load/stream.

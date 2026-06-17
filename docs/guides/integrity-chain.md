@@ -60,21 +60,20 @@ hand-off; the trait surface accommodates it without breaking changes.
 
 ## Runtime enforcement
 
-SQLite event integrity is opt-in. When `EVENT_INTEGRITY_KEY` is configured,
-`SqliteEventStore` signs newly appended events and stores both
-`integrity_signature` and `integrity_key_id` with the row. `load`,
+Event integrity is opt-in. When `EVENT_INTEGRITY_KEY` is configured,
+`SqliteEventStore` and `PostgresEventStore` sign newly appended events and
+store both `integrity_signature` and `integrity_key_id` with the row. `load`,
 `load_from`, and `stream_all` recompute the chain and return
 `EventStoreError::Integrity` when a signature is missing or does not match.
 
-Without `EVENT_INTEGRITY_KEY`, SQLite keeps the compatibility behavior:
+Without `EVENT_INTEGRITY_KEY`, the stores keep the compatibility behavior:
 events append and load without signature enforcement.
 
 Existing databases need a backfill before enabling enforcement. The signature
 columns are nullable so the migration can land without rewriting historical
 events, but an enabled store intentionally rejects unsigned historical rows.
 
-Postgres parity is still pending. Until Postgres stores persist and verify the
-same fields, treat HIPAA-5 enforcement as SQLite-only.
+Postgres uses the same row fields and verification behavior as SQLite.
 
 ## Key management
 

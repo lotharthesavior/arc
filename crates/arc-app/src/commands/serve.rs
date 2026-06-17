@@ -119,7 +119,10 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
         info!("EVENT_BUS=nats selected; arc-worker owns projection rebuild and delivery");
     }
 
-    let command_bus = CommandBus::<UserAggregate>::new(stores.command_event_store, event_bus);
+    let command_bus = es_stack::apply_user_snapshot_policy(CommandBus::<UserAggregate>::new(
+        stores.command_event_store,
+        event_bus,
+    ));
     let command_bus_data = web::Data::new(command_bus);
     let read_model_store_data = web::Data::from(read_model_store);
 

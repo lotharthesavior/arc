@@ -9,7 +9,7 @@ use crate::domain::user::aggregate::UserAggregate;
 use crate::domain::user::projector::{UserProjector, USERS_VIEW};
 use crate::helpers::config;
 use crate::helpers::config::DatabaseDriver;
-use arc_core::command_bus::CommandBus;
+use arc_core::command_bus::{CommandBus, SnapshotPolicy};
 use arc_core::event_bus::{EventBus, InProcessEventBus};
 use arc_core::event_store::EventStore;
 use arc_core::projection::{ProjectionEngine, ProjectionEngineHandler};
@@ -120,11 +120,23 @@ pub async fn build(database_url: &str) -> Result<EsStack, Box<dyn std::error::Er
     bus.subscribe(Box::new(ProjectionEngineHandler::new(engine.clone())))
         .await?;
 
-    let command_bus = CommandBus::<UserAggregate>::new(stores.command_event_store, Box::new(bus));
+    let command_bus = apply_user_snapshot_policy(CommandBus::<UserAggregate>::new(
+        stores.command_event_store,
+        Box::new(bus),
+    ));
 
     Ok(EsStack {
         command_bus,
         read_model_store,
         projection_engine: engine,
     })
+}
+
+pub fn apply_user_snapshot_policy(
+    command_bus: CommandBus<UserAggregate>,
+) -> CommandBus<UserAggregate> {
+    match config::user_snapshot_interval_events() {
+        Some(interval) => command_bus.with_snapshot_policy(SnapshotPolicy::EveryNEvents(interval)),
+        None => command_bus,
+    }
 }

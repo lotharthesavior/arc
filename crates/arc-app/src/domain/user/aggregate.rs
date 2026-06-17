@@ -1,6 +1,7 @@
 use crate::domain::user::commands::UserCommand;
 use arc_core::{aggregate::Aggregate, event::Event};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -15,7 +16,7 @@ pub enum UserAggregateError {
     InvalidEmail,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct UserAggregate {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -149,6 +150,14 @@ impl Aggregate for UserAggregate {
             _ => {}
         }
     }
+
+    fn to_snapshot(&self) -> Option<serde_json::Value> {
+        serde_json::to_value(self).ok()
+    }
+
+    fn from_snapshot(state: serde_json::Value) -> Option<Self> {
+        serde_json::from_value(state).ok()
+    }
 }
 
 #[cfg(test)]
@@ -225,5 +234,29 @@ mod tests {
         agg.apply(&result[0]);
         assert_eq!(agg.name.unwrap(), "New Name");
         assert_eq!(agg.version, 2);
+    }
+
+    #[test]
+    fn test_snapshot_roundtrips_user_state() {
+        let aggregate = UserAggregate {
+            id: Some("uuid-123".to_string()),
+            name: Some("Jane Doe".to_string()),
+            email: Some("jane@example.com".to_string()),
+            password_hash: Some("hash".to_string()),
+            version: 50,
+            exists: true,
+            deleted: false,
+        };
+
+        let state = aggregate.to_snapshot().expect("snapshot state");
+        let restored = UserAggregate::from_snapshot(state).expect("snapshot restores");
+
+        assert_eq!(restored.id.as_deref(), Some("uuid-123"));
+        assert_eq!(restored.name.as_deref(), Some("Jane Doe"));
+        assert_eq!(restored.email.as_deref(), Some("jane@example.com"));
+        assert_eq!(restored.password_hash.as_deref(), Some("hash"));
+        assert_eq!(restored.version, 50);
+        assert!(restored.exists);
+        assert!(!restored.deleted);
     }
 }

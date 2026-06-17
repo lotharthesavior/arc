@@ -1,21 +1,15 @@
 pub mod domain;
-
-#[cfg(test)]
 pub mod helpers {
-    pub mod config {
-        include!("helpers/config.rs");
-    }
+    pub mod config;
+    pub mod database;
 
-    pub mod database {
-        include!("helpers/database.rs");
-    }
-
+    #[cfg(test)]
     pub mod test {
         pub struct InMemoryTestGuard;
 
         impl Drop for InMemoryTestGuard {
             fn drop(&mut self) {
-                super::database::reset_pool();
+                crate::helpers::database::reset_pool();
             }
         }
     }

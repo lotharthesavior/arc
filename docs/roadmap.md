@@ -678,10 +678,10 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 
 ### 9.3 Advanced Cluster Features
 
-- [~] **Snapshot store** (infrastructure landed; User activation deferred)
-  - `Snapshot` struct + `EventStore::save_snapshot/load_snapshot` (`crates/arc-core/src/snapshot.rs`, `event_store.rs`); `Aggregate::to_snapshot/from_snapshot` (`aggregate.rs`); `arc-es-sqlite` upsert/load impl; migration `2026-05-31-000001_create_snapshots`.
-  - CommandBus can rehydrate via snapshot+tail with from-zero fallback, gated by `SnapshotPolicy` (default `Disabled` = unchanged; `EveryNEvents(N)` creates snapshots best-effort after append). Production `UserAggregate` currently opts out, so real user writes still rehydrate from zero.
-  - **Status**: Partial - infrastructure complete; production activation deferred
+- [x] **Snapshot store** (infrastructure landed; User activation enabled)
+  - `Snapshot` struct + `EventStore::save_snapshot/load_snapshot` (`crates/arc-core/src/snapshot.rs`, `event_store.rs`); `Aggregate::to_snapshot/from_snapshot` (`aggregate.rs`); SQLite/Postgres upsert/load impls; migration `2026-05-31-000001_create_snapshots`.
+  - CommandBus can rehydrate via snapshot+tail with from-zero fallback, gated by `SnapshotPolicy` (default `Disabled` = unchanged; `EveryNEvents(N)` creates snapshots best-effort after append). Production `UserAggregate` now serializes/restores snapshots, and app command-bus wiring reads `USER_SNAPSHOT_INTERVAL_EVENTS` with default 50.
+  - **Status**: Complete - User aggregate snapshots activate at a configurable interval, defaulting to every 50 events
   - **Dependencies**: ES core
 
 - [ ] **Event retention & archival**
