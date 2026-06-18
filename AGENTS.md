@@ -9,19 +9,19 @@ Operational guide for agents working in this repository. Keep changes aligned wi
 - Rust workspace with five active crates:
   - `crates/arc-core`: event sourcing primitives, aggregates, command bus, event bus traits, projections, read-model traits, audit/access/session/integrity primitives.
   - `crates/arc-es-sqlite`: SQLite event store, read-model store, snapshot persistence, and JWT session revocation store.
-  - `crates/arc-es-nats`: NATS JetStream `EventBus` implementation.
+  - `crates/arc-es-postgres`: Postgres event store, read-model store, and snapshot persistence (self-initializing schema).
+  - `crates/arc-es-nats`: NATS JetStream `EventBus` implementation (the publish side).
   - `crates/arc-app`: Actix Web application, Tera templates, Vite/Tailwind assets, auth, API/admin routes, user domain wiring.
-  - `crates/arc-worker`: durable JetStream consumer that drives `ProjectionEngine`.
 - Backend framework: Actix Web.
 - Write model: command handlers and aggregates through `CommandBus`.
-- Event store/read model: SQLite by default; Postgres is the next planned driver.
+- Event store/read model: SQLite by default; Postgres available via `DATABASE_DRIVER=postgres`.
 - Server-side rendering: Tera templates in `crates/arc-app/src/resources/views/`.
 - Frontend assets: Vite, Tailwind, Stimulus, Turbo, Toastify.
 - Auth modes:
   - Session/cookie auth for HTML/admin routes.
   - JWT bearer auth for `/api/*`.
 - Realtime: WebSocket support under `crates/arc-app/src/websocket/`.
-- Distributed event lane: optional NATS JetStream publishing plus `arc-worker` durable consumption.
+- Distributed event lane: `arc-es-nats` publishes persisted events to NATS JetStream; **Benthos (Redpanda Connect)** is the single routing and event-handler delivery layer that consumes `events.>`. See `docs/adr/0001-benthos-only-event-routing.md` and `docs/guides/event-handlers.md`. (The earlier `arc-worker` consumer crate has been removed; treat any reference to it as historical.)
 
 Important: older planning docs can lag behind code. If docs conflict, prefer current source and the source-of-truth order below.
 
@@ -30,7 +30,8 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - `Cargo.toml`: workspace members and shared dependency versions.
 - `crates/arc-core/src/`: ES interfaces and framework primitives.
 - `crates/arc-es-sqlite/src/`: SQLite implementations.
-- `crates/arc-es-nats/src/`: NATS JetStream event bus.
+- `crates/arc-es-nats/src/`: NATS JetStream event bus (publish side).
+- `crates/arc-es-postgres/src/`: Postgres event/read-model/snapshot stores.
 - `crates/arc-app/src/main.rs`: app entrypoint and command dispatch.
 - `crates/arc-app/src/commands/`: serve, migrate, seed, develop commands.
 - `crates/arc-app/src/routes.rs`: HTML/API/admin scopes, static asset serving, middleware wiring.
@@ -39,7 +40,8 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - `crates/arc-app/src/helpers/`: sessions, CSRF, templates, forms, JWT, ES stack assembly.
 - `crates/arc-app/src/domain/user/`: User aggregate, commands, projector.
 - `crates/arc-app/src/resources/`: CSS, JS, images, Tera views.
-- `crates/arc-worker/src/`: worker configuration, NATS consumer setup, message processing loop.
+- `config/benthos/`: Benthos (Redpanda Connect) routing pipeline(s) that consume `events.>`.
+- `config/handlers/`: event-handler manifests (planned) compiled into Benthos pipelines.
 - `migrations/`: Diesel SQL migrations.
 - `docs/`: browsable project docs.
 - `docsify-docs/`: secondary docsify-oriented docs set; avoid updating both unless explicitly required.
@@ -77,13 +79,14 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - Read models are projection outputs, not authoritative write state.
 - `users_view` is maintained by `UserProjector`.
 - Event log remains the source of truth.
-- Snapshot infrastructure exists, but production User currently uses the default disabled policy and rehydrates from zero.
+- Snapshot infrastructure is active: `UserAggregate` serializes/restores snapshots and the app command-bus wiring uses `USER_SNAPSHOT_INTERVAL_EVENTS` (default 50), so user writes create best-effort snapshots at a configurable interval.
 
-### Event Bus / Worker
+### Event Bus / Routing
 
-- `InProcessEventBus` is the default local synchronous path.
-- `arc-es-nats` publishes persisted events to JetStream when NATS mode is selected.
-- `arc-worker` owns durable JetStream projection delivery in distributed mode.
+- `InProcessEventBus` is the default local synchronous path (`EVENT_BUS=inprocess`); it drives projections in the writer process and is read-after-write consistent.
+- `arc-es-nats` publishes persisted events to JetStream when `EVENT_BUS=nats` is selected. The writer's responsibility ends at append + publish.
+- **Benthos (Redpanda Connect)** is the single durable consumer of `events.>` in distributed mode: it owns routing, filtering, dedupe, retries, dead-lettering, and handler/projection delivery. There is no Rust consumer of `events.>`.
+- Event handlers are external to Arc. Add one with a handler manifest (`config/handlers/<name>.yaml`) that the generator compiles into a Benthos pipeline — never by editing a Rust crate. See `docs/guides/event-handlers.md`.
 - NATS-backed tests spawn a local `nats-server -js`; CI must provision a real `nats-server` binary.
 
 ### Auth Rules
@@ -96,9 +99,9 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 
 ### Database Rules
 
-- SQLite implementations live in `arc-es-sqlite`.
-- Schema changes require a Diesel migration and affected seeder/test updates.
-- Step 5 should add Postgres stores behind existing `EventStore` and `ReadModelStore` traits instead of changing domain code.
+- SQLite implementations live in `arc-es-sqlite`; Postgres implementations live in `arc-es-postgres`.
+- Schema changes require a Diesel migration and affected seeder/test updates (Postgres self-initializes its schema in `build_stores`).
+- New storage backends go behind the existing `EventStore` and `ReadModelStore` traits instead of changing domain code.
 
 ### Frontend Rules
 
@@ -112,14 +115,13 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - Existing tests rely on SQLite and some use serial execution.
 - Auth/profile tests can touch migrations, seeders, session middleware, CSRF behavior, and projections.
 - If you change auth, forms, migrations, projection behavior, or session behavior, update or add focused tests.
-- If you change NATS/worker behavior, cover publish/consume, redelivery, durable consumer setup, and ACK/NAK lifecycle.
+- If you change NATS publishing behavior, cover publish acks, subject naming (`events.<aggregate_type>.<event_type>`, snake_case), and event serialization. Routing/consumer behavior lives in Benthos pipelines (`config/benthos/`), validated with `benthos lint` and routing integration tests.
 
 ## Current Priorities
 
 ### Immediate
 
-- Step 5: add Postgres event/read-model stores and `DATABASE_DRIVER=sqlite|postgres`.
-- Continue HIPAA-2b: compile-time or mechanical guarantee that regulated read controllers call `record_read`.
+- Land `config/benthos/` routing pipelines and the handler-manifest → Benthos-config generator (`make benthos-config`), plus a `benthos lint` CI gate. See `docs/adr/0001-benthos-only-event-routing.md`.
 - Reconcile high-level docs that still describe the old MVC-only layout.
 
 ### Near-Term
@@ -132,12 +134,10 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 
 - Introduce plugin/hook system.
 - Make core/storage crates publishable.
-- Broaden distributed architecture beyond the current JetStream projection lane.
+- Broaden the Benthos routing plane (more handler manifests, richer DLQ/redrive tooling).
 
 ## Known Gaps And Risks
 
-- HIPAA-5 integrity primitives exist, but event-store signature persistence/enforcement is deferred.
-- Snapshot infrastructure exists, but User production wiring does not currently create snapshots.
 - High-level docs still contain historical MVC-era wording.
 - Duplicate/old planning documents can be mistaken for current truth.
 - NATS integration tests require a `nats-server` binary to exercise live JetStream behavior; otherwise they skip.
@@ -156,8 +156,9 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 When sources disagree, use this order:
 
 1. Current source code in `crates/` and `migrations/`
-2. `todo.md`
-3. `docs/roadmap.md`
-4. Root `AGENTS.md`
-5. Current guides in `docs/guides/`
-6. Older planning notes under `docs/ark/`, `docs/plans/`, `docs/planning/`, and historical root notes
+2. Accepted ADRs under `docs/adr/` (e.g. `0001-benthos-only-event-routing.md`)
+3. `todo.md`
+4. `docs/roadmap.md`
+5. Root `AGENTS.md`
+6. Current guides in `docs/guides/`
+7. Older planning notes under `docs/ark/`, `docs/plans/`, `docs/planning/`, and historical root notes

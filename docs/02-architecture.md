@@ -26,7 +26,7 @@ Arc now follows an **event-sourced workspace architecture**: HTTP handlers dispa
 
 **Projections** (`crates/arc-core/src/projection.rs`, `crates/arc-app/src/domain/user/projector.rs`)
 - Consume events and build read-model rows such as `users_view`
-- Can run in-process or through Benthos pipelines (primary durable routing layer); custom worker is optional/fallback
+- Run in-process for `EVENT_BUS=inprocess`; in distributed mode, Benthos pipelines own durable routing and projection/event-handler delivery
 
 ### 2. Server-Rendered Web Surface
 

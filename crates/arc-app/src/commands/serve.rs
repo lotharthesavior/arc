@@ -89,8 +89,9 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     let read_model_store = stores.read_model_store.clone();
 
     // Read-model store + projection engine. Inprocess mode keeps projections
-    // read-after-write consistent; NATS mode leaves projection ownership to
-    // arc-worker after the event is durably published.
+    // read-after-write consistent; NATS mode leaves durable projection and
+    // event-handler delivery to the Benthos routing layer after the event is
+    // durably published (see docs/adr/0001-benthos-only-event-routing.md).
     let mut projection_engine = ProjectionEngine::new(stores.projection_event_store);
     projection_engine.register_projector(
         Box::new(UserProjector::new()),
@@ -116,7 +117,9 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
             info!("Projections rebuilt from event store");
         }
     } else {
-        info!("EVENT_BUS=nats selected; arc-worker owns projection rebuild and delivery");
+        info!(
+            "EVENT_BUS=nats selected; Benthos owns durable projection and event-handler delivery"
+        );
     }
 
     let command_bus = es_stack::apply_user_snapshot_policy(CommandBus::<UserAggregate>::new(

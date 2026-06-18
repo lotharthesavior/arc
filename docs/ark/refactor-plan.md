@@ -4,6 +4,17 @@
 >
 > Reference gold standard: `~/Code/terminal-docker/lambda-go-template` (Go, event sourcing + NATS JetStream)
 
+> **Historical planning document — read with the ADR.** This plan captures the
+> original 5-step design. Step 4 has since been settled: the durable routing and
+> event-handler delivery layer is **Benthos (Redpanda Connect) only**, and the
+> custom `arc-worker` consumer crate was **removed** from the workspace. Wherever
+> this document refers to "the worker," "the worker process," or a custom Rust
+> consumer as the Step 4 mechanism, treat it as **superseded** — that role is now
+> filled by Benthos pipelines, and framework users extend event handling through
+> handler manifests, never by editing a Rust crate. The authoritative current
+> design is `docs/adr/0001-benthos-only-event-routing.md` and
+> `docs/guides/event-handlers.md`.
+
 ---
 
 ## Context
@@ -44,7 +55,12 @@ Implement `SqliteReadModelStore` (real SQL via r2d2, not the in-memory stub). Cr
 
 Create `crates/arc-es-nats`: implement `EventBus` using `async-nats` JetStream. `NatsEventBus::publish()` serializes each `Event` and publishes to `events.<aggregate_type>.<event_type>` (lowercase). Create durable consumer in `NatsEventBus::new()` (idempotent `get_or_create_stream`). Add `NATS_URL`, `NATS_STREAM` to config. Wire `NatsEventBus` into `CommandBus` construction alongside `InProcessEventBus`. Move `ProjectionEngine` to the worker process (Step 4).
 
-**Why third:** The worker (Step 4) subscribes to JetStream. Without events publishing to JetStream here, the worker has nothing to consume. Stream must exist and events must flow before a durable consumer is created.
+> **Superseded (ADR 0001):** "the worker process (Step 4)" below is historical.
+> The durable consumer of `events.>` is now **Benthos**, not a Rust worker, and
+> `ProjectionEngine` logic is driven by a Benthos `sql` handler in the distributed
+> topology (still run in-process for `EVENT_BUS=inprocess`).
+
+**Why third:** The durable router (Step 4) subscribes to JetStream. Without events publishing to JetStream here, the router has nothing to consume. Stream must exist and events must flow before a durable consumer is created.
 
 **Validation — Visual:** Open NATS monitor (`:8222`) and app/admin event stream side-by-side. Trigger user writes and confirm subjects under `events.user.*` receive messages while app still serves expected responses.
 
@@ -56,8 +72,8 @@ Adopt **Benthos** (Redpanda Connect) pipelines as the primary durable consumer, 
 
 - Benthos consumes from the JetStream subjects created in Step 3.
 - Benthos pipelines handle routing, filtering, enrichment, deduplication, and transformation of events using its declarative configuration (inputs → processors → outputs).
-- Projection delivery: Benthos outputs drive `ProjectionEngine` (or directly update read models via SQL/gRPC/HTTP) for `SqliteReadModelStore` / future stores. This replaces the custom `arc-worker` as the core durable consumer + `ProjectionEngine` driver.
-- The lightweight `arc-worker` (or equivalent thin Rust consumer) becomes optional — used only for specific low-latency or tightly-coupled use cases — rather than the default routing layer.
+- Projection delivery: Benthos outputs drive `ProjectionEngine`-compatible handlers or directly update read models via SQL/gRPC/HTTP for `SqliteReadModelStore`, `PostgresReadModelStore`, and future stores.
+- Framework users add event handlers with manifests under `config/handlers/`; those manifests compile into Benthos pipeline outputs instead of Rust consumer code.
 - Add Benthos configuration as code (YAML pipelines) under the project (e.g. `benthos/` or `config/benthos/`), with support for NATS JetStream input, Bloblang processors, and outputs targeting read-model stores or further topics.
 - Update `docker-compose.yml` and deployment manifests to run Benthos as the main event routing service (alongside or instead of the custom worker stub).
 
@@ -71,7 +87,7 @@ Adopt **Benthos** (Redpanda Connect) pipelines as the primary durable consumer, 
 - Test idempotency, at-least-once delivery, ordering guarantees where required, and error handling / dead-lettering.
 - Run Benthos linter / config validation in CI.
 - Keep `EventStoreContract` and projection tests green; add Benthos-specific integration tests for routing behavior.
-- Verify that the custom `arc-worker` is no longer required for the primary projection path (it may still exist for fallback scenarios).
+- Verify that the removed Rust consumer path is no longer required for projection or event-handler delivery.
 
 ### Step 5 — Production Storage, Reusable Crates, HIPAA Foundations
 
@@ -81,7 +97,7 @@ Create `crates/arc-es-postgres`: `PostgresEventStore` via `sqlx::PgPool`, schema
 
 **Validation — Automated:** Run full workspace tests under both drivers, per-crate independent CI build/test, `cargo publish --dry-run`, migration tests for Postgres schema constraints, and HIPAA audit assertions for required metadata (`user_id`, command type, timestamp, source info). 
 
-**Dependencies**: Step 3 `arc-es-nats` (reliable JetStream publishing) and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, and projection delivery. The custom `arc-worker` is no longer a hard dependency for the core path.
+**Dependencies**: Step 3 `arc-es-nats` (reliable JetStream publishing) and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, projection delivery, and event-handler delivery.
 
 ---
 
@@ -364,9 +380,14 @@ async fn test_command_bus_failure_returns_500_no_event_emitted()
 
 ## Step 4 — QA Requirements
 
-- Worker message lifecycle: dispatch command → event published → worker receives → projection updated → GET reflects change
-- NAK + redelivery: worker returns error on first delivery → event redelivered → succeeds on retry → projection correct
-- Graceful shutdown: in-flight message is ACKed before shutdown completes
+> **Superseded (ADR 0001):** Step 4 is now Benthos-only; "worker" below means the
+> Benthos routing pipeline, not the removed `arc-worker` crate. Validation is via
+> `benthos lint` plus a publish → route → read-model integration test, with DLQ
+> behavior replacing the old NAK-redelivery loop. See `docs/guides/event-handlers.md`.
+
+- Routing lifecycle: dispatch command → event published → Benthos routes → projection/handler updated → GET reflects change
+- Retry + dead-letter: handler fails → Benthos retries per manifest → on exhaustion the envelope is dead-lettered to `dlq.<handler>.<event_type>` and the main stream is not blocked
+- Poison message: an envelope failing validation goes straight to the DLQ (never retried in a loop)
 - Concurrent dispatch: 50 clients × 20 commands for different aggregates → zero ordering violations, zero duplicate `aggregate_version` values
 
 ---

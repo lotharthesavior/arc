@@ -1,0 +1,155 @@
+# Arc primary event-routing pipeline (Benthos / Redpanda Connect).
+#
+# This is the single durable consumer of the JetStream `events.>` stream that
+# arc-es-nats publishes to when the app runs with EVENT_BUS=nats. It replaces
+# the retired arc-worker durable-consumer crate.
+#
+# See:
+#   docs/adr/0001-benthos-only-event-routing.md   (why Benthos, not arc-worker)
+#   docs/guides/event-handlers.md                 (envelope, manifests, delivery)
+#
+# Each JetStream message body is the JSON-serialized arc-core `Event`:
+#   { event_id, aggregate_type, aggregate_id, sequence, event_type,
+#     payload, audit, timestamp }
+# published on subject `events.<aggregate_type>.<event_type>` (snake_case),
+# e.g. `events.user.user_registered`, with a `Nats-Msg-Id: <event_id>` header.
+#
+# Lint locally with:  redpanda-connect lint config/benthos/events.yaml
+# (or `benthos lint`). This config is a versioned artifact and is linted in CI.
+
+# Benthos HTTP server: liveness on /ping, readiness on /ready, Prometheus
+# metrics on /metrics. Exposed on :4195 in docker-compose.
+http:
+  enabled: true
+  address: 0.0.0.0:4195
+
+input:
+  # Durable JetStream pull consumer over every event subject. The durable name
+  # makes redelivery survive restarts; one consumer feeds the whole pipeline.
+  nats_jetstream:
+    urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
+    stream: "${NATS_STREAM:EVENTS}"
+    subject: events.>
+    durable: "${NATS_CONSUMER:benthos-events}"
+    deliver: all
+    ack_wait: 30s
+
+pipeline:
+  processors:
+    # Normalize the persisted arc-core Event into the handler envelope before
+    # validation and routing. The generated runtime config emits the same shape.
+    - mapping: |
+        root = this
+        root.envelope_version = 1
+        root.occurred_at = this.timestamp
+        root.subject = meta("nats_subject").or("")
+    # Poison-message guard: malformed envelopes go to dlq.envelope.* with
+    # operator metadata instead of blocking the durable consumer.
+    - mapping: |
+        root = if this.event_id.type() != "string" || this.event_id == "" || this.aggregate_type.type() != "string" || this.aggregate_type == "" || this.aggregate_id.type() != "string" || this.aggregate_id == "" || this.sequence.type() != "number" || this.event_type.type() != "string" || this.event_type == "" || this.timestamp.type() != "string" || this.timestamp == "" || this.audit.type() != "object" || this.payload.type() != "object" {
+          throw("invalid Arc event envelope: expected event_id, aggregate_type, aggregate_id, sequence, event_type, timestamp, audit, and payload")
+        } else {
+          this
+        }
+    - catch:
+        - mapping: |
+            root = this
+            root.x_arc_dlq = {
+              "handler": "envelope-validation",
+              "reason": "envelope_validation_failed",
+              "failed_at": now(),
+              "original_subject": meta("nats_subject").or(this.subject).or(""),
+              "fingerprint": content().hash("sha256"),
+            }
+    # Idempotency layer 1: collapse obvious duplicates within the cache window.
+    # event_id is the canonical idempotency key (see guide §4). Handlers must
+    # still be idempotent on event_id themselves; the cache window is finite.
+    - dedupe:
+        cache: dedupe_cache
+        key: ${! json("event_id").or(json("x_arc_dlq.fingerprint")) }
+        drop_on_err: false
+    # Visibility while handler registration is still minimal. We log routing
+    # metadata only — never raw `payload`, which may carry PHI (guide §1).
+    - log:
+        level: INFO
+        message: >-
+          routing event ${! json("event_type").or("invalid") }
+          aggregate=${! json("aggregate_type").or("unknown") }
+          id=${! json("event_id").or(json("x_arc_dlq.fingerprint")).or("unknown") }
+          seq=${! json("sequence").or("unknown") }
+
+cache_resources:
+  - label: dedupe_cache
+    memory:
+      default_ttl: 5m
+
+output:
+  # Minimal handler delivery route. Until per-handler manifests are generated
+  # into their own pipelines (phase 3), every event is routed by aggregate type
+  # and logged to stdout. Replace a case's `stdout` with a real delivery target
+  # (patterns below) to wire an actual handler.
+  switch:
+    cases:
+      - check: this.x_arc_dlq.handler == "envelope-validation"
+        output:
+          nats_jetstream:
+            urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
+            subject: dlq.envelope.${! json("event_type").or("invalid").lowercase() }
+      # users_view projection delivery lives here. In the distributed topology
+      # this becomes an `sql` output upserting the read model (see guide §3),
+      # which is how `users_view` is fed instead of a bespoke Rust consumer.
+      - check: this.x_arc_dlq == null && this.aggregate_type == "User"
+        output:
+          stdout: {}
+      # Default / catch-all route for aggregate types without a handler yet.
+      - output:
+          stdout: {}
+
+# ---------------------------------------------------------------------------
+# Delivery target patterns (documentation; not active until you opt in).
+#
+# Replace a `stdout: {}` above with one of these. Each wraps the real target in
+# a `fallback` so that, after retries are exhausted, the envelope is dead-
+# lettered to `dlq.<handler>.<event_type>` instead of blocking the stream
+# (guide §5). The original JetStream message is acked once it reaches the DLQ.
+#
+# HTTP handler (most common — your handler is any web service):
+#   output:
+#     fallback:
+#       - http_client:
+#           url: "http://welcome-email:8090/handle"
+#           verb: POST
+#           timeout: 10s
+#           headers:
+#             Content-Type: application/json
+#             Idempotency-Key: ${! json("event_id") }
+#             X-Arc-Event-Sequence: ${! json("sequence") }
+#           retries: 4
+#           backoff_on: [429, 500, 502, 503, 504]
+#       - nats_jetstream:
+#           urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
+#           subject: dlq.welcome-email.${! json("event_type").lowercase() }
+#
+# NATS re-publish (chain to a downstream subscriber):
+#   output:
+#     nats_jetstream:
+#       urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
+#       subject: handlers.search-index.user
+#
+# SQL read-model / projection delivery (feeds users_view in distributed mode):
+#   output:
+#     sql_insert:
+#       driver: postgres            # or sqlite
+#       dsn: ${READ_MODEL_DATABASE_URL}
+#       table: users_view
+#       columns: [id, name, email, version]
+#       args_mapping: |
+#         root = [
+#           this.aggregate_id,
+#           this.payload.name,
+#           this.payload.email,
+#           this.sequence,
+#         ]
+#       # Upsert keyed on id with last-writer-wins on version; mirrors the
+#       # `INSERT OR REPLACE WHERE version < excluded` projector invariant.
+# ---------------------------------------------------------------------------

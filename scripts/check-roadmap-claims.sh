@@ -58,7 +58,7 @@ need_file "crates/arc-app/src/domain/user/projector.rs" "UserProjector"
 need_grep "UserProjector"           "crates/arc-app/src/domain/user/projector.rs" "UserProjector struct"
 need_grep "USERS_VIEW|users_view"   "crates/arc-app/src/domain/user/projector.rs" "users_view read model"
 need_grep "UserProjector"           "crates/arc-app/src/commands/serve.rs"        "UserProjector wired in serve"
-need_grep "SqliteReadModelStore"    "crates/arc-app/src/commands/serve.rs"        "projection store wired"
+need_grep "stores.read_model_store" "crates/arc-app/src/commands/serve.rs"        "projection store wired"
 need_dir  "migrations/2026-05-08-000001_drop_legacy_users" "legacy users dropped"
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ Arc began as a Rust/Actix-Web MVC starter. The current code has moved to a works
 - `arc-es-sqlite` provides SQLite event/read-model/session/snapshot persistence.
 - `arc-es-nats` provides a NATS JetStream event bus (publishing foundation).
 - `arc-app` provides the Actix/Tera web surface and User domain wiring.
-- Benthos (Redpanda Connect) pipelines provide the primary durable event consumption, routing, filtering, transformation, and projection delivery mechanism (evolved Step 4). The lightweight `arc-worker` exists as an optional/fallback component rather than the core routing layer.
+- Benthos (Redpanda Connect) pipelines provide durable event consumption, routing, filtering, transformation, projection delivery, and framework-user event-handler delivery.
 
 Historical gaps that motivated this architecture were:
 - Diesel ORM + SQLite CRUD as mutable state

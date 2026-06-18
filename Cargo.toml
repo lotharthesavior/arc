@@ -6,7 +6,6 @@ members = [
     "crates/arc-es-postgres",
     "crates/arc-es-nats",
     "crates/arc-app",
-    "crates/arc-worker",
 ]
 
 [workspace.package]

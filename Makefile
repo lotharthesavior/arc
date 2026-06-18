@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test clean format check lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report
+.PHONY: help install build dev serve migrate seed test clean format check lint benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report
 
 # Default target
 .DEFAULT_GOAL := help
@@ -142,6 +142,27 @@ format-check: ## Check code formatting without making changes
 lint: ## Run clippy linter
 	@echo "$(GREEN)Running clippy...$(NC)"
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+benthos-config: ## Generate Benthos pipeline config from handler manifests
+	@echo "$(GREEN)Generating Benthos config...$(NC)"
+	npm run benthos:config
+
+benthos-config-check: ## Check generated Benthos config is up to date
+	@echo "$(GREEN)Checking generated Benthos config...$(NC)"
+	npm run benthos:config:check
+
+benthos-lint: benthos-config-check ## Lint Benthos pipeline config
+	@echo "$(GREEN)Linting Benthos config...$(NC)"
+	@if command -v redpanda-connect >/dev/null 2>&1; then \
+		READ_MODEL_DATABASE_URL="$${READ_MODEL_DATABASE_URL:-unused}" redpanda-connect lint config/benthos/events.yaml config/benthos/generated/events.yaml; \
+	elif command -v benthos >/dev/null 2>&1; then \
+		READ_MODEL_DATABASE_URL="$${READ_MODEL_DATABASE_URL:-unused}" benthos lint config/benthos/events.yaml config/benthos/generated/events.yaml; \
+	elif command -v docker >/dev/null 2>&1; then \
+		docker run --rm -e READ_MODEL_DATABASE_URL=unused -v "$$(pwd):/work" -w /work docker.redpanda.com/redpandadata/connect:latest lint config/benthos/events.yaml config/benthos/generated/events.yaml; \
+	else \
+		echo "$(YELLOW)Install redpanda-connect, benthos, or Docker to lint Benthos configs$(NC)"; \
+		exit 1; \
+	fi
 
 # Scan dependencies for known security vulnerabilities (auto-installs cargo-audit)
 audit: ## Audit dependencies for security vulnerabilities

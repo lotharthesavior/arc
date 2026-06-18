@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY migrations ./migrations
-RUN cargo build --release --bin arc --bin arc-worker --features arc/nats
+RUN cargo build --release --bin arc --features arc/nats
 
 FROM node:20-bookworm-slim AS frontend-builder
 WORKDIR /build
@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=rust-builder /build/target/release/arc /usr/local/bin/arc
-COPY --from=rust-builder /build/target/release/arc-worker /usr/local/bin/arc-worker
 COPY --from=frontend-builder /build/dist ./dist
 COPY migrations ./migrations
 COPY resources/templates ./resources/templates

@@ -62,10 +62,15 @@ ARC_POSTGRES_TEST_DATABASE_URL=postgres://arc:password@127.0.0.1:5433/arc_dev ca
 DATABASE_DRIVER=postgres DATABASE_URL=postgres://arc:password@127.0.0.1:5433/arc_dev cargo run -p arc --features postgres -- migrate
 ```
 
-For app and worker startup checks, build with the `postgres` feature and set
+For app startup checks, build with the `postgres` feature and set
 `DATABASE_DRIVER=postgres`. The app calls both event-store and read-model
-`initialize_schema()` during `build_stores`; the worker does the same before
-projection rebuild and JetStream consumer setup.
+`initialize_schema()` during `build_stores`. Durable event consumption,
+routing, and projection delivery in distributed mode run in Benthos
+(Redpanda Connect), not a Rust process — see
+`docs/adr/0001-benthos-only-event-routing.md` and
+`docs/guides/event-handlers.md`. A Benthos `sql` handler targeting Postgres
+expects the read-model schema to already exist, so run the app (or `migrate`)
+once against the database before starting the routing layer.
 
 ## Production Readiness
 

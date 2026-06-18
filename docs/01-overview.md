@@ -4,7 +4,7 @@
 
 **Arc** is a web application starter/framework built with Rust and the Actix Web framework. It now uses a workspace-based, event-sourced architecture for writes and projections while keeping server-rendered HTML as the default web surface.
 
-> Current architecture note: older sections in this document may still describe the original single-crate MVC starter. The live code is organized under `crates/` with `arc-core`, `arc-es-sqlite`, `arc-es-nats`, `arc-app`, and `arc-worker`.
+> Current architecture note: older sections in this document may still describe the original single-crate MVC starter. The live code is organized under `crates/` with `arc-core`, `arc-es-sqlite`, `arc-es-postgres`, `arc-es-nats`, and `arc-app`. Durable event routing in distributed mode is handled by Benthos (Redpanda Connect), not a Rust crate — see `docs/adr/0001-benthos-only-event-routing.md`.
 
 **Philosophy:** "Spend time with your ideas on top of a solid foundation" - The project aims to reduce boilerplate setup and provide a complete MVC structure with authentication, database integration, and frontend tooling pre-configured.
 
@@ -14,8 +14,8 @@
 - **Session Management**: Cookie-based sessions for user state
 - **Admin Dashboard**: Protected admin area with dashboard, settings, and profile pages
 - **Event Sourcing**: Commands, aggregates, append-only events, projections, and read models
-- **Storage**: SQLite event/read-model stores via Diesel, with Postgres planned next
-- **Distributed Event Lane**: NATS JetStream publisher (arc-es-nats) with Benthos pipelines as the primary durable routing, filtering, and projection delivery mechanism (custom worker optional/fallback)
+- **Storage**: SQLite event/read-model stores via Diesel, with Postgres available through `DATABASE_DRIVER=postgres`
+- **Distributed Event Lane**: NATS JetStream publisher (`arc-es-nats`) with Benthos pipelines as the durable routing, filtering, projection, and event-handler delivery mechanism
 - **Migration System**: Versioned database migrations
 - **Seeder Pattern**: Database population with initial data
 - **Template Engine**: Tera templates for server-side rendering
@@ -89,8 +89,9 @@ arc/
 │   ├── arc-core/          # Event sourcing primitives and framework traits
 │   ├── arc-es-sqlite/     # SQLite event/read-model/session stores
 │   ├── arc-es-nats/       # NATS JetStream EventBus
-│   ├── arc-app/           # Actix/Tera application
-│   └── arc-worker/        # Durable JetStream projection worker
+│   └── arc-app/           # Actix/Tera application
+├── config/
+│   └── benthos/           # Redpanda Connect routing pipelines
 ├── migrations/            # Database migrations
 ├── database/              # SQLite database files
 ├── dist/                  # Compiled frontend assets
