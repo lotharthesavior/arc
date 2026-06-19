@@ -63,6 +63,8 @@ test("generates an HTTP handler route with a DLQ fallback", () => {
         "  type: http",
         "  http:",
         '    url: "http://welcome-email:8090/handle"',
+        "    headers:",
+        '      Authorization: "Bearer ${WELCOME_EMAIL_TOKEN}"',
         "retry:",
         "  max_attempts: 2",
         "",
@@ -81,6 +83,8 @@ test("generates an HTTP handler route with a DLQ fallback", () => {
     assert.equal(delivery.max_retries, 1);
     assert.equal(delivery.backoff.initial_interval, "2s");
     assert.equal(delivery.output.http_client.url, "http://welcome-email:8090/handle");
+    assert.equal(delivery.output.http_client.headers.Authorization, "Bearer ${WELCOME_EMAIL_TOKEN}");
+    assert.equal(delivery.output.http_client.headers["Idempotency-Key"], '${! json("event_id") }');
     assert.equal(
       handler.output.fallback[1].nats_jetstream.subject,
       'dlq.welcome-email.${! json("event_type").lowercase() }',

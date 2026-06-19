@@ -44,6 +44,7 @@ services:
       NATS_URL: nats://nats:4222
       NATS_STREAM: EVENTS
       EVENT_BUS: nats
+      INTERNAL_PROJECTION_TOKEN: change-me-internal-projection-token-32-bytes
       APP_URL: 0.0.0.0
       APP_PORT: 8080
       APP_ENV: development
@@ -77,6 +78,8 @@ services:
       NATS_STREAM: EVENTS
       # Durable JetStream consumer name for the routing pipeline.
       NATS_CONSUMER: benthos-events
+      # Used by handler manifests that call Arc-owned projection endpoints.
+      INTERNAL_PROJECTION_TOKEN: change-me-internal-projection-token-32-bytes
     ports:
       # Benthos HTTP server: health on /ping, Prometheus metrics on /metrics.
       - "4195:4195"

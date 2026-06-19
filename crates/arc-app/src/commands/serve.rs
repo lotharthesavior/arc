@@ -128,6 +128,7 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
     ));
     let command_bus_data = web::Data::new(command_bus);
     let read_model_store_data = web::Data::from(read_model_store);
+    let projection_engine_data = web::Data::from(projection_engine);
 
     // Default to NoOpAccessLogger for non-regulated deployments. Production
     // PHI/PCI deployments swap this for a JetStream- or DB-backed sink (Step 3+).
@@ -185,6 +186,7 @@ pub async fn run(app_url: String, app_port: u16) -> io::Result<()> {
             }))
             .app_data(command_bus_data.clone())
             .app_data(read_model_store_data.clone())
+            .app_data(projection_engine_data.clone())
             .app_data(access_logger_data.clone())
             .app_data(session_store_data.clone())
             .app_data(web::Data::new(ws_server.clone()))

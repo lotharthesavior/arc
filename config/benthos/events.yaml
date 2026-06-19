@@ -121,6 +121,7 @@ output:
 #           verb: POST
 #           timeout: 10s
 #           headers:
+#             Authorization: Bearer $HANDLER_TOKEN
 #             Content-Type: application/json
 #             Idempotency-Key: ${! json("event_id") }
 #             X-Arc-Event-Sequence: ${! json("sequence") }

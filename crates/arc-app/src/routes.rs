@@ -2,6 +2,7 @@ use crate::http::controllers::api_controller::{
     delete_profile, login, logout, profile, register, update_profile,
 };
 use crate::http::controllers::diag_controller::{diag_health, list_events};
+use crate::http::controllers::internal_projection_controller::handle_user_projection;
 use crate::http::controllers::{admin_controller, auth_controller, home_controller};
 use crate::http::middlewares::{
     auth_middleware::AuthMiddleware, idle_timeout_middleware::IdleTimeoutMiddleware,
@@ -120,6 +121,9 @@ pub fn config(cfg: &mut web::ServiceConfig) {
                     .service(profile),
             ),
         )
+        // Internal Benthos delivery endpoints. These require their own bearer
+        // token and keep projection database writes inside Arc-owned code.
+        .service(web::scope("/internal/projections").service(handle_user_projection))
         // GET /admin
         // AuthMiddleware is innermost (runs last, closest to handler) so the
         // idle-timeout enforcer sees the session-bound user_id and can purge.

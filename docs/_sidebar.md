@@ -6,6 +6,7 @@
 
 * Development
   * [Backend](03-backend.md)
+  * [Adding Endpoints](guides/adding-endpoints.md)
   * [Frontend](04-frontend.md)
   * [Database](05-database.md)
   * [Postgres Setup](guides/postgres-setup.md)

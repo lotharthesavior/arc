@@ -182,3 +182,4 @@ The application uses environment variables for configuration:
 | `DATABASE_URL` | SQLite database path | database/database.sqlite |
 | `DATABASE_POOL_LIMIT` | Connection pool size | 10 |
 | `SECRET_KEY` | Session encryption key | (required) |
+| `INTERNAL_PROJECTION_TOKEN` | Shared bearer token for Benthos-to-Arc projection endpoints | (required for distributed projections) |

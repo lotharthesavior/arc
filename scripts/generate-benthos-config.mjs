@@ -53,6 +53,24 @@ function optionalStringArray(value, label) {
   return value.map((item) => item.trim());
 }
 
+function optionalStringMap(value, label) {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be a mapping of string keys to string values`);
+  }
+
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item !== "string" || item.trim() === "") {
+      throw new Error(`${label}.${key} must be a non-empty string`);
+    }
+    result[key] = item.trim();
+  }
+  return result;
+}
+
 function requiredStringArray(value, label) {
   const values = optionalStringArray(value, label);
   if (values.length === 0) {
@@ -174,13 +192,14 @@ function normalizeDelivery(delivery, type, prefix) {
 
   if (type === "http") {
     const http = delivery.http;
-    assertAllowedKeys(http, ["url", "verb", "timeout"], `${prefix}: delivery.http`);
+    assertAllowedKeys(http, ["url", "verb", "timeout", "headers"], `${prefix}: delivery.http`);
     return {
       type,
       http: {
         url: requireString(http.url, `${prefix}: delivery.http.url`),
         verb: typeof http.verb === "string" ? http.verb.toUpperCase() : "POST",
         timeout: typeof http.timeout === "string" ? http.timeout : "10s",
+        headers: optionalStringMap(http.headers, `${prefix}: delivery.http.headers`),
       },
     };
   }
@@ -302,6 +321,7 @@ function deliveryOutput(handler) {
         verb: handler.delivery.http.verb,
         timeout: handler.delivery.http.timeout,
         headers: {
+          ...handler.delivery.http.headers,
           "Content-Type": "application/json",
           "Idempotency-Key": '${! json("event_id") }',
           "X-Arc-Event-Sequence": '${! json("sequence") }',

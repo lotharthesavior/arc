@@ -21,6 +21,7 @@ mod http {
         pub mod auth_controller;
         pub mod diag_controller;
         pub mod home_controller;
+        pub mod internal_projection_controller;
     }
 
     pub mod errors;

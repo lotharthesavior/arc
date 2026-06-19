@@ -101,6 +101,8 @@ delivery:
     url: "http://welcome-email:8090/handle"
     verb: POST
     timeout: 10s
+    headers:                       # optional; merged with framework headers
+      Authorization: "Bearer ${HANDLER_TOKEN}"
     # Benthos adds idempotency + tracing headers automatically (see §4).
 
 # Idempotency + ordering expectations the handler promises to honor.
@@ -174,6 +176,8 @@ delivery:
     url: "http://arc-app:8080/internal/projections/users/handle"
     verb: POST
     timeout: 10s
+    headers:
+      Authorization: "Bearer ${INTERNAL_PROJECTION_TOKEN}"
 ```
 
 That endpoint/service should authenticate the call, deserialize the envelope, run the relevant
@@ -261,6 +265,8 @@ external handlers (HTTP/NATS) are **not** exercised in this mode — only in-pro
 3. Drop your manifest in `config/handlers/<name>.yaml` and regenerate the pipeline:
    `make benthos-config`.
 4. Run your handler service locally (e.g. the `http` target on `localhost:8090`).
+   For Arc-owned projection handlers, set the same `INTERNAL_PROJECTION_TOKEN` for both the app and
+   Benthos and use an `Authorization: Bearer ${INTERNAL_PROJECTION_TOKEN}` manifest header.
 5. Trigger a write (register a user). Watch the event flow:
    - NATS monitor `:8222` shows messages on `events.user.*`.
    - Benthos metrics `:4195/metrics` show input/output/dedupe/DLQ counts.
