@@ -95,9 +95,9 @@ output:
           nats_jetstream:
             urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
             subject: dlq.envelope.${! json("event_type").or("invalid").lowercase() }
-      # users_view projection delivery lives here. In the distributed topology
-      # this becomes an `sql` output upserting the read model (see guide §3),
-      # which is how `users_view` is fed instead of a bespoke Rust consumer.
+      # User projection delivery lives here. In the distributed topology this
+      # should call an Arc-owned HTTP projection endpoint/service; Benthos must
+      # not write directly to Arc databases.
       - check: this.x_arc_dlq == null && this.aggregate_type == "User"
         output:
           stdout: {}
@@ -136,20 +136,8 @@ output:
 #       urls: ["${NATS_URL:nats://127.0.0.1:4222}"]
 #       subject: handlers.search-index.user
 #
-# SQL read-model / projection delivery (feeds users_view in distributed mode):
-#   output:
-#     sql_insert:
-#       driver: postgres            # or sqlite
-#       dsn: ${READ_MODEL_DATABASE_URL}
-#       table: users_view
-#       columns: [id, name, email, version]
-#       args_mapping: |
-#         root = [
-#           this.aggregate_id,
-#           this.payload.name,
-#           this.payload.email,
-#           this.sequence,
-#         ]
-#       # Upsert keyed on id with last-writer-wins on version; mirrors the
-#       # `INSERT OR REPLACE WHERE version < excluded` projector invariant.
+# Projection delivery:
+#   Use an HTTP target owned by Arc, e.g. /internal/projections/<name>/handle.
+#   That endpoint runs Projector/ProjectionEngine/ReadModelStore code and owns
+#   the database write. Benthos must never use sql_insert or database DSNs.
 # ---------------------------------------------------------------------------

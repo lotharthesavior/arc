@@ -64,13 +64,15 @@ DATABASE_DRIVER=postgres DATABASE_URL=postgres://arc:password@127.0.0.1:5433/arc
 
 For app startup checks, build with the `postgres` feature and set
 `DATABASE_DRIVER=postgres`. The app calls both event-store and read-model
-`initialize_schema()` during `build_stores`. Durable event consumption,
-routing, and projection delivery in distributed mode run in Benthos
-(Redpanda Connect), not a Rust process — see
+`initialize_schema()` during `build_stores`. Durable event consumption and
+routing in distributed mode run in Benthos (Redpanda Connect), not a Rust
+process — see
 `docs/adr/0001-benthos-only-event-routing.md` and
-`docs/guides/event-handlers.md`. A Benthos `sql` handler targeting Postgres
-expects the read-model schema to already exist, so run the app (or `migrate`)
-once against the database before starting the routing layer.
+`docs/guides/event-handlers.md`. Benthos must never write directly to the
+database; projection writes should go through an Arc-owned handler/service that
+uses the configured read-model store. Run the app (or `migrate`) once against
+the database before starting the routing layer so the Arc-owned projection path
+has the expected schema.
 
 ## Production Readiness
 

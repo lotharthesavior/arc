@@ -146,10 +146,10 @@ function normalizeManifest(raw) {
   if (!raw.delivery || typeof raw.delivery !== "object" || Array.isArray(raw.delivery)) {
     throw new Error(`${prefix}: delivery must be a mapping`);
   }
-  assertAllowedKeys(raw.delivery, ["type", "http", "nats", "sql"], `${prefix}: delivery`);
+  assertAllowedKeys(raw.delivery, ["type", "http", "nats"], `${prefix}: delivery`);
   const deliveryType = requireString(raw.delivery.type, `${prefix}: delivery.type`);
-  if (!["http", "nats", "sql"].includes(deliveryType)) {
-    throw new Error(`${prefix}: delivery.type must be one of: http, nats, sql`);
+  if (!["http", "nats"].includes(deliveryType)) {
+    throw new Error(`${prefix}: delivery.type must be one of: http, nats`);
   }
 
   const deadLetter = raw.dead_letter ?? {};
@@ -194,21 +194,6 @@ function normalizeDelivery(delivery, type, prefix) {
       },
     };
   }
-
-  const sql = delivery.sql;
-  assertAllowedKeys(sql, ["driver", "dsn_env", "table", "columns", "args_mapping", "suffix"], `${prefix}: delivery.sql`);
-  const columns = requiredStringArray(sql.columns, `${prefix}: delivery.sql.columns`);
-  return {
-    type,
-    sql: {
-      driver: requireString(sql.driver, `${prefix}: delivery.sql.driver`),
-      dsn_env: requireString(sql.dsn_env, `${prefix}: delivery.sql.dsn_env`),
-      table: requireString(sql.table, `${prefix}: delivery.sql.table`),
-      columns,
-      args_mapping: requireString(sql.args_mapping, `${prefix}: delivery.sql.args_mapping`),
-      suffix: sql.suffix === undefined ? null : requireString(sql.suffix, `${prefix}: delivery.sql.suffix`),
-    },
-  };
 }
 
 function baseConfig(handlerCases) {
@@ -335,19 +320,7 @@ function deliveryOutput(handler) {
     };
   }
 
-  const insert = {
-    sql_insert: {
-      driver: handler.delivery.sql.driver,
-      dsn: `\${${handler.delivery.sql.dsn_env}}`,
-      table: handler.delivery.sql.table,
-      columns: handler.delivery.sql.columns,
-      args_mapping: handler.delivery.sql.args_mapping,
-    },
-  };
-  if (handler.delivery.sql.suffix) {
-    insert.sql_insert.suffix = handler.delivery.sql.suffix;
-  }
-  return insert;
+  throw new Error(`unsupported delivery type: ${handler.delivery.type}`);
 }
 
 function retryOutput(handler, output) {

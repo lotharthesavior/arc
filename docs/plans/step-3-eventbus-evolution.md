@@ -1,5 +1,14 @@
 # Step 3 — Event Bus Evolution: Sync/Async Split → NATS JetStream → Worker
 
+> **Historical note (2026-06-19):** This plan predates ADR 0001. The custom
+> `arc-worker` consumer path described below is superseded and removed from the
+> forward architecture. Current distributed routing is Benthos-only. Benthos
+> must never write directly to Arc databases; projection delivery must call an
+> Arc-owned HTTP/NATS handler or service that runs `Projector` /
+> `ProjectionEngine` / `ReadModelStore` code. Use
+> `docs/adr/0001-benthos-only-event-routing.md`, `docs/guides/event-handlers.md`,
+> `todo.md`, and `docs/roadmap.md` for current planning.
+
 > **Status:** Design proposal (plan). No source under `crates/` changes as part of this
 > document — it specifies the work for refactor Steps 3 and 4.
 > **Scope:** the synchronous/asynchronous split of the event bus, the `arc-es-nats`

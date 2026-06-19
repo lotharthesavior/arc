@@ -1,9 +1,10 @@
 # Guide — Writing event handlers with Benthos
 
 This guide is for **framework users**: you are building an application on Arc and want to *react* to
-events (send an email when a user registers, update a search index, call a webhook, maintain a
-read model). You will do this **without editing any Arc internal crate**. You write a small handler
-service and a **handler manifest**; Arc's Benthos routing layer delivers matching events to it.
+events (send an email when a user registers, update a search index, call a webhook, or trigger an
+Arc-owned projection service). You will do this **without editing any Arc internal crate**. You
+write a small handler service and a **handler manifest**; Arc's Benthos routing layer delivers
+matching events to it.
 
 > Why Benthos and not a Rust worker? See `docs/adr/0001-benthos-only-event-routing.md`. Short
 > version: the durable routing plane is **Benthos (Redpanda Connect) only**. The retired
@@ -18,7 +19,7 @@ write → CommandBus → EventStore::append → arc-es-nats publishes
                           ▼
         Benthos pipeline  input: nats_jetstream (subject events.>)
                           processor: validate envelope · dedupe(event_id) · route
-                          output: switch ──► your handler (HTTP / NATS / SQL)
+                          output: switch ──► your handler (HTTP / NATS)
                                     └─ fallback ──► dead-letter (dlq.<handler>.<event_type>)
 ```
 
@@ -26,6 +27,8 @@ write → CommandBus → EventStore::append → arc-es-nats publishes
 - **Benthos is the only durable consumer** of `events.>`. It owns routing, filtering, dedupe,
   retries, and dead-lettering.
 - A handler is just a delivery target. You add one with a manifest; you never touch Rust.
+- **Benthos never writes to Arc databases.** Database writes remain inside Arc-owned code paths
+  (`ProjectionEngine`, read-model stores, or explicit projection HTTP services).
 
 ## 1. The versioned event envelope (the contract)
 
@@ -93,7 +96,7 @@ subscribe:
 
 # Where to deliver. Exactly one target block.
 delivery:
-  type: http                     # http | nats | sql
+  type: http                     # http | nats
   http:
     url: "http://welcome-email:8090/handle"
     verb: POST
@@ -155,38 +158,27 @@ Use when the consumer is itself a NATS subscriber, or to chain pipelines. Bentho
 (optionally transformed) envelope to the subject; downstream durability is the subscriber's
 JetStream consumer.
 
-### `sql` — update a read model directly
+### Projection delivery — call Arc-owned code, not the database
+
+Benthos must not use `sql_insert`, database DSNs, or any direct database output. Projection writes
+belong in Arc-owned code because the `Projector`/`ProjectionEngine`/`ReadModelStore` boundary owns
+idempotency, schema, storage-driver differences, audit posture, and future invariants.
+
+For distributed projections, route matching events to an Arc-owned HTTP projection endpoint or
+projection service:
 
 ```yaml
 delivery:
-  type: sql
-  sql:
-    driver: postgres             # or sqlite
-    dsn_env: READ_MODEL_DATABASE_URL
-    table: users_view
-    columns: [id, email, name, version]
-    args_mapping: |
-      root = [
-        this.aggregate_id,
-        this.payload.email,
-        this.payload.name,
-        this.sequence,
-      ]
-    # PostgreSQL example; use SQLite's INSERT OR REPLACE / ON CONFLICT dialect as needed.
-    suffix: |
-      ON CONFLICT (id) DO UPDATE
-      SET email = excluded.email,
-          name = excluded.name,
-          version = excluded.version
-      WHERE users_view.version < excluded.version
+  type: http
+  http:
+    url: "http://arc-app:8080/internal/projections/users/handle"
+    verb: POST
+    timeout: 10s
 ```
 
-This is how **projection delivery** works under the Benthos-only model: the `users_view` projection
-is an `sql` handler subscribed to `User` events, not a bespoke Rust consumer. The `Projector`
-*logic* in `arc-core` still defines the shape; Benthos is the driver in the distributed topology.
-(In `EVENT_BUS=inprocess` dev mode, projections are still driven synchronously in-process — see §6.)
-SQL handlers use Benthos `sql_insert`; put database-specific idempotency/upsert behavior in
-`suffix`. Do not use a plain insert for an at-least-once projection.
+That endpoint/service should authenticate the call, deserialize the envelope, run the relevant
+projector through the read-model store, and return 2xx only after the projection write is durable.
+In `EVENT_BUS=inprocess` dev mode, projections are still driven synchronously in-process — see §6.
 
 ## 4. Idempotency expectations
 
@@ -199,9 +191,9 @@ Two layers protect you:
    `event_id`) backed by a cache, collapsing obvious duplicates within the cache window.
 2. **Handler-side idempotency (required).** The cache window is finite; do not rely on it alone.
    Make the handler naturally idempotent:
-   - **HTTP/SQL state:** UPSERT keyed on `event_id`, or `UPSERT ... WHERE sequence > existing` for
-     per-aggregate last-writer-wins. The `users_view` projector already uses
-     `INSERT OR REPLACE WHERE version < excluded` — mirror that.
+   - **HTTP state/projections:** persist a processed-event marker keyed on `event_id`, or update
+     the read model only when `sequence > existing` for per-aggregate last-writer-wins. The
+     `users_view` projector already uses version checks — keep that logic inside Arc-owned code.
    - **Side effects (email, webhooks):** record processed `event_id`s in a dedupe table and short-
      circuit if already present, or use the target system's idempotency key
      (Benthos sends `Idempotency-Key: <event_id>` and `X-Arc-Event-Sequence: <sequence>` headers on
@@ -215,7 +207,7 @@ false ordering guarantee.
 
 ## 5. Failure and dead-letter behavior
 
-A delivery **fails** when the target returns non-2xx (HTTP), errors (SQL/NATS), or times out.
+A delivery **fails** when the target returns non-2xx (HTTP), errors (NATS), or times out.
 
 1. **Retry.** Benthos retries every delivery target per the manifest `retry` block (default: 4
    total attempts, exponential backoff 2s→1m). The JetStream message stays un-ACKed during retries.
@@ -272,15 +264,16 @@ external handlers (HTTP/NATS) are **not** exercised in this mode — only in-pro
 5. Trigger a write (register a user). Watch the event flow:
    - NATS monitor `:8222` shows messages on `events.user.*`.
    - Benthos metrics `:4195/metrics` show input/output/dedupe/DLQ counts.
-   - Your handler receives the envelope; check your read model / side effect.
+   - Your handler receives the envelope; check your projection endpoint/service or side effect.
 6. Test failure: make the handler return 500 and confirm retries then a message on
    `dlq.<name>.userregistered`.
 
 **CI.** Pipeline configs are versioned artifacts. CI runs the generator tests,
 `make benthos-config-check`, and Redpanda Connect lint against `config/benthos/events.yaml` and
 `config/benthos/generated/events.yaml`. The remaining routing integration test should publish via
-`arc-es-nats`, let Benthos route, and assert the handler/read-model was updated (and that a forced
-failure dead-letters).
+`arc-es-nats`, let Benthos route, and assert an HTTP/NATS handler was invoked. Projection coverage
+should prove Benthos calls an Arc-owned projection endpoint/service, then assert Arc updated the
+read model through its own store. A forced failure should dead-letter.
 
 ## Checklist for a new handler
 

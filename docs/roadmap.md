@@ -225,9 +225,9 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
   - **Status**: Complete (foundation for all downstream routing)
 
 - [x] **Step 4: Benthos durable routing layer** ✅
-  - Benthos consumes `events.>` from NATS JetStream and owns routing, filtering, dedupe, retry, dead-lettering, projection delivery, and event-handler delivery.
+  - Benthos consumes `events.>` from NATS JetStream and owns routing, filtering, dedupe, retry, dead-lettering, and event-handler delivery. Benthos must never write directly to Arc databases; projection writes stay inside Arc-owned handlers/services.
   - **Files**: `config/benthos/events.yaml`, `config/benthos/generated/events.yaml`, `scripts/generate-benthos-config.mjs`
-  - **Status**: Base pipeline, generated runtime pipeline, Compose service, handler-manifest generator, `benthos lint` CI gate, envelope validation, and enriched `x_arc_dlq` metadata landed. Remaining follow-up: publish → Benthos route → read-model integration coverage and DLQ/redrive operator workflow docs.
+  - **Status**: Base pipeline, generated runtime pipeline, Compose service, handler-manifest generator, `benthos lint` CI gate, envelope validation, enriched `x_arc_dlq` metadata, and SQL/database delivery rejection landed. Remaining follow-up: publish → Benthos → Arc HTTP projection handler/service → read-model integration coverage and DLQ/redrive operator workflow docs.
 
 - [x] **NATS publishing integration tests and gate** ✅
   - Phase 1 gate passed workspace tests and clippy with all features after adding publish/consume, redelivery, and NATS publishing-side coverage. The removed Rust projection-consumer test is historical; routing/projection delivery is now validated through Benthos (`benthos lint` plus a routing integration test, per ADR 0001).
@@ -237,9 +237,9 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 ### 1.4.1 Benthos as Event Routing Strategy (Accepted)
 
 - [x] Adopt **Benthos** (Redpanda Connect / formerly Benthos) as the tool for routing, filtering, transforming, and delivering events from NATS JetStream.
-- Goal: Use Benthos for event handling, projection routing, retries, and DLQ handling, while keeping Rust focused on domain logic and storage.
+- Goal: Use Benthos for event routing, filtering, handler delivery, retries, and DLQ handling, while keeping Rust focused on domain logic and storage.
 - `arc-es-nats` remains the publishing side.
-- Framework users extend event handling through handler manifests and external services; they do not edit a Rust consumer crate.
+- Framework users extend event handling through handler manifests and external services; they do not edit a Rust consumer crate. Manifests support HTTP/NATS delivery, not SQL/database delivery.
 - This changes the event handling strategy to be more declarative and powerful via Benthos pipelines (inputs → processors → outputs), reducing custom Rust code for routing logic.
 - **Dependencies**: Step 3 `arc-es-nats` (publishing to JetStream) and NATS JetStream topics.
 - **Status**: Accepted in `docs/adr/0001-benthos-only-event-routing.md`; runtime config is generated from handler manifests into `config/benthos/generated/events.yaml`, with the reference/base config at `config/benthos/events.yaml`.
@@ -249,7 +249,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 - [x] **Step 5: Postgres event/read-model stores** ✅
   - Add `crates/arc-es-postgres` and `arc-rm-postgres`.
   - Add `DATABASE_DRIVER=sqlite|postgres` startup config so the app can swap event and read-model stores behind existing domain traits.
-  - **Status**: Complete (validated against live DB, app store wiring verified). Durable routing/projection delivery runs in Benthos, not a Rust worker (ADR 0001).
+  - **Status**: Complete (validated against live DB, app store wiring verified). Durable routing runs in Benthos, while projection writes remain in Arc-owned code paths (ADR 0001).
 
 ---
 
@@ -884,8 +884,8 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 3. ✅ NATS publish/consume integration tests and workspace clippy gate passed in Phase 1.
 4. ✅ CI installs pinned upstream `nats-server` for Rust test jobs so JetStream integration tests run live.
 5. ✅ Step 5 complete: Postgres event/read-model stores and `DATABASE_DRIVER=sqlite|postgres`.
-6. ✅ Build out Benthos handler-manifest generation, config artifacts, linting, envelope validation, and enriched DLQ metadata.
-7. 🔲 Add publish → Benthos route → read-model integration coverage.
+6. ✅ Build out Benthos handler-manifest generation, config artifacts, linting, envelope validation, enriched DLQ metadata, and SQL/database delivery rejection.
+7. 🔲 Add publish → Benthos → Arc HTTP projection handler/service → read-model integration coverage.
 8. 🔲 Document DLQ/redrive operator workflow.
 9. 🔲 Continue documentation/reference reconciliation.
 
@@ -916,8 +916,8 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 ### Medium-term (Next Quarter) - **BENTHOS ROUTING MATURITY**
 1. ✅ Add the handler-manifest → Benthos-config generator (`make benthos-config`).
 2. ✅ Add `benthos lint` / `redpanda-connect lint` to CI.
-3. ✅ Align first-pass handler manifest contract with generated config: reject unsupported ordering/key/backoff values, reject unknown keys, retry all delivery targets, and support SQL upsert suffixes.
-4. 🔲 Add a publish → Benthos route → read-model integration test.
+3. ✅ Align first-pass handler manifest contract with generated config: reject unsupported ordering/key/backoff values, reject unknown keys, retry supported delivery targets, and reject SQL/database delivery.
+4. 🔲 Add a publish → Benthos → Arc HTTP projection handler/service → read-model integration test.
 5. ✅ Add envelope validation and enriched DLQ metadata (`x_arc_dlq`) before declaring the handler manifest contract stable.
 6. 🔲 Add DLQ/redrive documentation and operator workflow.
 7. 🔲 Prepare publishable crate metadata for `arc-core`, `arc-es-sqlite`, `arc-es-postgres`, and `arc-es-nats`.
@@ -954,6 +954,7 @@ Arc is evolving from a traditional MVC Rust web starter into a **composable, eve
 | 2026-06-04 | 1.6 | Step 3 `arc-es-nats`, Step 4 `arc-worker`, and NATS/worker integration tests marked complete; next architectural work aligned to Step 5 Postgres event/read-model stores plus `DATABASE_DRIVER=sqlite\|postgres` *(superseded by 1.7 — Step 4 is now Benthos-only; `arc-worker` removed)* | Status reconciliation |
 | 2026-06-18 | 1.7 | Step 4 routing layer settled as **Benthos (Redpanda Connect) only** per ADR 0001; the earlier Rust consumer crate was removed from the workspace. §1.4/§1.4.1 and Step 5 prerequisites reconciled to describe Benthos as the routing/projection-delivery layer; framework users extend event handling via handler manifests (`config/handlers/`) + `docs/guides/event-handlers.md`, never by editing a Rust crate | docs reconciliation (benthos-only fleet) |
 | 2026-06-18 | 1.8 | Benthos runtime contract hardened: generated pipeline now validates Arc event envelopes before dedupe/routing, routes malformed events to `dlq.envelope.*`, and enriches validation/handler DLQ messages with `x_arc_dlq` metadata. Remaining Benthos maturity work narrowed to routing integration coverage and DLQ/redrive operator docs | Status reconciliation |
+| 2026-06-19 | 1.9 | Hard architecture direction recorded: Benthos must never write directly to Arc databases. Handler manifests now support HTTP/NATS delivery only and reject SQL/database delivery; distributed projection integration should prove Benthos calls an Arc-owned HTTP projection handler/service, which then updates read models through Arc storage code | Status reconciliation |
 
 ---
 

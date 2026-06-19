@@ -32,7 +32,7 @@
 
 ## Distributed Eventing (Step 3 + Evolving Routing Layer)
 - arc-es-nats: NATS JetStream EventBus implementation (publishing foundation)
-- Benthos (Redpanda Connect) pipelines as primary durable consumer, router, filter, and projection delivery mechanism (evolved Step 4 direction)
+- Benthos (Redpanda Connect) pipelines as primary durable consumer, router, filter, and HTTP/NATS handler delivery mechanism (evolved Step 4 direction; Benthos does not write to Arc databases)
 - Benthos (Redpanda Connect) is now the sole durable routing layer; the earlier Rust consumer has been removed
 - NATS integration tests + CI support for live JetStream (validating publishing side)
 - CI installs pinned nats-server release binary

@@ -85,7 +85,8 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 
 - `InProcessEventBus` is the default local synchronous path (`EVENT_BUS=inprocess`); it drives projections in the writer process and is read-after-write consistent.
 - `arc-es-nats` publishes persisted events to JetStream when `EVENT_BUS=nats` is selected. The writer's responsibility ends at append + publish.
-- **Benthos (Redpanda Connect)** is the single durable consumer of `events.>` in distributed mode: it owns routing, filtering, dedupe, retries, dead-lettering, and handler/projection delivery. There is no Rust consumer of `events.>`.
+- **Benthos (Redpanda Connect)** is the single durable consumer of `events.>` in distributed mode: it owns routing, filtering, dedupe, retries, dead-lettering, and handler delivery. There is no Rust consumer of `events.>`.
+- Benthos must never write directly to Arc databases. Projection writes must run through Arc-owned code paths (for example an internal HTTP projection endpoint/service that uses `Projector`/`ProjectionEngine`/`ReadModelStore`).
 - Event handlers are external to Arc. Add one with a handler manifest (`config/handlers/<name>.yaml`) that the generator compiles into a Benthos pipeline — never by editing a Rust crate. See `docs/guides/event-handlers.md`.
 - NATS-backed tests spawn a local `nats-server -js`; CI must provision a real `nats-server` binary.
 
@@ -115,7 +116,7 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - Existing tests rely on SQLite and some use serial execution.
 - Auth/profile tests can touch migrations, seeders, session middleware, CSRF behavior, and projections.
 - If you change auth, forms, migrations, projection behavior, or session behavior, update or add focused tests.
-- If you change NATS publishing behavior, cover publish acks, subject naming (`events.<aggregate_type>.<event_type>`, snake_case), and event serialization. Routing/consumer behavior lives in Benthos pipelines (`config/benthos/`), validated with `benthos lint` and routing integration tests.
+- If you change NATS publishing behavior, cover publish acks, subject naming (`events.<aggregate_type>.<event_type>`, snake_case), and event serialization. Routing/consumer behavior lives in Benthos pipelines (`config/benthos/`), validated with `benthos lint` and routing integration tests. Projection integration tests should prove Benthos calls Arc-owned projection code; do not test or introduce Benthos SQL/database writes.
 
 ## Current Priorities
 
@@ -134,7 +135,7 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 
 - Introduce plugin/hook system.
 - Make core/storage crates publishable.
-- Broaden the Benthos routing plane (more handler manifests, richer DLQ/redrive tooling).
+- Broaden the Benthos routing plane (more HTTP/NATS handler manifests, richer DLQ/redrive tooling) without adding database-writing Benthos outputs.
 
 ## Known Gaps And Risks
 

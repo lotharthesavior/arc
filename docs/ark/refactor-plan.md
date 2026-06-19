@@ -11,8 +11,10 @@
 > this document refers to "the worker," "the worker process," or a custom Rust
 > consumer as the Step 4 mechanism, treat it as **superseded** — that role is now
 > filled by Benthos pipelines, and framework users extend event handling through
-> handler manifests, never by editing a Rust crate. The authoritative current
-> design is `docs/adr/0001-benthos-only-event-routing.md` and
+> handler manifests, never by editing a Rust crate. Benthos must never write
+> directly to Arc databases; projection writes stay inside Arc-owned handlers or
+> services. The authoritative current design is
+> `docs/adr/0001-benthos-only-event-routing.md` and
 > `docs/guides/event-handlers.md`.
 
 ---
@@ -57,8 +59,9 @@ Create `crates/arc-es-nats`: implement `EventBus` using `async-nats` JetStream. 
 
 > **Superseded (ADR 0001):** "the worker process (Step 4)" below is historical.
 > The durable consumer of `events.>` is now **Benthos**, not a Rust worker, and
-> `ProjectionEngine` logic is driven by a Benthos `sql` handler in the distributed
-> topology (still run in-process for `EVENT_BUS=inprocess`).
+> distributed projection delivery is driven by Benthos calling an Arc-owned
+> projection handler/service. Benthos never writes directly to Arc databases.
+> Projections still run in-process for `EVENT_BUS=inprocess`.
 
 **Why third:** The durable router (Step 4) subscribes to JetStream. Without events publishing to JetStream here, the router has nothing to consume. Stream must exist and events must flow before a durable consumer is created.
 
@@ -72,18 +75,18 @@ Adopt **Benthos** (Redpanda Connect) pipelines as the primary durable consumer, 
 
 - Benthos consumes from the JetStream subjects created in Step 3.
 - Benthos pipelines handle routing, filtering, enrichment, deduplication, and transformation of events using its declarative configuration (inputs → processors → outputs).
-- Projection delivery: Benthos outputs drive `ProjectionEngine`-compatible handlers or directly update read models via SQL/gRPC/HTTP for `SqliteReadModelStore`, `PostgresReadModelStore`, and future stores.
+- Projection delivery: Benthos outputs drive Arc-owned projection handlers/services over HTTP or NATS. Those handlers run `ProjectionEngine`/`ReadModelStore` code. Benthos must not use SQL/database outputs for Arc read models.
 - Framework users add event handlers with manifests under `config/handlers/`; those manifests compile into Benthos pipeline outputs instead of Rust consumer code.
-- Add Benthos configuration as code (YAML pipelines) under the project (e.g. `benthos/` or `config/benthos/`), with support for NATS JetStream input, Bloblang processors, and outputs targeting read-model stores or further topics.
+- Add Benthos configuration as code (YAML pipelines) under the project (e.g. `benthos/` or `config/benthos/`), with support for NATS JetStream input, Bloblang processors, and HTTP/NATS outputs targeting handler/projection services or further topics.
 - Update `docker-compose.yml` and deployment manifests to run Benthos as the main event routing service (alongside or instead of the custom worker stub).
 
 **Why fourth:** Benthos provides a far more powerful, maintainable, and declarative way to implement complex event routing, filtering, and delivery logic than a custom Rust worker. It reduces bespoke code, improves observability (Benthos metrics/tracing), and makes the event handling strategy evolvable without constant Rust changes. This aligns with the goal of keeping the core Rust crates (arc-core, arc-es-*) focused and headless while using best-of-breed tools for the routing plane.
 
-**Validation — Visual:** Deploy Benthos pipeline(s) that consume from the relevant JetStream subjects (`events.<aggregate_type>.<event_type>`). Trigger user writes (register, update profile, etc.) and observe events flowing through Benthos (use Benthos HTTP server/metrics, NATS monitoring, or output logs). Confirm that projections / read models are updated correctly and that complex routing/filtering rules (e.g. by sensitivity, purpose, or aggregate type) are applied declaratively in the Benthos config.
+**Validation — Visual:** Deploy Benthos pipeline(s) that consume from the relevant JetStream subjects (`events.<aggregate_type>.<event_type>`). Trigger user writes (register, update profile, etc.) and observe events flowing through Benthos (use Benthos HTTP server/metrics, NATS monitoring, or output logs). Confirm Benthos calls the Arc-owned projection handler/service, that Arc updates read models correctly, and that complex routing/filtering rules (e.g. by sensitivity, purpose, or aggregate type) are applied declaratively in the Benthos config.
 
 **Validation — Automated:**
 - Define Benthos pipeline configs as versioned files and test them with NATS JetStream test containers (or Redpanda).
-- Verify end-to-end: publish via `arc-es-nats` → Benthos consumes/routes → projection updates (or read-model changes) are observable.
+- Verify end-to-end: publish via `arc-es-nats` → Benthos consumes/routes → Arc-owned projection handler/service receives the envelope → read-model changes are observable.
 - Test idempotency, at-least-once delivery, ordering guarantees where required, and error handling / dead-lettering.
 - Run Benthos linter / config validation in CI.
 - Keep `EventStoreContract` and projection tests green; add Benthos-specific integration tests for routing behavior.
@@ -97,7 +100,7 @@ Create `crates/arc-es-postgres`: `PostgresEventStore` via `sqlx::PgPool`, schema
 
 **Validation — Automated:** Run full workspace tests under both drivers, per-crate independent CI build/test, `cargo publish --dry-run`, migration tests for Postgres schema constraints, and HIPAA audit assertions for required metadata (`user_id`, command type, timestamp, source info). 
 
-**Dependencies**: Step 3 `arc-es-nats` (reliable JetStream publishing) and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, projection delivery, and event-handler delivery.
+**Dependencies**: Step 3 `arc-es-nats` (reliable JetStream publishing) and the Benthos-based routing layer (evolved Step 4) for durable consumption, routing, and event-handler delivery. Projection writes remain inside Arc-owned services.
 
 ---
 
@@ -382,10 +385,10 @@ async fn test_command_bus_failure_returns_500_no_event_emitted()
 
 > **Superseded (ADR 0001):** Step 4 is now Benthos-only; "worker" below means the
 > Benthos routing pipeline, not the removed `arc-worker` crate. Validation is via
-> `benthos lint` plus a publish → route → read-model integration test, with DLQ
+> `benthos lint` plus a publish → route → Arc projection handler → read-model integration test, with DLQ
 > behavior replacing the old NAK-redelivery loop. See `docs/guides/event-handlers.md`.
 
-- Routing lifecycle: dispatch command → event published → Benthos routes → projection/handler updated → GET reflects change
+- Routing lifecycle: dispatch command → event published → Benthos routes → Arc projection handler/service updates the read model → GET reflects change
 - Retry + dead-letter: handler fails → Benthos retries per manifest → on exhaustion the envelope is dead-lettered to `dlq.<handler>.<event_type>` and the main stream is not blocked
 - Poison message: an envelope failing validation goes straight to the DLQ (never retried in a loop)
 - Concurrent dispatch: 50 clients × 20 commands for different aggregates → zero ordering violations, zero duplicate `aggregate_version` values

@@ -122,7 +122,7 @@ test("generates a NATS handler route with a DLQ fallback", () => {
   });
 });
 
-test("generates a SQL handler route with dsn env interpolation", () => {
+test("rejects SQL delivery targets because Benthos must not write to the database", () => {
   withTempRepo((repo) => {
     writeManifest(repo, "read-model.yaml", [
       "name: read-model",
@@ -140,22 +140,7 @@ test("generates a SQL handler route with dsn env interpolation", () => {
       '    suffix: "ON CONFLICT (id) DO UPDATE SET email = excluded.email, version = excluded.version"',
     ]);
 
-    const doc = YAML.parse(runGenerator(repo));
-    assert.equal(doc.output.switch.cases.length, 3);
-    const insert = doc.output.switch.cases[1].output.fallback[0].retry.output.sql_insert;
-
-    assert.equal(insert.driver, "postgres");
-    assert.equal(insert.dsn, "${READ_MODEL_DATABASE_URL}");
-    assert.equal(insert.table, "user_read_model");
-    assert.deepEqual(insert.columns, ["id", "email", "version"]);
-    assert.equal(
-      insert.args_mapping,
-      "root = [this.aggregate_id, this.payload.email, this.sequence]",
-    );
-    assert.equal(
-      insert.suffix,
-      "ON CONFLICT (id) DO UPDATE SET email = excluded.email, version = excluded.version",
-    );
+    assert.throws(() => writeBenthosConfig({ repoRoot: repo }), /delivery\.sql is not supported/);
   });
 });
 

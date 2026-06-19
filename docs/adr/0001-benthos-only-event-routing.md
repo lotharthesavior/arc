@@ -54,22 +54,27 @@ Concretely:
    (`input: nats_jetstream` → `processor: bloblang/dedupe/...` → `output: switch/broker`) own all
    routing, filtering, enrichment, deduplication, transformation, retry, and dead-lettering.
 
-3. **Event handlers are external to Arc.** A handler is any HTTP service, NATS subscriber, or SQL
-   target that Benthos delivers to. Framework users add handlers by writing a **handler manifest**
+3. **Event handlers are external to Arc.** A handler is an HTTP service or NATS subscriber that
+   Benthos delivers to. Framework users add handlers by writing a **handler manifest**
    (a small YAML descriptor) from which the Benthos pipeline config is generated — they never edit
    `arc-worker`, `ProjectionEngine`, or any Rust internal.
 
-4. **Projection delivery becomes one handler among many.** The `users_view` projection is updated
-   by a Benthos pipeline that delivers user events to a read-model output (SQL `output`, or an HTTP
-   projection endpoint), not by a bespoke Rust consumer. The three-trait `Projector`/`Projection`/
-   `ProjectionEngine` model in `arc-core` stays — it remains the in-process path and the projection
-   *logic* — but it is no longer driven by `arc-worker` in the distributed topology.
+4. **Benthos must never write directly to Arc databases.** Projection delivery is a routed
+   handler call, not a database output. In distributed mode, Benthos delivers user events to an
+   Arc-owned HTTP projection endpoint/service, and that Arc-owned code runs the
+   `Projector`/`ProjectionEngine`/`ReadModelStore` path that owns schema, idempotency, storage
+   driver behavior, and audit posture. The three-trait model in `arc-core` stays — it remains the
+   in-process path and the projection *logic* — but it is no longer driven by `arc-worker` in the
+   distributed topology.
 
 5. **`arc-worker` is rejected as the durable routing layer and removed from the roadmap's core
    path.** See "Rejected" below for the precise status.
 
 The full extension contract — envelope schema, manifest shape, delivery targets, idempotency,
 dead-letter behavior, and local workflow — is specified in `docs/guides/event-handlers.md`.
+
+**Non-negotiable boundary:** handler manifests support HTTP and NATS delivery only. SQL/database
+outputs are intentionally rejected by the generator.
 
 ## Rejected alternatives
 
@@ -135,7 +140,10 @@ The whole point is to *stop* owning the routing runtime.
 ## Follow-ups (phase 2+)
 
 - Land `config/benthos/` pipelines: JetStream input on `events.>`, dedupe on `event_id`, a
-  `switch` output keyed by `aggregate_type`/`event_type`, projection delivery, and a DLQ output.
+  `switch` output keyed by `aggregate_type`/`event_type`, HTTP/NATS handler delivery, and a DLQ
+  output.
 - Add the handler-manifest → Benthos-config generator and a `benthos lint` CI gate.
+- Add an Arc-owned projection endpoint/service and integration coverage for publish → Benthos →
+  projection HTTP call → read-model update.
 - Update `docker-compose.yml` to run Benthos as the routing service; demote the `arc-worker` stub.
 - Reconcile roadmap §1.4 / §1.4.1 and `todo.md` to mark `arc-worker` legacy and Benthos primary.
