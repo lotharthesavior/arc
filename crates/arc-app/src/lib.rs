@@ -1,4 +1,10 @@
 pub mod domain;
+pub mod http {
+    pub mod controllers {
+        pub mod internal_projection_controller;
+    }
+}
+
 pub mod helpers {
     pub mod config;
     pub mod database;

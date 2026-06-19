@@ -81,3 +81,4 @@ sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
 [dev-dependencies]
 serial_test.workspace = true
 arc-core = { path = "../arc-core", features = ["test-utils"] }
+arc-es-nats = { path = "../arc-es-nats" }

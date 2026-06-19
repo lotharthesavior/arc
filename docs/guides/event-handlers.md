@@ -44,8 +44,8 @@ schema can evolve without breaking handlers.
   "aggregate_id": "9b2f...",
   "sequence": 3,
   "event_type": "ProfileUpdated",
-  "occurred_at": "2026-06-18T15:01:22.000Z",
-  "subject": "events.user.profileupdated",
+  "occurred_at": 1750258882000,
+  "subject": "events.user.profile_updated",
   "audit": {
     "actor_id": "9b2f...",
     "actor_session_id": "…",
@@ -67,7 +67,7 @@ Field rules:
 | `aggregate_type` / `aggregate_id` | `Event` | Stream identity. `aggregate_id` is an opaque UUID — never a natural key. |
 | `sequence` | `Event.sequence` | Monotonic per `aggregate_id`, starts at 1. Use for per-aggregate ordering and last-writer-wins. |
 | `event_type` | `Event.event_type` | Past-tense PascalCase (`UserRegistered`). |
-| `occurred_at` | `Event.timestamp` | RFC 3339 UTC, millisecond precision. |
+| `occurred_at` | `Event.timestamp` | Milliseconds since the Unix epoch. |
 | `subject` | NATS | The JetStream subject, `events.<aggregate_type>.<event_type>` lowercased. |
 | `audit` | `Event.audit` | who/when/where/why. Present on every event. Do not log raw PHI from `payload`. |
 | `payload` | `Event.payload` | Domain-specific JSON. Schema is owned by the aggregate, versioned by `event_type` evolution (add fields, don't repurpose). |
