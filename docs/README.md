@@ -32,7 +32,13 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - App data, CommandBus writes, read-model reads
    - Endpoint test checklist
 
-5. **[Frontend](04-frontend.md)**
+5. **[Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md)**
+   - DLQ subject conventions
+   - JetStream DLQ stream provisioning
+   - Failure inspection and safe redrive
+   - Projection repair guardrails
+
+6. **[Frontend](04-frontend.md)**
    - Template engine (Tera)
    - Styling with Tailwind CSS
    - JavaScript (Alpine.js, HTMX)
@@ -40,7 +46,7 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - Asset management
    - Admin panel layout
 
-6. **[Database](05-database.md)**
+7. **[Database](05-database.md)**
    - SQLite configuration
    - Diesel ORM
    - Migrations
@@ -48,21 +54,21 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - Seeders
    - Testing database
 
-7. **[Testing](06-testing.md)**
+8. **[Testing](06-testing.md)**
    - Test configuration
    - Test utilities
    - Test patterns
    - Examples for models, controllers, middleware
    - Best practices
 
-8. **[API Reference](07-api-reference.md)**
+9. **[API Reference](07-api-reference.md)**
    - Public endpoints
    - Protected endpoints
    - Request/response formats
    - Data types
    - Error handling
 
-9. **[Problems and Improvements](08-problems-and-improvements.md)**
+10. **[Problems and Improvements](08-problems-and-improvements.md)**
    - Critical issues
    - Security concerns
    - Code quality issues
@@ -81,6 +87,7 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
 - [CLI Commands](03-backend.md#cli-commands)
 - [Development Mode](03-backend.md#development-mode)
 - [Adding Endpoints](guides/adding-endpoints.md)
+- [Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md)
 - [Creating New Pages](04-frontend.md#adding-new-pages)
 - [Database Migrations](05-database.md#migrations)
 

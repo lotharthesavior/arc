@@ -93,6 +93,32 @@ test("generates an HTTP handler route with a DLQ fallback", () => {
   });
 });
 
+test("handler DLQ fallback preserves operator metadata for redrive", () => {
+  withTempRepo((repo) => {
+    writeManifest(repo, "projection-repair.yaml", [
+      "name: projection-repair",
+      "subscribe:",
+      "  aggregate_types: [User]",
+      "  event_types: [UserRegistered]",
+      "delivery:",
+      "  type: http",
+      "  http:",
+      '    url: "http://arc-app:8080/internal/projections/users/handle"',
+    ]);
+
+    const doc = YAML.parse(runGenerator(repo));
+    const dlq = doc.output.switch.cases[1].output.fallback[1];
+    const mapping = dlq.processors[0].mapping;
+
+    assert.equal(dlq.nats_jetstream.subject, 'dlq.projection-repair.${! json("event_type").lowercase() }');
+    assert.match(mapping, /"handler": "projection-repair"/);
+    assert.match(mapping, /"reason": "delivery_failed_after_retries"/);
+    assert.match(mapping, /"failed_at": now\(\)/);
+    assert.match(mapping, /"original_subject": meta\("nats_subject"\)\.or\(this\.subject\)\.or\(""\)/);
+    assert.match(mapping, /"fingerprint": content\(\)\.hash\("sha256"\)/);
+  });
+});
+
 test("generates a NATS handler route with a DLQ fallback", () => {
   withTempRepo((repo) => {
     writeManifest(repo, "audit-log.yaml", [

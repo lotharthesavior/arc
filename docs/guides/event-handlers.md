@@ -223,7 +223,8 @@ A delivery **fails** when the target returns non-2xx (HTTP), errors (NATS), or t
    `dlq.envelope.<event_type>` (or `dlq.envelope.invalid` when the type is missing) instead of
    blocking the stream.
 4. **Operate the DLQ.** DLQ subjects are monitored; you redrive after fixing the handler by
-   replaying the DLQ stream back onto the handler's input. Nothing is silently dropped.
+   replaying the DLQ stream back onto the handler's input. Nothing is silently dropped. See
+   [Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md) for the operator workflow.
 
 Guarantee: **no event is lost and no poison event blocks the stream.** Either the handler succeeds,
 or the event lands in a DLQ you can inspect and redrive.
@@ -287,6 +288,7 @@ read model through its own store. A forced failure should dead-letter.
 - [ ] Handler is idempotent on `event_id` (UPSERT or dedupe table), even though dedupe runs upstream.
 - [ ] Manifest committed at `config/handlers/<name>.yaml` with `subscribe.event_types` set.
 - [ ] Ordering need declared (`none` vs `per_aggregate`); if `none`, reconcile with `sequence`.
-- [ ] `dead_letter.enabled: true` (default) and someone owns DLQ redrive.
+- [ ] `dead_letter.enabled: true` (default), `ARC_DLQ` is provisioned for `dlq.>`, and someone owns
+      DLQ redrive.
 - [ ] No PHI/natural keys logged from `payload`; subjects stay opaque.
 - [ ] You edited **no** Arc internal crate. If you did, you're on the wrong path — re-read §"How events flow".
