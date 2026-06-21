@@ -8,6 +8,7 @@
   * [Backend](03-backend.md)
   * [Adding Endpoints](guides/adding-endpoints.md)
   * [Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md)
+  * [Publishing Arc Crates](guides/publishing-crates.md)
   * [Frontend](04-frontend.md)
   * [Database](05-database.md)
   * [Postgres Setup](guides/postgres-setup.md)

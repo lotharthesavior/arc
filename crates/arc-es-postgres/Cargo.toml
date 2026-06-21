@@ -6,10 +6,13 @@ authors.workspace = true
 description = "Postgres EventStore and ReadModelStore implementation for arc event sourcing"
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["event-sourcing", "cqrs", "postgres", "projections", "audit"]
+categories = ["database", "asynchronous"]
 
 [dependencies]
 # Workspace crates
-arc-core = { path = "../arc-core" }
+arc-core = { path = "../arc-core", version = "0.2.2" }
 
 # Database
 sqlx.workspace = true
@@ -29,4 +32,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
-arc-core = { path = "../arc-core", features = ["test-utils"] }
+arc-core = { path = "../arc-core", version = "0.2.2", features = ["test-utils"] }

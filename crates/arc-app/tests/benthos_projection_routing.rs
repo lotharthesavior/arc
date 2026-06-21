@@ -23,15 +23,22 @@ use uuid::Uuid;
 
 type TestResult = Result<(), Box<dyn Error + Send + Sync>>;
 
+const DOCKER_PROJECT_LABEL: &str = "arc.project=nineties";
+const DOCKER_TEST_LABEL: &str = "arc.test=benthos_projection_routing";
+
 struct ChildProcess {
     child: Child,
     _temp_dir: Option<TempDir>,
+    docker_container: Option<String>,
 }
 
 impl Drop for ChildProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(container) = &self.docker_container {
+            remove_docker_container(container);
+        }
     }
 }
 
@@ -92,14 +99,21 @@ async fn start_nats() -> Result<Option<(String, ChildProcess)>, Box<dyn Error + 
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        return wait_for_nats(port, child, Some(store_dir)).await;
+        return wait_for_nats(port, child, Some(store_dir), None).await;
     }
 
     if docker_image_available("nats:latest") {
+        let container = docker_container_name("nats");
         let child = Command::new("docker")
             .args([
                 "run",
                 "--rm",
+                "--name",
+                &container,
+                "--label",
+                DOCKER_PROJECT_LABEL,
+                "--label",
+                DOCKER_TEST_LABEL,
                 "--network",
                 "host",
                 "nats:latest",
@@ -110,7 +124,7 @@ async fn start_nats() -> Result<Option<(String, ChildProcess)>, Box<dyn Error + 
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        return wait_for_nats(port, child, None).await;
+        return wait_for_nats(port, child, None, Some(container)).await;
     }
 
     eprintln!("skipping Benthos projection routing test: nats-server binary or local nats:latest Docker image not found");
@@ -121,6 +135,7 @@ async fn wait_for_nats(
     port: u16,
     mut child: Child,
     temp_dir: Option<TempDir>,
+    docker_container: Option<String>,
 ) -> Result<Option<(String, ChildProcess)>, Box<dyn Error + Send + Sync>> {
     let url = format!("nats://127.0.0.1:{port}");
 
@@ -133,6 +148,7 @@ async fn wait_for_nats(
                     ChildProcess {
                         child,
                         _temp_dir: temp_dir,
+                        docker_container,
                     },
                 )));
             }
@@ -142,6 +158,9 @@ async fn wait_for_nats(
 
     let _ = child.kill();
     let _ = child.wait();
+    if let Some(container) = &docker_container {
+        remove_docker_container(container);
+    }
     Err("nats-server did not accept connections".into())
 }
 
@@ -179,6 +198,18 @@ fn docker_image_available(image: &str) -> bool {
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
+}
+
+fn docker_container_name(role: &str) -> String {
+    format!("arc-nineties-{role}-{}", Uuid::new_v4().simple())
+}
+
+fn remove_docker_container(container: &str) {
+    let _ = Command::new("docker")
+        .args(["rm", "-f", container])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 fn free_port() -> Result<u16, Box<dyn Error + Send + Sync>> {
@@ -290,6 +321,7 @@ fn start_benthos(
 ) -> Result<ChildProcess, Box<dyn Error + Send + Sync>> {
     let consumer = format!("benthos_{}", Uuid::new_v4().simple());
     let config_path = config_dir.path.join("config/benthos/generated/events.yaml");
+    let mut docker_container = None;
     let child = match runtime {
         ConnectRuntime::Local(binary) => Command::new(binary)
             .arg("run")
@@ -301,35 +333,47 @@ fn start_benthos(
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?,
-        ConnectRuntime::Docker => Command::new("docker")
-            .args([
-                "run",
-                "--rm",
-                "--network",
-                "host",
-                "-e",
-                &format!("NATS_URL={nats_url}"),
-                "-e",
-                &format!("NATS_STREAM={stream}"),
-                "-e",
-                &format!("NATS_CONSUMER={consumer}"),
-                "-e",
-                "INTERNAL_PROJECTION_TOKEN=test-projection-token",
-                "-v",
-            ])
-            .arg(format!("{}:/config/events.yaml:ro", config_path.display()))
-            .args([
-                "docker.redpanda.com/redpandadata/connect:latest",
-                "run",
-                "/config/events.yaml",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?,
+        ConnectRuntime::Docker => {
+            let container = docker_container_name("benthos");
+            let child = Command::new("docker")
+                .args([
+                    "run",
+                    "--rm",
+                    "--name",
+                    &container,
+                    "--label",
+                    DOCKER_PROJECT_LABEL,
+                    "--label",
+                    DOCKER_TEST_LABEL,
+                    "--network",
+                    "host",
+                    "-e",
+                    &format!("NATS_URL={nats_url}"),
+                    "-e",
+                    &format!("NATS_STREAM={stream}"),
+                    "-e",
+                    &format!("NATS_CONSUMER={consumer}"),
+                    "-e",
+                    "INTERNAL_PROJECTION_TOKEN=test-projection-token",
+                    "-v",
+                ])
+                .arg(format!("{}:/config/events.yaml:ro", config_path.display()))
+                .args([
+                    "docker.redpanda.com/redpandadata/connect:latest",
+                    "run",
+                    "/config/events.yaml",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            docker_container = Some(container);
+            child
+        }
     };
     Ok(ChildProcess {
         child,
         _temp_dir: None,
+        docker_container,
     })
 }
 

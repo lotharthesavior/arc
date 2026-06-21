@@ -1,137 +1,49 @@
 # arc-core
 
-Core event sourcing primitives for the Arc framework.
+Headless event-sourcing primitives for Arc.
 
-## Status
+`arc-core` contains the framework contracts and in-memory helpers used by Arc applications and
+storage adapters. It has no web framework or database dependency.
 
-🚧 **Under Development** - Implementation planned for Q1 2026
+## What It Provides
 
-## Overview
+- `Event`: immutable domain event envelope with audit metadata.
+- `EventStore`: append/load/stream/snapshot persistence trait.
+- `EventBus`: publish/subscribe trait plus in-process implementations.
+- `Aggregate`: command handling and state reconstruction contract.
+- `CommandBus`: load aggregate, handle command, append events, publish events.
+- `ReadModelStore`: backend-neutral read-model persistence trait.
+- `Projector` and `ProjectionEngine`: rebuildable projection support.
+- Audit, access-log, session, snapshot, and integrity-chain primitives.
 
-`arc-core` is the foundational crate providing event sourcing, CQRS, and composability primitives for the Arc framework. It has **zero web dependencies** and can be used standalone or with the `arc-web` plugin.
-
-## Key Components
-
-- **EventStore** - Append-only event storage with optimistic concurrency
-- **EventBus** - Publish/subscribe event distribution
-- **Aggregate** - Domain logic encapsulation with command handling
-- **CommandBus** - Command dispatching and coordination
-- **Projector** - Stateless event handler for building read models (takes `&self`)
-- **Projection** - Composed read model unit (projector + store)
-- **ProjectionUnit** - Standard glue: `Projector` + `Arc<dyn ReadModelStore>` + table name
-- **ReadModelStore** - Backend-agnostic persistence for projections (`InMemoryReadModelStore` built in)
-- **ProjectionEngine** - Multi-projection management and rebuilding (takes `&self`)
-
-## Documentation
-
-Before implementing features in this crate, please review:
-
-1. **[DX_GUIDELINES.md](./DX_GUIDELINES.md)** - Developer experience patterns and best practices
-2. **[DX_REVIEW_FEEDBACK.md](./DX_REVIEW_FEEDBACK.md)** - Priority recommendations from DX review
-3. **[Architecture Docs](../../docs/09-event-sourcing-architecture.md)** - System design and concepts
-4. **[Implementation Guide](../../docs/10-event-sourcing-implementation-guide.md)** - Phase-by-phase implementation plan
-
-## Design Principles
-
-1. **Events are immutable facts** - The event store is the source of truth
-2. **Type safety over convenience** - Use the type system to prevent mistakes
-3. **Progressive disclosure** - Simple path for simple cases, full CQRS for complex domains
-4. **Explicit over implicit** - No magic, clear control flow
-5. **Helpful errors** - Every error should guide developers to a solution
-
-## Quick Start (Planned API)
-
-### Simple Event Store Usage
+## Minimal Example
 
 ```rust
-use arc_core::{Event, EventStore, SqliteEventStore};
-
-let event_store = SqliteEventStore::new("events.db").await?;
+use arc_core::audit::AuditMetadata;
+use arc_core::event::Event;
+use serde_json::json;
 
 let event = Event::new(
     "User",
     "user-123",
     1,
-    "UserCreated",
-    json!({"name": "Alice", "email": "alice@example.com"}),
-);
+    "UserRegistered",
+    json!({ "email": "ada@example.test" }),
+)
+.with_audit(AuditMetadata::system());
 
-event_store.append("user-123", None, vec![event]).await?;
+assert_eq!(event.aggregate_type, "User");
+assert_eq!(event.event_type, "UserRegistered");
 ```
 
-### Full CQRS with Aggregates
+## Feature Flags
 
-```rust
-use arc_core::{Aggregate, CommandBus, EventBus, EventStore};
+- `test-utils`: exposes in-memory/test helpers for downstream integration tests.
 
-// Define domain types
-pub enum UserCommand {
-    CreateUser { id: String, name: String, email: String },
-}
+## Stability
 
-pub struct UserAggregate {
-    // Aggregate state
-}
-
-impl Aggregate for UserAggregate {
-    type Command = UserCommand;
-    type Event = UserEvent;
-    type Error = UserError;
-
-    async fn handle(&self, command: Self::Command) -> Result<Vec<Event>, Self::Error> {
-        // Validate and produce events
-    }
-
-    fn apply(&mut self, event: &Event) {
-        // Update state from events
-    }
-}
-
-// Wire up infrastructure
-let event_store = Box::new(SqliteEventStore::new("events.db").await?);
-let event_bus = Box::new(InProcessEventBus::new());
-let mut command_bus = CommandBus::<UserAggregate>::new(event_store, event_bus);
-
-// Execute commands
-let events = command_bus.dispatch(UserCommand::CreateUser { ... }).await?;
-```
-
-## Testing
-
-Use the provided test utilities for easy aggregate testing:
-
-```rust
-use arc_core::testing::AggregateFixture;
-
-#[tokio::test]
-async fn test_user_creation() {
-    AggregateFixture::<UserAggregate>::new()
-        .when(UserCommand::CreateUser { ... })
-        .await
-        .then_expect_events(vec![/* expected events */]);
-}
-```
-
-## Contributing
-
-When adding features to this crate:
-
-1. Follow naming conventions from DX_GUIDELINES.md
-2. Add comprehensive error messages with context
-3. Include doc comments with working examples
-4. Write tests using the testing utilities
-5. Run `cargo test --doc` to verify examples compile
-
-## Dependencies
-
-Minimal dependencies for maximum compatibility:
-
-- `async-trait` - Async trait support
-- `serde` + `serde_json` - Serialization
-- `uuid` - Event IDs
-- `thiserror` - Error handling
-
-See `Cargo.toml` for complete list.
+This crate is pre-1.0. Public traits are intended to be stable within a compatible `0.2.x` line,
+but breaking API changes may ship in minor versions until `1.0`.
 
 ## License
 

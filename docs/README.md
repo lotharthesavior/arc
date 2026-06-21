@@ -38,7 +38,12 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - Failure inspection and safe redrive
    - Projection repair guardrails
 
-6. **[Frontend](04-frontend.md)**
+6. **[Publishing Arc Crates](guides/publishing-crates.md)**
+   - Publish order for reusable crates
+   - Preflight commands
+   - Public API policy
+
+7. **[Frontend](04-frontend.md)**
    - Template engine (Tera)
    - Styling with Tailwind CSS
    - JavaScript (Alpine.js, HTMX)
@@ -46,7 +51,7 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - Asset management
    - Admin panel layout
 
-7. **[Database](05-database.md)**
+8. **[Database](05-database.md)**
    - SQLite configuration
    - Diesel ORM
    - Migrations
@@ -54,21 +59,21 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
    - Seeders
    - Testing database
 
-8. **[Testing](06-testing.md)**
+9. **[Testing](06-testing.md)**
    - Test configuration
    - Test utilities
    - Test patterns
    - Examples for models, controllers, middleware
    - Best practices
 
-9. **[API Reference](07-api-reference.md)**
+10. **[API Reference](07-api-reference.md)**
    - Public endpoints
    - Protected endpoints
    - Request/response formats
    - Data types
    - Error handling
 
-10. **[Problems and Improvements](08-problems-and-improvements.md)**
+11. **[Problems and Improvements](08-problems-and-improvements.md)**
    - Critical issues
    - Security concerns
    - Code quality issues
@@ -88,6 +93,7 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
 - [Development Mode](03-backend.md#development-mode)
 - [Adding Endpoints](guides/adding-endpoints.md)
 - [Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md)
+- [Publishing Arc Crates](guides/publishing-crates.md)
 - [Creating New Pages](04-frontend.md#adding-new-pages)
 - [Database Migrations](05-database.md#migrations)
 

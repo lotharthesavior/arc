@@ -6,6 +6,9 @@ authors.workspace = true
 description = "Event sourcing primitives for arc framework (headless, no web dependencies)"
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["event-sourcing", "cqrs", "ddd", "audit", "projections"]
+categories = ["data-structures", "asynchronous"]
 
 [dependencies]
 # Core event sourcing dependencies only - NO web dependencies

@@ -6,10 +6,13 @@ authors.workspace = true
 description = "SQLite EventStore implementation for arc event sourcing"
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["event-sourcing", "cqrs", "sqlite", "projections", "audit"]
+categories = ["database", "asynchronous"]
 
 [dependencies]
 # Workspace crates
-arc-core = { path = "../arc-core" }
+arc-core = { path = "../arc-core", version = "0.2.2" }
 
 # Database
 diesel = { workspace = true, features = ["sqlite", "r2d2"] }
@@ -29,4 +32,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 diesel_migrations = { version = "2.2", features = ["sqlite"] }
-arc-core = { path = "../arc-core", features = ["test-utils"] }
+arc-core = { path = "../arc-core", version = "0.2.2", features = ["test-utils"] }
