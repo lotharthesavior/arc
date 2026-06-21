@@ -1,7 +1,7 @@
 use arc_core::audit::AuditMetadata;
 use arc_core::event::Event;
 use arc_core::event_bus::EventBus;
-use arc_es_nats::NatsEventBus;
+use arc_es_nats::{NatsEventBus, DLQ_STREAM};
 use async_nats::jetstream;
 use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, ReplayPolicy};
 use async_nats::jetstream::{consumer, AckKind};
@@ -99,6 +99,15 @@ async fn pull_consumer(
     stream_name: &str,
     durable_name: &str,
 ) -> Result<consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
+    pull_consumer_for_subject(url, stream_name, durable_name, "events.>").await
+}
+
+async fn pull_consumer_for_subject(
+    url: &str,
+    stream_name: &str,
+    durable_name: &str,
+    filter_subject: &str,
+) -> Result<consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
     let client = async_nats::connect(url).await?;
     let jetstream = jetstream::new(client);
     let stream = jetstream.get_stream(stream_name).await?;
@@ -107,7 +116,7 @@ async fn pull_consumer(
             durable_name,
             consumer::pull::Config {
                 durable_name: Some(durable_name.to_string()),
-                filter_subject: "events.>".to_string(),
+                filter_subject: filter_subject.to_string(),
                 ack_policy: AckPolicy::Explicit,
                 deliver_policy: DeliverPolicy::All,
                 ack_wait: Duration::from_secs(2),
@@ -176,6 +185,45 @@ async fn stream_and_consumer_creation_are_idempotent() -> TestResult {
 
     assert_eq!(first_consumer.info().await?.name, durable);
     assert_eq!(second_consumer.info().await?.name, durable);
+    Ok(())
+}
+
+#[tokio::test]
+async fn dlq_stream_is_created_for_failed_handler_persistence() -> TestResult {
+    let Some(server) = start_nats().await? else {
+        return Ok(());
+    };
+    let stream = stream_name();
+    let _bus = NatsEventBus::new(&server.url, &stream).await?;
+
+    let client = async_nats::connect(&server.url).await?;
+    let jetstream = jetstream::new(client);
+    let mut dlq_stream = jetstream.get_stream(DLQ_STREAM).await?;
+    let dlq_info = dlq_stream.info().await?;
+    assert_eq!(dlq_info.config.subjects, vec!["dlq.>".to_string()]);
+
+    let payload = serde_json::to_vec(&json!({
+        "event_id": Uuid::new_v4(),
+        "event_type": "UserRegistered",
+        "x_arc_dlq": {
+            "handler": "welcome-email",
+            "reason": "delivery_failed_after_retries",
+            "original_subject": "events.user.user_registered"
+        }
+    }))?;
+    let ack = jetstream
+        .publish("dlq.welcome-email.userregistered", payload.into())
+        .await?;
+    ack.await?;
+
+    let consumer =
+        pull_consumer_for_subject(&server.url, DLQ_STREAM, &durable_name(), "dlq.>").await?;
+    let message = next_message(&consumer).await?;
+    let delivered = serde_json::from_slice::<serde_json::Value>(&message.payload)?;
+    message.ack().await?;
+
+    assert_eq!(message.subject.as_str(), "dlq.welcome-email.userregistered");
+    assert_eq!(delivered["x_arc_dlq"]["handler"], "welcome-email");
     Ok(())
 }
 

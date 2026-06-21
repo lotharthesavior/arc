@@ -7,6 +7,8 @@ use async_nats::{HeaderMap, HeaderValue};
 use async_trait::async_trait;
 
 const EVENTS_SUBJECT: &str = "events.>";
+pub const DLQ_STREAM: &str = "ARC_DLQ";
+pub const DLQ_SUBJECT: &str = "dlq.>";
 const MSG_ID_HEADER: &str = "Nats-Msg-Id";
 
 /// Publishes full [`Event`] payloads to a NATS JetStream stream.
@@ -24,16 +26,8 @@ impl NatsEventBus {
         let jetstream = jetstream::new(client);
         let stream = stream.to_string();
 
-        jetstream
-            .get_or_create_stream(jetstream::stream::Config {
-                name: stream.clone(),
-                subjects: vec![EVENTS_SUBJECT.to_string()],
-                ..Default::default()
-            })
-            .await
-            .map_err(|error| {
-                EventBusError::other(format!("JetStream stream setup failed: {error}"))
-            })?;
+        ensure_stream(&jetstream, stream.clone(), EVENTS_SUBJECT).await?;
+        ensure_stream(&jetstream, DLQ_STREAM.to_string(), DLQ_SUBJECT).await?;
 
         Ok(Self { jetstream, stream })
     }
@@ -74,6 +68,25 @@ impl EventBus for NatsEventBus {
     async fn subscribe(&mut self, _handler: Box<dyn EventHandler>) -> EventBusResult<()> {
         Ok(())
     }
+}
+
+async fn ensure_stream(
+    jetstream: &jetstream::Context,
+    name: String,
+    subject: &str,
+) -> EventBusResult<()> {
+    jetstream
+        .get_or_create_stream(jetstream::stream::Config {
+            name: name.clone(),
+            subjects: vec![subject.to_string()],
+            ..Default::default()
+        })
+        .await
+        .map_err(|error| {
+            EventBusError::other(format!("JetStream stream {name} setup failed: {error}"))
+        })?;
+
+    Ok(())
 }
 
 /// Map an event to `events.<aggregate_type>.<event_type>` using lowercase snake_case.

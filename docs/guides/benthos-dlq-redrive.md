@@ -45,13 +45,21 @@ The message body is the handler envelope plus `x_arc_dlq` metadata:
 `event_id` is the idempotency key. `x_arc_dlq.fingerprint` is for operator correlation only; do not
 use it as a domain identifier.
 
-## Provision The DLQ Stream
+## DLQ Stream Persistence
 
 Benthos publishes DLQ messages with `nats_jetstream`, so NATS must have a stream whose subjects
 match `dlq.>`. The main Arc event stream is `EVENTS` and consumes `events.>`; keep the DLQ stream
 separate so redrive and retention can be managed independently.
 
-Example with the NATS CLI:
+When Arc starts with `EVENT_BUS=nats`, `arc-es-nats` idempotently ensures both streams exist:
+
+```text
+EVENTS   -> events.>
+ARC_DLQ  -> dlq.>
+```
+
+That means local Docker Compose and normal app startup provision DLQ persistence automatically. The
+NATS CLI equivalent is useful for operator verification or manual repair:
 
 ```bash
 nats --server "$NATS_URL" stream add ARC_DLQ \
@@ -63,9 +71,8 @@ nats --server "$NATS_URL" stream add ARC_DLQ \
   --defaults
 ```
 
-For local Docker Compose, run this once after NATS is healthy, or bake the equivalent stream
-creation into your environment bootstrap. If the DLQ stream is missing, Benthos cannot persist a
-failed message to the DLQ and the original message can continue retrying instead of being isolated.
+If the DLQ stream is missing, Benthos cannot persist a failed message to the DLQ and the original
+message can continue retrying instead of being isolated.
 
 ## Inspect Failures
 

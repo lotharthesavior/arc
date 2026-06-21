@@ -288,7 +288,7 @@ read model through its own store. A forced failure should dead-letter.
 - [ ] Handler is idempotent on `event_id` (UPSERT or dedupe table), even though dedupe runs upstream.
 - [ ] Manifest committed at `config/handlers/<name>.yaml` with `subscribe.event_types` set.
 - [ ] Ordering need declared (`none` vs `per_aggregate`); if `none`, reconcile with `sequence`.
-- [ ] `dead_letter.enabled: true` (default), `ARC_DLQ` is provisioned for `dlq.>`, and someone owns
-      DLQ redrive.
+- [ ] `dead_letter.enabled: true` (default), Arc's NATS setup has provisioned `ARC_DLQ` for
+      `dlq.>`, and someone owns DLQ redrive.
 - [ ] No PHI/natural keys logged from `payload`; subjects stay opaque.
 - [ ] You edited **no** Arc internal crate. If you did, you're on the wrong path — re-read §"How events flow".

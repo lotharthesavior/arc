@@ -34,7 +34,7 @@ Welcome to the Arc documentation. This documentation provides comprehensive info
 
 5. **[Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md)**
    - DLQ subject conventions
-   - JetStream DLQ stream provisioning
+   - Automatic JetStream DLQ stream provisioning
    - Failure inspection and safe redrive
    - Projection repair guardrails
 
