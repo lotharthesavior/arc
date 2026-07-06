@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test clean format check lint benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report
+.PHONY: help install build dev serve migrate seed test clean format check lint doctor arc-check benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report
 
 # Default target
 .DEFAULT_GOAL := help
@@ -142,6 +142,12 @@ format-check: ## Check code formatting without making changes
 lint: ## Run clippy linter
 	@echo "$(GREEN)Running clippy...$(NC)"
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+doctor: ## Check Arc upgradeability drift guardrails
+	@echo "$(GREEN)Running Arc doctor checks...$(NC)"
+	bash scripts/arc-check.sh
+
+arc-check: doctor ## Alias for doctor, matching ADR 0002 language
 
 benthos-config: ## Generate Benthos pipeline config from handler manifests
 	@echo "$(GREEN)Generating Benthos config...$(NC)"

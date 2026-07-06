@@ -60,6 +60,7 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - Fast compile check: `make check`
 - Lint: `make lint`
 - Format: `make format`
+- Upgradeability drift guard: `make doctor` (alias: `make arc-check`)
 - Frontend build: `make frontend-build`
 
 `make test` and `make lint` should match CI-level workspace/all-features coverage.
