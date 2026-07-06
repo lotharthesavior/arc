@@ -297,9 +297,11 @@ mod tests {
 #[cfg(test)]
 mod env_tests {
     use super::{IdleTimeoutMiddleware, DEFAULT_IDLE_TIMEOUT_SECS};
+    use serial_test::serial;
     use std::env;
 
     #[test]
+    #[serial]
     fn test_from_env_uses_default_when_unset() {
         env::remove_var("SESSION_IDLE_TIMEOUT_SECS");
         assert_eq!(
@@ -309,6 +311,7 @@ mod env_tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_parses_value() {
         env::set_var("SESSION_IDLE_TIMEOUT_SECS", "300");
         assert_eq!(IdleTimeoutMiddleware::from_env().seconds, 300);
