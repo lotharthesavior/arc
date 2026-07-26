@@ -414,7 +414,7 @@ plugins/
 - **Current Architecture**: `../02-architecture.md`
 - **Event Sourcing Plan**: `../09-event-sourcing-architecture.md`
 - **Implementation Guide**: `../10-event-sourcing-implementation-guide.md`
-- **Roadmap**: `../roadmap.md` (updated with Phase 1 progress)
+- **Current progress and roadmap**: `../../progress.md`
 - **Progress Tracking**: `../implementation/progress-report.md`
 
 ---

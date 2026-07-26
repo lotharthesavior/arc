@@ -22,7 +22,7 @@
 * Architecture & Planning
   * [Event Sourcing Architecture](09-event-sourcing-architecture.md)
   * [Event Sourcing Implementation Guide](10-event-sourcing-implementation-guide.md)
-  * [Roadmap](roadmap.md)
+  * [Project Progress & Roadmap](../progress.md)
   * [Release Process](RELEASE_PROCESS.md)
   * [Planning Documents](planning/)
 

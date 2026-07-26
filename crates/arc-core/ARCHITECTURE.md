@@ -931,7 +931,7 @@ crates/arc-core/docs/
 **Priority Order**:
 1. Update `docs/02-architecture.md` to reflect ES architecture
 2. Create `docs/11-event-sourcing-guide.md` (user-facing guide)
-3. Update `docs/roadmap.md` with ES implementation progress
+3. Update `progress.md` with ES implementation progress
 4. Create diagrams (architecture, flows, sequences)
 
 **Key Guidelines**:

@@ -6,8 +6,8 @@ pub mod http {
 }
 
 pub mod helpers {
-    pub mod config;
-    pub mod database;
+    // Framework helpers are owned by arc-web and consumed by version.
+    pub use arc_web::helpers::{config, database};
 
     #[cfg(test)]
     pub mod test {
@@ -15,7 +15,7 @@ pub mod helpers {
 
         impl Drop for InMemoryTestGuard {
             fn drop(&mut self) {
-                crate::helpers::database::reset_pool();
+                arc_web::helpers::database::reset_pool();
             }
         }
     }

@@ -4,8 +4,7 @@
 - Date: 2026-07-01
 - Deciders: Arc framework architecture
 - Related: `docs/adr/0001-benthos-only-event-routing.md`, `docs/guides/event-handlers.md`,
-  `docs/guides/publishing-crates.md`, `docs/roadmap.md` ("Framework Readiness" track), `todo.md`
-  priority item 4
+  `docs/guides/publishing-crates.md`, `progress.md` ("Framework readiness")
 
 ## Context
 
@@ -56,10 +55,11 @@ installation and void the upgrade promise.
 
 - `crates/arc-core`, `crates/arc-es-sqlite`, `crates/arc-es-postgres`, `crates/arc-es-nats`
   (published crates — the supported way to consume them is by version, not by editing sources).
-- `crates/arc-web` — reusable framework web/runtime crate (Actix bootstrap, middleware, helpers,
-  CLI commands, base routes, websocket transport, shipped auth/admin/API/diag controllers, and
-  the internal projection HTTP path). Consumed by apps via `ArcApp::builder()`; not hand-edited
-  in a user installation.
+- `crates/arc-web` — reusable framework web/runtime crate (Actix bootstrap, middleware, session
+  and JWT helpers, CLI commands, base server wiring, websocket transport, and the generic
+  event-sourced stack `EsStack<A>`). Generic over the application's aggregate: it ships
+  auth/session *machinery* but no concrete domain type and no application controllers. Consumed
+  by apps via `ArcApp::builder()`; not hand-edited in a user installation.
 - `scripts/generate-benthos-config.mjs` and its tests (the manifest compiler).
 - `config/benthos/events.yaml` (Arc's reference/base pipeline; the runtime artifact is the
   generated file).
@@ -76,8 +76,9 @@ migrations (and always announced in release notes).
   `src/resources/**`, and app seeders.
 - Domain code: `crates/arc-app/src/domain/**` (aggregates, commands, projectors — scaffolded
   once by `make new-aggregate` / `scripts/new-aggregate.sh`, then owned by the user).
-- `crates/arc-app/src/services/`, `src/validation/`, `src/http/controllers/` (app-owned only;
-  framework-shipped auth/admin/API/diag controllers live in `arc-web`).
+- `crates/arc-app/src/services/`, `src/validation/`, `src/http/controllers/` — all app-owned,
+  including the auth/admin/API/diag controllers. They bind the concrete `UserAggregate`, so they
+  live with the domain in the app, not in the framework.
 - Templates and assets: `crates/arc-app/src/resources/**` (Tera views, CSS, JS, images).
 - Application migrations and seeders (`crates/arc-app/src/database/seeders/`, user-added
   directories under `migrations/`).
@@ -89,8 +90,10 @@ upgradeability work is packaging and distribution, not the ownership classificat
 - Publish `arc-web` (and keep it versioned in lockstep with the other `arc-*` crates).
 - Ship an `arc new` CLI (or equivalent) so apps start from a thin template instead of
   clone-and-edit of this monorepo.
-- Optional consolidation of dual User domain/seeder copies between `arc-web` (shipped reference)
-  and `arc-app` (user-owned scaffold) so they never diverge.
+
+There is exactly one copy of the `User` domain — in `crates/arc-app`. `arc-web` is generic over
+the aggregate (`EsStack<A>`, `ArcApp::builder::<A>()`) and ships no concrete domain type, so there
+are no dual copies to keep in sync.
 
 `make doctor` enforces the machine-owned generated boundary and the structural Arc-owned
 boundary (Arc-owned runtime trees must not reappear under `crates/arc-app/src`).
@@ -129,7 +132,7 @@ Independent versioning is deferred until `1.0`.
 5. **Storage schemas shipped by framework migrations**: changes arrive only as new Diesel
    migrations, never as edits to shipped migrations.
 
-Anything not listed — crate internals, `arc-web` reference controllers and bootstrap wiring,
+Anything not listed — crate internals, `arc-web` bootstrap wiring,
 `arc-app` template views, the base `config/benthos/events.yaml` pipeline internals, scripts — is
 not public API and may change in any release.
 

@@ -187,7 +187,12 @@ pub async fn profile_post(
         }
     }
 
-    if let Some(refreshed) = SessionUser::from_projection(read_model_store.as_ref(), &user.id).await
+    if let Some(refreshed) = SessionUser::from_projection(
+        read_model_store.as_ref(),
+        crate::domain::user::projector::USERS_VIEW,
+        &user.id,
+    )
+    .await
     {
         set_session_user(&session, &refreshed);
     }

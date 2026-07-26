@@ -34,6 +34,32 @@ check_generated_banner() {
   fi
 }
 
+forbid_path() {
+  # Fail if a path that must not exist is present, per ADR 0002 ownership.
+  local path="$1"
+  local why="$2"
+  if [ -e "$path" ]; then
+    echo "OWNERSHIP VIOLATION: $path must not exist — $why" >&2
+    fail=1
+  fi
+}
+
+echo "arc-check: checking framework/app ownership boundary (ADR 0002)..."
+
+# The framework crate must stay generic over the aggregate: no user-owned
+# domain, services, or validation may live in arc-web.
+forbid_path "crates/arc-web/src/domain" "user domain is app-owned; arc-web is generic over the aggregate"
+forbid_path "crates/arc-web/src/services" "application services are app-owned"
+forbid_path "crates/arc-web/src/validation" "application validation is app-owned"
+
+# The Arc-owned runtime must not reappear inside the thin app (no re-fork of
+# framework code, and no duplication of the modules that moved to arc-web).
+forbid_path "crates/arc-app/src/http/middlewares" "framework middleware lives in arc-web"
+forbid_path "crates/arc-app/src/websocket" "framework websocket transport lives in arc-web"
+forbid_path "crates/arc-app/src/helpers/es_stack.rs" "the event-sourced stack lives in arc-web"
+forbid_path "crates/arc-app/src/helpers/session.rs" "session helpers live in arc-web"
+forbid_path "crates/arc-app/src/commands/serve.rs" "the serve bootstrap lives in arc-web"
+
 echo "arc-check: checking generated-file ownership boundary..."
 
 check_generated_banner \

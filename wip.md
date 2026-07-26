@@ -6,7 +6,7 @@
 
 **Step 2 complete.** Cookie `/signin` cuts over to `users_view`. Legacy Diesel `users` and `user_email_index` tables retired. Admin profile + password mutations route through `CommandBus`. **197 Rust workspace tests pass** (E2E suite not re-run this session — the seed/serve smoke check verified the spawn path).
 
-See `todo.md` for the full breakdown. Plan at `docs/ark/refactor-plan.md`.
+See `progress.md` for the full breakdown. Plan at `docs/ark/refactor-plan.md`.
 
 ## Step 2 — what landed (cumulative)
 

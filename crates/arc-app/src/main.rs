@@ -1,20 +1,19 @@
 use dotenv::dotenv;
-use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Mutex;
-use std::{env, fs};
-use tracing::{debug, error, info};
+use std::env;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod routes;
-mod http {
-    pub mod middlewares {
-        pub mod auth_middleware;
-        pub mod idle_timeout_middleware;
-        pub mod jwt_middleware;
-        pub mod rate_limit_middleware;
-    }
+use arc_core::command_bus::SnapshotPolicy;
+use arc_web::{
+    check_app_health, check_database_health, validate_environment, ArcApp, ProjectorReg,
+};
 
+use domain::user::aggregate::UserAggregate;
+use domain::user::projector::{UserProjector, USERS_VIEW};
+
+mod routes;
+
+mod http {
     pub mod controllers {
         pub mod admin_controller;
         pub mod api_controller;
@@ -23,8 +22,11 @@ mod http {
         pub mod home_controller;
         pub mod internal_projection_controller;
     }
+    // Framework-owned HTTP machinery, consumed by version.
+    pub use arc_web::http::{errors, middlewares};
 
-    pub mod errors;
+    #[cfg(test)]
+    mod auth_middleware_test;
 }
 
 mod database {
@@ -36,17 +38,12 @@ mod database {
 mod schema;
 
 mod helpers {
-    pub mod access_log;
-    pub mod audit_context;
-    pub mod config;
-    pub mod csrf;
-    pub mod database;
-    pub mod es_stack;
-    pub mod general;
-    pub mod jwt;
-    pub mod rate_limit;
-    pub mod session;
-    pub mod template;
+    // Framework helpers, consumed by version from arc-web.
+    pub use arc_web::helpers::{
+        access_log, audit_context, config, csrf, database, es_stack, general, jwt, rate_limit,
+        session, template,
+    };
+    // Application-owned, aggregate-coupled test scaffolding.
     pub mod test;
 }
 
@@ -58,76 +55,28 @@ mod validation;
 
 mod commands;
 mod domain;
-pub mod websocket;
-/// Shared application state accessible by all request handlers via `web::Data`.
-#[derive(Debug)]
-pub struct AppState {
-    app_name: Mutex<String>,
+
+// Re-export framework items under `crate::` so application routes/controllers
+// reference them by their familiar paths.
+pub use arc_web::websocket;
+pub use arc_web::AppState;
+
+/// The application's read-model projectors, registered against its aggregate.
+pub(crate) fn user_projectors() -> Vec<ProjectorReg> {
+    vec![ProjectorReg::new(UserProjector::new(), USERS_VIEW)]
 }
 
-/// Checks that the application environment is healthy (e.g., `.env` file exists).
-/// Copies `.env.example` to `.env` if no `.env` file is found.
-fn check_app_health() {
-    info!("Checking app health");
-    if !fs::exists(PathBuf::from(".env")).unwrap() {
-        info!("Creating .env file from .env.example");
-        fs::copy(PathBuf::from(".env.example"), PathBuf::from(".env"))
-            .expect("Failed to copy .env.example to .env");
-    }
-}
-
-/// Validates that all required environment variables are set at startup.
-/// Fails fast with clear error messages instead of panicking at random points.
-fn validate_environment() {
-    let required_vars = ["APP_URL", "SECRET_KEY", "DATABASE_URL"];
-    let mut missing = Vec::new();
-    for var in required_vars {
-        if env::var(var).is_err() {
-            missing.push(var);
-        }
-    }
-    if !missing.is_empty() {
-        error!(
-            "Missing required environment variables: {}. Check your .env file.",
-            missing.join(", ")
-        );
-        exit(1);
-    }
-    debug!("All required environment variables present");
-}
-
-/// Verifies database availability for the configured driver. For SQLite this
-/// checks that the `DATABASE_URL` file exists and exits with code 1 if missing.
-/// For non-file drivers (Postgres) `DATABASE_URL` is a connection string, so no
-/// filesystem check is performed.
-pub fn check_database_health() {
-    info!("Checking database health");
-    let driver = helpers::config::DatabaseDriver::from_env();
-
-    if !driver.is_file_backed() {
-        debug!(
-            driver = driver.as_str(),
-            "Database driver uses a connection string; skipping filesystem check"
-        );
-        return;
-    }
-
-    let database: String = helpers::config::database_url();
-    if !fs::exists(PathBuf::from(&database)).unwrap() {
-        error!("Database file not found at: {}", database);
-        error!("Please run `cargo run migrate` to create the database");
-        exit(1);
-    }
-    debug!("Database file found at: {}", database);
+/// The application's snapshot policy, if configured.
+pub(crate) fn user_snapshot_policy() -> Option<SnapshotPolicy> {
+    helpers::config::user_snapshot_interval_events().map(SnapshotPolicy::EveryNEvents)
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Initialize tracing subscriber with environment-based filtering
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "arc=info,actix_web=info".into()),
+                .unwrap_or_else(|_| "arc=info,arc_web=info,actix_web=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -153,10 +102,17 @@ async fn main() -> std::io::Result<()> {
     }
 
     match command {
-        "serve" => commands::serve::run(app_url.clone(), app_port).await,
+        "serve" => {
+            ArcApp::builder::<UserAggregate>()
+                .register_aggregate(user_projectors())
+                .snapshot_policy(user_snapshot_policy())
+                .register_routes(routes::config)
+                .serve(app_url, app_port)
+                .await
+        }
         "develop" => {
             check_database_health();
-            commands::develop::run_development().await
+            arc_web::commands::develop::run_development().await
         }
         "migrate" => commands::migrate::run(&args).await,
         "seed" => commands::seed::run().await,

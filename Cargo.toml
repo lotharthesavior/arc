@@ -5,6 +5,7 @@ members = [
     "crates/arc-es-sqlite",
     "crates/arc-es-postgres",
     "crates/arc-es-nats",
+    "crates/arc-web",
     "crates/arc-app",
 ]
 

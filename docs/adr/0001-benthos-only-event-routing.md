@@ -4,7 +4,7 @@
 - Date: 2026-06-18
 - Deciders: Arc framework architecture (benthos-architect, phase 1)
 - Supersedes: the custom `arc-worker` durable-consumer approach (refactor-plan Step 4, original form)
-- Related: `docs/ark/refactor-plan.md` (Step 3 publishing, evolved Step 4), `docs/roadmap.md` §1.4 / §1.4.1, `docs/guides/event-handlers.md`
+- Related: `docs/ark/refactor-plan.md` (Step 3 publishing, evolved Step 4), `progress.md`, `docs/guides/event-handlers.md`
 
 ## Context
 
@@ -146,4 +146,4 @@ The whole point is to *stop* owning the routing runtime.
 - Add an Arc-owned projection endpoint/service and integration coverage for publish → Benthos →
   projection HTTP call → read-model update.
 - Update `docker-compose.yml` to run Benthos as the routing service; demote the `arc-worker` stub.
-- Reconcile roadmap §1.4 / §1.4.1 and `todo.md` to mark `arc-worker` legacy and Benthos primary.
+- Keep `progress.md` explicit that `arc-worker` is historical and Benthos is primary.

@@ -161,7 +161,13 @@ pub async fn signin_post(
     // through to "invalid credentials" if the row vanished between validation
     // and read keeps the response shape consistent — we do not 500 on a race
     // here, the user can simply retry.
-    let user = match SessionUser::from_projection(read_model_store.as_ref(), &agg_id).await {
+    let user = match SessionUser::from_projection(
+        read_model_store.as_ref(),
+        crate::domain::user::projector::USERS_VIEW,
+        &agg_id,
+    )
+    .await
+    {
         Some(u) => u,
         None => return invalid_credentials(),
     };

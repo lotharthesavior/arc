@@ -11,4 +11,11 @@
 | #2533 | 2:22 PM | ⚖️ | Arc framework upgrade strategy proposal phase initiated | ~584 |
 | #2532 | 2:21 PM | ⚖️ | Framework upgrade strategy for Arc (nineties project) | ~359 |
 | #2505 | 1:13 PM | ✅ | Documentation updated to reflect Benthos-only event routing architecture | ~286 |
+
+### Jul 1, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #2648 | 10:06 PM | ✅ | Technical accuracy correction in ADR 0002 schema regeneration command | ~453 |
+| #2646 | 10:05 PM | ⚖️ | Framework upgrade contract ADR established for Arc | ~1028 |
 </claude-mem-context>

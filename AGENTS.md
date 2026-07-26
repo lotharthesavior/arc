@@ -45,7 +45,7 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - `migrations/`: Diesel SQL migrations.
 - `docs/`: browsable project docs.
 - `docsify-docs/`: secondary docsify-oriented docs set; avoid updating both unless explicitly required.
-- `todo.md`: current refactor status and recommended next work.
+- `progress.md`: canonical project status, remaining work, and roadmap.
 - `todo-audit.md`: audit follow-up checklist when present.
 
 ## Preferred Commands
@@ -160,8 +160,7 @@ When sources disagree, use this order:
 
 1. Current source code in `crates/` and `migrations/`
 2. Accepted ADRs under `docs/adr/` (e.g. `0001-benthos-only-event-routing.md`)
-3. `todo.md`
-4. `docs/roadmap.md`
-5. Root `AGENTS.md`
-6. Current guides in `docs/guides/`
-7. Older planning notes under `docs/ark/`, `docs/plans/`, `docs/planning/`, and historical root notes
+3. `progress.md`
+4. Root `AGENTS.md`
+5. Current guides in `docs/guides/`
+6. Older planning notes under `docs/ark/`, `docs/plans/`, `docs/planning/`, and historical root notes

@@ -429,7 +429,7 @@ Ready to start Week 1:
 ### Required Reading
 
 1. **For All Developers**:
-   - `docs/roadmap.md` - Overall project direction
+   - `progress.md` - Overall project direction
    - `docs/RELEASE_PROCESS.md` - How releases work
    - This document - What was just implemented
 

@@ -524,7 +524,7 @@ SESSION_SAME_SITE=Lax
 
 - [Authentication Guide](03-backend.md#authentication)
 - [Security Best Practices](08-problems-and-improvements.md#security-concerns)
-- [Production Deployment](roadmap.md#phase-5-performance--monitoring-p2)
+- [Production Roadmap](../progress.md#phase-5--performance-and-observability)
 
 ---
 

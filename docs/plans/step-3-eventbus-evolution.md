@@ -7,7 +7,7 @@
 > Arc-owned HTTP/NATS handler or service that runs `Projector` /
 > `ProjectionEngine` / `ReadModelStore` code. Use
 > `docs/adr/0001-benthos-only-event-routing.md`, `docs/guides/event-handlers.md`,
-> `todo.md`, and `docs/roadmap.md` for current planning.
+> `progress.md` for current planning.
 
 > **Status:** Design proposal (plan). No source under `crates/` changes as part of this
 > document — it specifies the work for refactor Steps 3 and 4.
@@ -82,7 +82,7 @@ the `users_view` read model. So **projections currently run synchronously on the
 write path**, inside the `publish` call, immediately after the append commit.
 
 Two consequences follow, both flagged as production risk #2 in the refactor plan
-(`docs/ark/refactor-plan.md:452`) and as the open `todo.md` line "`InProcessEventBus::publish`
+(`docs/ark/refactor-plan.md:452`) and as the former tracker item "`InProcessEventBus::publish`
 blocks write path":
 
 1. **Latency coupling.** Any handler we add for a genuine side-effect — a welcome email,
@@ -438,7 +438,7 @@ infrastructure** and is the immediately implementable slice.
    off the write path, isolating their latency and failures from `dispatch`.
 3. Classify genuine side-effects (email / Stripe / search) as `Async`. **Keep projections
    `Sync` in this phase** so single-process read-after-write consistency is preserved — only
-   the slow/fallible side-effects leave the write path. This directly closes the `todo.md`
+   the slow/fallible side-effects leave the write path. This directly closes the former tracker
    "blocks write path" item without introducing eventual consistency yet.
 
 **Boundary:** entirely within `arc-core` + `arc-app` wiring; no NATS, no worker. Rollback is

@@ -1,0 +1,79 @@
+[package]
+name = "arc-web"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Arc framework runtime: Actix/Tera web machinery, event-sourcing wiring, and the application builder seam."
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "arc_web"
+path = "src/lib.rs"
+
+[features]
+default = ["sqlite"]
+sqlite = []
+nats = ["dep:arc-es-nats"]
+postgres = ["dep:arc-es-postgres"]
+# Exposes test-only helpers (e.g. connection-pool reset) to downstream crates
+# that need them in their own test suites.
+test-utils = []
+
+[dependencies]
+# Workspace crates
+arc-core = { path = "../arc-core", version = "0.2.2" }
+arc-es-sqlite = { path = "../arc-es-sqlite", version = "0.2.2" }
+arc-es-nats = { path = "../arc-es-nats", version = "0.2.2", optional = true }
+arc-es-postgres = { path = "../arc-es-postgres", version = "0.2.2", optional = true }
+
+# Web framework
+actix-web.workspace = true
+actix-files.workspace = true
+actix-session.workspace = true
+actix-limitation.workspace = true
+actix-web-actors.workspace = true
+actix.workspace = true
+actix-web-lab.workspace = true
+tracing-actix-web.workspace = true
+
+# Database
+diesel.workspace = true
+diesel_migrations.workspace = true
+
+# Async runtime
+tokio.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Templating and web utilities
+tera.workspace = true
+urlencoding.workspace = true
+
+# Security
+jsonwebtoken.workspace = true
+argon2.workspace = true
+validator.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+dotenv.workspace = true
+fs_extra.workspace = true
+rand.workspace = true
+once_cell.workspace = true
+md5.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
+
+[dev-dependencies]
+serial_test.workspace = true

@@ -41,7 +41,7 @@
 ### Technical Prerequisites
 
 **Before starting implementation:**
-- [x] Comprehensive roadmap created (`docs/roadmap.md`)
+- [x] Comprehensive status and roadmap tracker created (`progress.md`)
 - [x] Logging infrastructure with tracing
 - [x] Input validation framework
 - [ ] Pre-commit hooks setup

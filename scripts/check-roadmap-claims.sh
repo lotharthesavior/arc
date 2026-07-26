@@ -2,7 +2,7 @@
 #
 # check-roadmap-claims.sh
 #
-# Asserts that every roadmap/todo item marked "done" or "partial" has its
+# Asserts that every progress.md item marked complete has its
 # concrete code artifact present in the current tree. Exits non-zero if any
 # asserted artifact is missing. Run from anywhere; resolves the repo root
 # relative to this script.
@@ -40,7 +40,7 @@ need_grep() {
 
 # ---------------------------------------------------------------------------
 # Snapshot — interface + SQLite persistence DONE (CommandBus wiring still pending)
-# todo.md Production Risks + Recommended Next; roadmap Phase 9.3
+# progress.md completed foundations, current priorities, and strategic architecture
 # ---------------------------------------------------------------------------
 need_file "crates/arc-core/src/snapshot.rs" "Snapshot struct"
 need_grep "struct Snapshot" "crates/arc-core/src/snapshot.rs" "Snapshot struct"
@@ -57,8 +57,8 @@ need_dir  "migrations/2026-05-31-000001_create_snapshots" "snapshots migration"
 need_file "crates/arc-app/src/domain/user/projector.rs" "UserProjector"
 need_grep "UserProjector"           "crates/arc-app/src/domain/user/projector.rs" "UserProjector struct"
 need_grep "USERS_VIEW|users_view"   "crates/arc-app/src/domain/user/projector.rs" "users_view read model"
-need_grep "UserProjector"           "crates/arc-app/src/commands/serve.rs"        "UserProjector wired in serve"
-need_grep "stores.read_model_store" "crates/arc-app/src/commands/serve.rs"        "projection store wired"
+need_grep "UserProjector"           "crates/arc-app/src/main.rs"                  "UserProjector registered by app"
+need_grep "read_model_store"        "crates/arc-web/src/commands/serve.rs"        "projection store wired by framework"
 need_dir  "migrations/2026-05-08-000001_drop_legacy_users" "legacy users dropped"
 
 # ---------------------------------------------------------------------------
@@ -74,19 +74,19 @@ need_file ".github/workflows/security.yml" "Security workflow"
 need_grep "cargo audit"         ".github/workflows/security.yml" "cargo audit"
 
 # ---------------------------------------------------------------------------
-# HIPAA-1..5 — todo.md "Done" claims (left marked done; assert artifacts)
+# HIPAA-1..5 — progress.md completed-foundation claims (assert artifacts)
 # ---------------------------------------------------------------------------
 need_grep "struct AuditMetadata"     "crates/arc-core/src/audit.rs"       "HIPAA-1 AuditMetadata"
 need_dir  "migrations/2026-04-21-000002_add_hipaa_audit" "HIPAA-1 audit migration"
 need_grep "trait AccessLogger"       "crates/arc-core/src/access_log.rs"  "HIPAA-2 AccessLogger"
 need_grep "FailHard|FailOpenWarn"    "crates/arc-core/src/access_log.rs"  "HIPAA-2a FailurePolicy"
 need_grep "for_sensitivity"          "crates/arc-core/src/access_log.rs"  "HIPAA-2a for_sensitivity"
-need_file "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 idle timeout"
-need_grep "SESSION_IDLE_TIMEOUT_SECS" "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 env knob"
-need_grep "get_session_user"     "crates/arc-app/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 post-cutover session user"
+need_file "crates/arc-web/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 idle timeout"
+need_grep "SESSION_IDLE_TIMEOUT_SECS" "crates/arc-web/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 env knob"
+need_grep "get_session_user"     "crates/arc-web/src/http/middlewares/idle_timeout_middleware.rs" "HIPAA-3 post-cutover session user"
 need_grep "trait SessionStore"       "crates/arc-core/src/session.rs"     "HIPAA-4 SessionStore"
 need_grep "SqliteSessionStore"       "crates/arc-es-sqlite/src/session.rs" "HIPAA-4 SQLite session store"
-need_grep "jti"                      "crates/arc-app/src/helpers/jwt.rs"  "HIPAA-4 jti claim"
+need_grep "jti"                      "crates/arc-web/src/helpers/jwt.rs"  "HIPAA-4 jti claim"
 need_dir  "migrations/2026-04-26-000002_create_jwt_sessions" "HIPAA-4 sessions migration"
 need_grep "trait IntegrityChain"     "crates/arc-core/src/integrity.rs"   "HIPAA-5 IntegrityChain"
 need_grep "HmacSha256Chain"          "crates/arc-core/src/integrity.rs"   "HIPAA-5 HMAC impl"

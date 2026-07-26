@@ -51,4 +51,4 @@
 - High-level reference docs (01/02/roadmap) updated with historical framing for pre-ES MVC content
 - Snapshot and architecture claims qualified in roadmap
 
-**Note**: This is a high-level summary of landed work. See `todo.md` and `PROGRESS.md` for the full cumulative list and current status.
+**Note**: This is a high-level summary of landed work. See `../progress.md` for the full cumulative list and current status.

@@ -19,11 +19,13 @@ doctest = false
 
 [features]
 default = ["sqlite"]
-sqlite = []
-nats = ["dep:arc-es-nats"]
-postgres = ["dep:arc-es-postgres"]
+sqlite = ["arc-web/sqlite"]
+nats = ["dep:arc-es-nats", "arc-web/nats"]
+postgres = ["dep:arc-es-postgres", "arc-web/postgres"]
 
 [dependencies]
+# Framework runtime (Arc-owned web/runtime machinery)
+arc-web = { path = "../arc-web", version = "0.2.2", default-features = false }
 # Workspace crates
 arc-core = { path = "../arc-core" }
 arc-es-sqlite = { path = "../arc-es-sqlite" }
@@ -82,3 +84,4 @@ sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
 serial_test.workspace = true
 arc-core = { path = "../arc-core", features = ["test-utils"] }
 arc-es-nats = { path = "../arc-es-nats" }
+arc-web = { path = "../arc-web", features = ["test-utils"] }

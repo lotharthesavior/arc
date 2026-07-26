@@ -491,6 +491,7 @@ dependencies = [
  "arc-es-nats",
  "arc-es-postgres",
  "arc-es-sqlite",
+ "arc-web",
  "argon2",
  "async-trait",
  "chrono",
@@ -586,6 +587,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f3647c145568cec02c42054e07bdf9a5a698e15b466fb2341bfc393cd24aa5"
 dependencies = [
  "rustversion",
+]
+
+[[package]]
+name = "arc-web"
+version = "0.2.2"
+dependencies = [
+ "actix",
+ "actix-files",
+ "actix-limitation",
+ "actix-session 0.10.1",
+ "actix-web",
+ "actix-web-actors",
+ "actix-web-lab",
+ "arc-core",
+ "arc-es-nats",
+ "arc-es-postgres",
+ "arc-es-sqlite",
+ "argon2",
+ "async-trait",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "dotenv",
+ "fs_extra",
+ "futures",
+ "futures-util",
+ "jsonwebtoken",
+ "md5",
+ "once_cell",
+ "rand",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sqlx",
+ "tera",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-actix-web",
+ "tracing-subscriber",
+ "urlencoding",
+ "uuid",
+ "validator",
 ]
 
 [[package]]

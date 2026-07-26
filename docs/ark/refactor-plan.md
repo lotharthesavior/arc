@@ -435,7 +435,7 @@ async fn test_command_bus_failure_returns_500_no_event_emitted()
 - `docs/02-architecture.md` — add post-refactor layer diagram
 - `docs/03-backend.md` — "Write path has changed" note + where to add domain logic
 - `docs/06-testing.md` — add "Testing Event-Sourced Domain Logic" section
-- `docs/roadmap.md` — reconcile stale status entries
+- `progress.md` — reconcile stale status entries
 
 ### Docs folder target structure:
 ```

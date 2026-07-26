@@ -566,6 +566,6 @@ The Core Event Sourcing Library has been successfully implemented with productio
 
 - [Event Sourcing Architecture](../09-event-sourcing-architecture.md)
 - [Implementation Guide](../10-event-sourcing-implementation-guide.md)
-- [Roadmap](../roadmap.md)
+- [Project Progress & Roadmap](../../progress.md)
 - [Core Architecture](../../crates/arc-core/ARCHITECTURE.md)
 - [DX Guidelines](../../crates/arc-core/DX_GUIDELINES.md)
