@@ -134,7 +134,7 @@ curl http://localhost:8080/signout \
 **Example**:
 ```bash
 curl http://localhost:8080/public/script-abc123.js
-curl http://localhost:8080/public/imgs/logo.png
+curl http://localhost:8080/public/imgs/arc-logo.png
 ```
 
 ---

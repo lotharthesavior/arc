@@ -273,7 +273,7 @@ pub async fn static_file(req: HttpRequest) -> Result<fs::NamedFile, Error>
 
 **URL Examples:**
 - `/public/script-abc123.js` -> `dist/script-abc123.js`
-- `/public/imgs/logo.png` -> `dist/imgs/logo.png`
+- `/public/imgs/arc-logo.png` -> `dist/imgs/arc-logo.png`
 
 ## Session Notifications
 
