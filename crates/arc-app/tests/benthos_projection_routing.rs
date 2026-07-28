@@ -12,11 +12,12 @@ use serde_json::json;
 use serial_test::serial;
 use std::error::Error;
 use std::fs;
+use std::io::Read;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -97,7 +98,7 @@ async fn start_nats() -> Result<Option<(String, ChildProcess)>, Box<dyn Error + 
             .args(["-js", "-p", &port.to_string(), "-sd"])
             .arg(&store_dir.path)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
         return wait_for_nats(port, child, Some(store_dir), None).await;
     }
@@ -122,7 +123,7 @@ async fn start_nats() -> Result<Option<(String, ChildProcess)>, Box<dyn Error + 
                 &port.to_string(),
             ])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
         return wait_for_nats(port, child, None, Some(container)).await;
     }
@@ -138,8 +139,9 @@ async fn wait_for_nats(
     docker_container: Option<String>,
 ) -> Result<Option<(String, ChildProcess)>, Box<dyn Error + Send + Sync>> {
     let url = format!("nats://127.0.0.1:{port}");
+    let deadline = Instant::now() + Duration::from_secs(15);
 
-    for _ in 0..40 {
+    while Instant::now() < deadline {
         match TcpStream::connect(("127.0.0.1", port)).await {
             Ok(stream) => {
                 drop(stream);
@@ -152,16 +154,47 @@ async fn wait_for_nats(
                     },
                 )));
             }
-            Err(_) => sleep(Duration::from_millis(50)).await,
+            Err(connect_error) => {
+                if let Some(status) = child.try_wait()? {
+                    let stderr = read_child_stderr(&mut child);
+                    if let Some(container) = &docker_container {
+                        remove_docker_container(container);
+                    }
+                    return Err(format!(
+                        "nats-server exited before accepting connections ({status}): \
+                         {connect_error}; stderr: {stderr}"
+                    )
+                    .into());
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
         }
     }
 
     let _ = child.kill();
     let _ = child.wait();
+    let stderr = read_child_stderr(&mut child);
     if let Some(container) = &docker_container {
         remove_docker_container(container);
     }
-    Err("nats-server did not accept connections".into())
+    Err(format!(
+        "nats-server did not accept connections on 127.0.0.1:{port} within 15 seconds; \
+         stderr: {stderr}"
+    )
+    .into())
+}
+
+fn read_child_stderr(child: &mut Child) -> String {
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        "<empty>".to_owned()
+    } else {
+        stderr.to_owned()
+    }
 }
 
 fn redpanda_connect_runtime() -> Option<ConnectRuntime> {
