@@ -21,7 +21,7 @@ policy and upgrade path that make "upgrade without starting from scratch" a stat
 instead of a hope.
 
 The reusable crates (`arc-core`, `arc-es-sqlite`, `arc-es-postgres`, `arc-es-nats`, `arc-web`) share
-the workspace version (currently `0.2.2`). The four storage/core crates have publish-ready metadata;
+the workspace version (currently `0.2.3`). The reusable crates have publish-ready metadata;
 `arc-core` has passed a publish dry-run. `arc-web` is the framework web/runtime crate; `arc-app`
 (package `arc`) is the thin user-owned application template that depends on it.
 

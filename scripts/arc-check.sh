@@ -60,6 +60,26 @@ forbid_path "crates/arc-app/src/helpers/es_stack.rs" "the event-sourced stack li
 forbid_path "crates/arc-app/src/helpers/session.rs" "session helpers live in arc-web"
 forbid_path "crates/arc-app/src/commands/serve.rs" "the serve bootstrap lives in arc-web"
 
+echo "arc-check: checking publishable-crate file boundaries..."
+
+publishable_crates=(
+  crates/arc-core
+  crates/arc-es-sqlite
+  crates/arc-es-postgres
+  crates/arc-es-nats
+  crates/arc-web
+)
+
+if rg -n 'embed_migrations!\(\)' "${publishable_crates[@]}" --glob '*.rs'; then
+  echo "PACKAGE VIOLATION: publishable crates must use an explicit crate-local migration path." >&2
+  fail=1
+fi
+
+if rg -n 'embed_migrations!\("\.\.' "${publishable_crates[@]}" --glob '*.rs'; then
+  echo "PACKAGE VIOLATION: publishable crates cannot embed migrations from outside their crate." >&2
+  fail=1
+fi
+
 echo "arc-check: checking generated-file ownership boundary..."
 
 check_generated_banner \
@@ -68,7 +88,7 @@ check_generated_banner \
   "make benthos-config"
 
 if [ "$fail" -ne 0 ]; then
-  echo "arc-check: FAILED - generated file banner checks failed." >&2
+  echo "arc-check: FAILED - ownership or package-boundary checks failed." >&2
   exit 1
 fi
 

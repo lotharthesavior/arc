@@ -4,8 +4,12 @@ use diesel::SqliteConnection;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use std::sync::{OnceLock, RwLock};
 
-/// Embedded database migrations, compiled into the binary.
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+/// Compatibility migration set for framework consumers.
+///
+/// Application/domain migrations belong to the consuming app and should be
+/// embedded there. This constant remains for source compatibility with 0.2.2.
+#[deprecated(note = "embed and run migrations from the consuming application")]
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 /// Internal state for the connection pool singleton.
 struct PoolState {

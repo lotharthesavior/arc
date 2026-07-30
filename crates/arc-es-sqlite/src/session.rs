@@ -226,15 +226,12 @@ fn _force_use(r: &SessionRow) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-
-    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
     async fn setup_store() -> SqliteSessionStore {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
         let pool = Pool::builder().max_size(1).build(manager).expect("pool");
         let mut conn = pool.get().unwrap();
-        conn.run_pending_migrations(MIGRATIONS).unwrap();
+        crate::test_support::migrate(&mut conn);
         drop(conn);
         SqliteSessionStore::with_pool(pool)
     }

@@ -478,7 +478,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "arc"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "actix",
  "actix-files",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "arc-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "hmac",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-nats"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arc-core",
  "async-nats",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-postgres"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -566,12 +566,11 @@ dependencies = [
 
 [[package]]
 name = "arc-es-sqlite"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arc-core",
  "async-trait",
  "diesel",
- "diesel_migrations",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -591,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "actix",
  "actix-files",

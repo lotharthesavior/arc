@@ -45,7 +45,7 @@ v0.2.2
 
 ### Pre-1.0.0 Versioning
 
-**Current Status**: v0.2.2 (pre-stable)
+**Current Status**: v0.2.3 (pre-stable)
 
 During pre-1.0.0 development:
 - MINOR version bumps may include breaking changes

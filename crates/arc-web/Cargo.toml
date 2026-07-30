@@ -22,10 +22,10 @@ test-utils = []
 
 [dependencies]
 # Workspace crates
-arc-core = { path = "../arc-core", version = "0.2.2" }
-arc-es-sqlite = { path = "../arc-es-sqlite", version = "0.2.2" }
-arc-es-nats = { path = "../arc-es-nats", version = "0.2.2", optional = true }
-arc-es-postgres = { path = "../arc-es-postgres", version = "0.2.2", optional = true }
+arc-core = { path = "../arc-core", version = "0.2.3" }
+arc-es-sqlite = { path = "../arc-es-sqlite", version = "0.2.3" }
+arc-es-nats = { path = "../arc-es-nats", version = "0.2.3", optional = true }
+arc-es-postgres = { path = "../arc-es-postgres", version = "0.2.3", optional = true }
 
 # Web framework
 actix-web.workspace = true

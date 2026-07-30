@@ -1,6 +1,6 @@
 # Arc Documentation (Docsify)
 
-Welcome to the Arc documentation. This site describes the **current** six-crate, event-sourced workspace (version **0.2.2**), not the historical single-crate MVC starter.
+Welcome to the Arc documentation. This site describes the **current** six-crate, event-sourced workspace (version **0.2.3**), not the historical single-crate MVC starter.
 
 Canonical project status: root `progress.md`.  
 Operator guide for agents: root `AGENTS.md`.  

@@ -31,6 +31,9 @@ pub use session::SqliteSessionStore;
 pub mod read_model_store;
 pub use read_model_store::SqliteReadModelStore;
 
+#[cfg(test)]
+mod test_support;
+
 /// Database row used for inserting events.
 #[derive(Debug, Insertable, Clone)]
 #[diesel(table_name = events)]
@@ -647,10 +650,7 @@ impl EventStore for SqliteEventStore {
 mod tests {
     use super::*;
     use arc_core::audit::AuditMetadata;
-    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use serde_json::json;
-
-    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
     async fn setup_test_store() -> SqliteEventStore {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
@@ -660,8 +660,7 @@ mod tests {
             .expect("Failed to create pool");
 
         let mut conn = pool.get().expect("Failed to get connection");
-        conn.run_pending_migrations(MIGRATIONS)
-            .expect("Failed to run migrations");
+        crate::test_support::migrate(&mut conn);
         drop(conn);
 
         SqliteEventStore::with_pool(pool)
@@ -675,8 +674,7 @@ mod tests {
             .expect("Failed to create pool");
 
         let mut conn = pool.get().expect("Failed to get connection");
-        conn.run_pending_migrations(MIGRATIONS)
-            .expect("Failed to run migrations");
+        crate::test_support::migrate(&mut conn);
         drop(conn);
 
         SqliteEventStore::with_pool_and_integrity_key(pool, integrity_key(), "test-key")

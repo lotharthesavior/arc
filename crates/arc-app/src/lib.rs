@@ -7,7 +7,8 @@ pub mod http {
 
 pub mod helpers {
     // Framework helpers are owned by arc-web and consumed by version.
-    pub use arc_web::helpers::{config, database};
+    pub use arc_web::helpers::config;
+    pub mod database;
 
     #[cfg(test)]
     pub mod test {

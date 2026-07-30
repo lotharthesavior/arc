@@ -40,9 +40,11 @@ mod schema;
 mod helpers {
     // Framework helpers, consumed by version from arc-web.
     pub use arc_web::helpers::{
-        access_log, audit_context, config, csrf, database, es_stack, general, jwt, rate_limit,
-        session, template,
+        access_log, audit_context, config, csrf, es_stack, general, jwt, rate_limit, session,
+        template,
     };
+    // The application owns its migration set; pool machinery remains framework-owned.
+    pub mod database;
     // Application-owned, aggregate-coupled test scaffolding.
     pub mod test;
 }

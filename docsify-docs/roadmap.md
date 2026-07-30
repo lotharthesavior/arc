@@ -5,7 +5,7 @@
 
 ## Executive status
 
-Arc is a **six-crate**, event-sourced Rust workspace (v0.2.2). Core foundations are implemented: command bus, user aggregate, projections, SQLite/Postgres stores, NATS publish, Benthos-only durable routing, session + JWT auth, snapshots, optional integrity, and an `arc-web` / thin `arc-app` split in the tree.
+Arc is a **six-crate**, event-sourced Rust workspace (v0.2.3). Core foundations are implemented: command bus, user aggregate, projections, SQLite/Postgres stores, NATS publish, Benthos-only durable routing, session + JWT auth, snapshots, optional integrity, and an `arc-web` / thin `arc-app` split in the tree.
 
 Framework packaging, documentation hygiene, and product scaffolding remain open.
 

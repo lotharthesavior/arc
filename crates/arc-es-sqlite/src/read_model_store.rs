@@ -274,16 +274,13 @@ impl ReadModelStore for SqliteReadModelStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use serde_json::json;
-
-    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
     async fn setup() -> SqliteReadModelStore {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
         let pool = Pool::builder().max_size(1).build(manager).expect("pool");
         let mut conn = pool.get().expect("conn");
-        conn.run_pending_migrations(MIGRATIONS).expect("migrations");
+        crate::test_support::migrate(&mut conn);
         drop(conn);
         SqliteReadModelStore::with_pool(pool)
     }

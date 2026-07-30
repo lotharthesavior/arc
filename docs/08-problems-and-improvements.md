@@ -214,7 +214,7 @@ Both functions do exactly the same thing - hash passwords using Argon2.
 **Status: ✅ RESOLVED** — `/health` endpoint added.
 
 **Solution Implemented**:
-- `GET /health` returns `200 OK` with JSON: `{"status": "healthy", "version": "0.2.2"}`
+- `GET /health` returns `200 OK` with JSON: `{"status": "healthy", "version": "0.2.3"}`
 - Version pulled from `CARGO_PKG_VERSION` at compile time
 - Defined in `src/routes.rs`
 - Excluded from global rate limiting

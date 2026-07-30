@@ -1,7 +1,7 @@
 # Arc — Project Overview
 
 **Last updated:** 2026-07-27  
-**Workspace version:** 0.2.2
+**Workspace version:** 0.2.3
 
 ## Introduction
 
