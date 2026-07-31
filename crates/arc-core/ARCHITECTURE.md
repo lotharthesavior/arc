@@ -203,17 +203,17 @@ pub async fn create_user(name: String, email: String, password: String) -> Resul
     }
 
     // Create event
-    let event = Event::new(
-        "User",
-        &Uuid::new_v4().to_string(),
-        1,
-        "UserCreated",
-        json!({
-            "name": name,
-            "email": email,
-            "password_hash": hash_password(&password),
-        }),
-    );
+    let event = Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: &Uuid::new_v4().to_string(),
+        sequence: 1,
+        event_type: "UserCreated",
+        payload: json!({
+                        "name": name,
+                        "email": email,
+                        "password_hash": hash_password(&password),
+                    }),
+    });
 
     // Persist and publish
     event_store.append(&event.aggregate_id, None, vec![event.clone()]).await?;
@@ -285,13 +285,13 @@ impl Aggregate for UserAggregate {
                 }
 
                 // Produce event
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    self.version + 1,
-                    "UserCreated",
-                    json!({ "name": name, "email": email, "password_hash": hash_password(&password) }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: self.version + 1,
+                    event_type: "UserCreated",
+                    payload: json!({ "name": name, "email": email, "password_hash": hash_password(&password) }),
+                })])
             }
         }
     }
@@ -1004,13 +1004,13 @@ event.payload["email"] = "corrected@example.com";
 event_store.update(event).await?; // NO!
 
 // CORRECT: Compensating event
-let correction_event = Event::new(
-    "User",
-    "user-123",
-    2,
-    "EmailCorrected",
-    json!({ "old_email": "wrong@example.com", "new_email": "corrected@example.com" }),
-);
+let correction_event = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "user-123",
+    sequence: 2,
+    event_type: "EmailCorrected",
+    payload: json!({ "old_email": "wrong@example.com", "new_email": "corrected@example.com" }),
+});
 event_store.append("user-123", Some(1), vec![correction_event]).await?;
 ```
 
@@ -1056,7 +1056,7 @@ impl UserAggregate {
 // CORRECT: Aggregate produces event, projector writes via store
 impl UserAggregate {
     async fn handle(&self, command: CreateUser) -> Result<Vec<Event>, Error> {
-        Ok(vec![Event::new(...)])  // Just produce event
+        Ok(vec![Event::new(NewEvent { ... })])  // Just produce event
     }
 }
 

@@ -1,0 +1,16 @@
+[package]
+name = "arc-web-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Create self-contained Arc applications"
+license.workspace = true
+repository.workspace = true
+keywords = ["arc", "scaffold", "actix", "event-sourcing"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "arc"
+path = "src/main.rs"
+
+[dependencies]

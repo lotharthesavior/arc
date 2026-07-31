@@ -23,6 +23,8 @@
 use crate::aggregate::{Aggregate, Command};
 use crate::audit::{AuditError, AuditMetadata, SYSTEM_ACTOR};
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 use crate::event_bus::{EventBus, EventBusError};
 use crate::event_store::{EventStore, EventStoreError, VersionCheck};
 use crate::snapshot::Snapshot;
@@ -222,7 +224,7 @@ impl<A: Aggregate> CommandBus<A> {
     async fn full_replay(&self, aggregate_id: &str) -> CommandBusResult<(A, i64)> {
         let events = self
             .event_store
-            .load(aggregate_id)
+            .load_stream(A::aggregate_type(), aggregate_id)
             .await
             .map_err(|source| CommandBusError::LoadFailed {
                 aggregate_id: aggregate_id.to_string(),
@@ -259,12 +261,20 @@ impl<A: Aggregate> CommandBus<A> {
         let (aggregate, current_version) = match self.snapshot_policy {
             SnapshotPolicy::Disabled => self.full_replay(&aggregate_id).await?,
             SnapshotPolicy::EveryNEvents(_) => {
-                match self.event_store.load_snapshot(&aggregate_id).await {
+                match self
+                    .event_store
+                    .load_snapshot_for(A::aggregate_type(), &aggregate_id)
+                    .await
+                {
                     Ok(Some(snap)) => match A::from_snapshot(snap.state.clone()) {
                         Some(mut agg) => {
                             let tail = self
                                 .event_store
-                                .load_from(&aggregate_id, snap.version + 1)
+                                .load_stream_from(
+                                    A::aggregate_type(),
+                                    &aggregate_id,
+                                    snap.version + 1,
+                                )
                                 .await
                                 .map_err(|source| CommandBusError::LoadFailed {
                                     aggregate_id: aggregate_id.clone(),
@@ -319,7 +329,12 @@ impl<A: Aggregate> CommandBus<A> {
         };
 
         self.event_store
-            .append(&aggregate_id, version_check, new_events.clone())
+            .append_to(
+                A::aggregate_type(),
+                &aggregate_id,
+                version_check,
+                new_events.clone(),
+            )
             .await
             .map_err(|source| CommandBusError::AppendFailed {
                 aggregate_id: aggregate_id.clone(),
@@ -436,13 +451,13 @@ mod tests {
             if command.increment < 0 {
                 return Err(CounterError::NegativeIncrement);
             }
-            Ok(vec![Event::new(
-                "Counter",
-                &command.id,
-                self.version + 1,
-                "CounterIncremented",
-                json!({ "increment": command.increment }),
-            )])
+            Ok(vec![Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: &command.id,
+                sequence: self.version + 1,
+                event_type: "CounterIncremented",
+                payload: json!({ "increment": command.increment }),
+            })])
         }
 
         fn apply(&mut self, event: &Event) {

@@ -21,7 +21,7 @@ policy and upgrade path that make "upgrade without starting from scratch" a stat
 instead of a hope.
 
 The reusable crates (`arc-core`, `arc-es-sqlite`, `arc-es-postgres`, `arc-es-nats`, `arc-web`) share
-the workspace version (currently `0.2.3`). The reusable crates have publish-ready metadata;
+the workspace version (currently `0.4.0`). The reusable crates have publish-ready metadata;
 `arc-core` has passed a publish dry-run. `arc-web` is the framework web/runtime crate; `arc-app`
 (package `arc`) is the thin user-owned application template that depends on it.
 
@@ -91,9 +91,9 @@ upgradeability work is packaging and distribution, not the ownership classificat
 - Ship an `arc new` CLI (or equivalent) so apps start from a thin template instead of
   clone-and-edit of this monorepo.
 
-There is exactly one copy of the `User` domain — in `crates/arc-app`. `arc-web` is generic over
-the aggregate (`EsStack<A>`, `ArcApp::builder::<A>()`) and ships no concrete domain type, so there
-are no dual copies to keep in sync.
+There is exactly one copy of the `User` domain — in `crates/arc-app`. `arc-web` ships no concrete
+domain type. Applications use `ArcApp::builder().register_aggregate::<A>()` once per writable
+aggregate, producing a distinct typed `CommandBus<A>` for each registration.
 
 `make doctor` enforces the machine-owned generated boundary and the structural Arc-owned
 boundary (Arc-owned runtime trees must not reappear under `crates/arc-app/src`).

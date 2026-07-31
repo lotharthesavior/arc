@@ -1,6 +1,8 @@
 //! NATS JetStream event bus backend for Arc events.
 
 use arc_core::event::Event;
+#[cfg(test)]
+use arc_core::event::NewEvent;
 use arc_core::event_bus::{EventBus, EventBusError, EventBusResult, EventHandler};
 use async_nats::jetstream;
 use async_nats::{HeaderMap, HeaderValue};
@@ -152,26 +154,26 @@ mod tests {
 
     #[test]
     fn subject_for_uses_convention_shape() {
-        let event = Event::new(
-            "User",
-            "user-1",
-            1,
-            "UserRegistered",
-            json!({"email": "test@example.com"}),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserRegistered",
+            payload: json!({"email": "test@example.com"}),
+        });
 
         assert_eq!(subject_for(&event), "events.user.user_registered");
     }
 
     #[test]
     fn subject_for_normalizes_existing_separators() {
-        let event = Event::new(
-            "Billing Account",
-            "account-1",
-            1,
-            "Payment-Method Updated",
-            json!({}),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "Billing Account",
+            aggregate_id: "account-1",
+            sequence: 1,
+            event_type: "Payment-Method Updated",
+            payload: json!({}),
+        });
 
         assert_eq!(
             subject_for(&event),

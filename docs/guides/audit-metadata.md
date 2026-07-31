@@ -181,10 +181,16 @@ The `arc-core` crate exposes `AuditMetadata::test_default()` and
 
 ```rust
 use arc_core::audit::AuditMetadata;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use serde_json::json;
 
-let event = Event::new("User", "u1", 1, "UserCreated", json!({}))
+let event = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "u1",
+    sequence: 1,
+    event_type: "UserCreated",
+    payload: json!({}),
+})
     .with_audit(AuditMetadata::test_default());
 ```
 

@@ -90,19 +90,19 @@ impl Event {
 **Example**:
 ```rust
 // PLACEHOLDER: To be filled with real implementation example
-use arc_core::Event;
+use arc_core::event::{Event, NewEvent};
 use serde_json::json;
 
-let event = Event::new(
-    "User",
-    "user-123",
-    1,
-    "UserCreated",
-    json!({
-        "name": "Jane Doe",
-        "email": "jane@example.com"
-    })
-);
+let event = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "user-123",
+    sequence: 1,
+    event_type: "UserCreated",
+    payload: json!({
+                "name": "Jane Doe",
+                "email": "jane@example.com"
+            }),
+});
 ```
 
 ---
@@ -173,7 +173,13 @@ async fn append(
 ```rust
 // PLACEHOLDER: To be filled with real implementation example
 let events = vec![
-    Event::new("User", "user-123", 1, "UserCreated", payload)
+    Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: "user-123",
+        sequence: 1,
+        event_type: "UserCreated",
+        payload: payload,
+    })
 ];
 
 event_store.append("user-123", None, events).await?;
@@ -440,13 +446,13 @@ async fn handle(&self, command: Self::Command) -> Result<Vec<Event>, Self::Error
                 return Err(UserError::AlreadyExists);
             }
 
-            Ok(vec![Event::new(
-                "User",
-                &id,
-                self.version + 1,
-                "UserCreated",
-                json!({ "name": name, "email": email })
-            )])
+            Ok(vec![Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: &id,
+                sequence: self.version + 1,
+                event_type: "UserCreated",
+                payload: json!({ "name": name, "email": email }),
+            })])
         }
     }
 }
@@ -542,7 +548,7 @@ pub trait Projector: Send + Sync {
 ```rust
 use arc_core::projection::{Projector, ProjectionResult, ProjectionError};
 use arc_core::read_model_store::ReadModelStore;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 
 struct UserListProjector;
 
@@ -915,16 +921,16 @@ async fn create_user(
     }
 
     // Create event directly
-    let event = Event::new(
-        "User",
-        &Uuid::new_v4().to_string(),
-        1,
-        "UserCreated",
-        json!({
-            "name": form.name,
-            "email": form.email,
-        })
-    );
+    let event = Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: &Uuid::new_v4().to_string(),
+        sequence: 1,
+        event_type: "UserCreated",
+        payload: json!({
+                        "name": form.name,
+                        "email": form.email,
+                    }),
+    });
 
     // Append and publish
     event_store.append(&event.aggregate_id, None, vec![event.clone()]).await?;
@@ -996,13 +1002,13 @@ impl Aggregate for UserAggregate {
                 }
 
                 // Produce event
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    1,
-                    "UserCreated",
-                    json!({ "name": name, "email": email })
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: 1,
+                    event_type: "UserCreated",
+                    payload: json!({ "name": name, "email": email }),
+                })])
             }
         }
     }
@@ -1028,7 +1034,7 @@ use arc_core::projection::{
     ProjectionResult, ProjectionError,
 };
 use arc_core::read_model_store::{ReadModelStore, InMemoryReadModelStore};
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use std::sync::Arc;
 
 // Step 1: Implement a Projector (stateless event handler)

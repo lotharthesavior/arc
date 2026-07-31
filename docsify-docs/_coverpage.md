@@ -5,14 +5,13 @@
 
 # Arc
 
-> A composable, event-sourced Rust web framework
+> Build an event-sourced Actix Web application from published Rust packages
 
-- Actix Web · Tera · Stimulus · Turbo · Tailwind
-- CommandBus, aggregates, projections, SQLite & Postgres
-- NATS JetStream publish · Benthos-only durable routing
-- Session + JWT auth, snapshots, optional event integrity
+- Generate a self-contained project with `arc new`
+- Write commands, aggregates, events, projections, and routes
+- Run locally with SQLite and optional Tera UI
 
 [GitHub](https://github.com/lotharthesavior/arc)
-[Get Started](#arc-documentation)
+[Create an App](getting-started.md)
 
 ![color](#f3f4f6)

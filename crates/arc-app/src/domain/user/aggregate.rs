@@ -1,5 +1,8 @@
 use crate::domain::user::commands::UserCommand;
-use arc_core::{aggregate::Aggregate, event::Event};
+use arc_core::{
+    aggregate::Aggregate,
+    event::{Event, NewEvent},
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -54,26 +57,26 @@ impl Aggregate for UserAggregate {
                 if !email.contains('@') {
                     return Err(UserAggregateError::InvalidEmail);
                 }
-                Ok(vec![Event::new(
-                    "User",
-                    id,
-                    self.version + 1,
-                    "UserRegistered",
-                    serde_json::json!({ "id": id, "name": name,
-                                        "email": email, "password_hash": password_hash }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "UserRegistered",
+                    payload: serde_json::json!({ "id": id, "name": name,
+                                                                "email": email, "password_hash": password_hash }),
+                })])
             }
             UserCommand::UpdateProfile { ref id, ref name } => {
                 if !self.exists || self.deleted {
                     return Err(UserAggregateError::NotFound);
                 }
-                Ok(vec![Event::new(
-                    "User",
-                    id,
-                    self.version + 1,
-                    "ProfileUpdated",
-                    serde_json::json!({ "name": name }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "ProfileUpdated",
+                    payload: serde_json::json!({ "name": name }),
+                })])
             }
             UserCommand::ChangeEmail { ref id, ref email } => {
                 if !self.exists || self.deleted {
@@ -82,13 +85,13 @@ impl Aggregate for UserAggregate {
                 if !email.contains('@') {
                     return Err(UserAggregateError::InvalidEmail);
                 }
-                Ok(vec![Event::new(
-                    "User",
-                    id,
-                    self.version + 1,
-                    "EmailChanged",
-                    serde_json::json!({ "email": email }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "EmailChanged",
+                    payload: serde_json::json!({ "email": email }),
+                })])
             }
             UserCommand::ChangePassword {
                 ref id,
@@ -97,13 +100,13 @@ impl Aggregate for UserAggregate {
                 if !self.exists || self.deleted {
                     return Err(UserAggregateError::NotFound);
                 }
-                Ok(vec![Event::new(
-                    "User",
-                    id,
-                    self.version + 1,
-                    "PasswordChanged",
-                    serde_json::json!({ "password_hash": password_hash }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "PasswordChanged",
+                    payload: serde_json::json!({ "password_hash": password_hash }),
+                })])
             }
             UserCommand::DeleteUser { ref id } => {
                 if !self.exists {
@@ -112,13 +115,13 @@ impl Aggregate for UserAggregate {
                 if self.deleted {
                     return Err(UserAggregateError::AlreadyDeleted);
                 }
-                Ok(vec![Event::new(
-                    "User",
-                    id,
-                    self.version + 1,
-                    "UserDeleted",
-                    serde_json::json!({}),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "UserDeleted",
+                    payload: serde_json::json!({}),
+                })])
             }
         }
     }
@@ -211,15 +214,15 @@ mod tests {
         let mut agg = UserAggregate::default();
 
         // setup state
-        let create_event = Event::new(
-            "User",
-            "uuid-123",
-            1,
-            "UserRegistered",
-            serde_json::json!({
+        let create_event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "uuid-123",
+            sequence: 1,
+            event_type: "UserRegistered",
+            payload: serde_json::json!({
                 "id": "uuid-123", "name": "Old", "email": "o@e.c", "password_hash": "pw"
             }),
-        );
+        });
         agg.apply(&create_event);
 
         let cmd = UserCommand::UpdateProfile {

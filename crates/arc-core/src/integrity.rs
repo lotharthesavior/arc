@@ -28,6 +28,8 @@ use std::fmt;
 use thiserror::Error;
 
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 
 /// 32-byte HMAC-SHA256 output, hex-encoded for storage.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,7 +234,14 @@ mod tests {
     }
 
     fn event(seq: i64, ty: &str, payload: serde_json::Value) -> Event {
-        Event::new("User", "agg-1", seq, ty, payload).with_audit(AuditMetadata::test_default())
+        Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "agg-1",
+            sequence: seq,
+            event_type: ty,
+            payload,
+        })
+        .with_audit(AuditMetadata::test_default())
     }
 
     #[test]
@@ -343,7 +352,13 @@ mod tests {
         // never randomize: aggregate_type, aggregate_id, sequence, event_type,
         // payload, timestamp. event_id is random — substitute a fixed one
         // post-construction for the test.
-        let mut e = Event::new("Vector", "vec-1", 1, "VectorEvent", json!({"n": 1}));
+        let mut e = Event::new(NewEvent {
+            aggregate_type: "Vector",
+            aggregate_id: "vec-1",
+            sequence: 1,
+            event_type: "VectorEvent",
+            payload: json!({"n": 1}),
+        });
         e.event_id = uuid::Uuid::nil();
         e.timestamp = 1700000000000; // pinned ms
         let sig = chain.sign_event(&EventSignature::genesis(), &e).unwrap();

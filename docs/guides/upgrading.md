@@ -17,15 +17,17 @@ practical procedure.
   over your aggregate** and ships no concrete domain type. Never hand-edit these.
 - **Your app (`crates/arc-app`, package `arc`):** your domain aggregates,
   services, validation, controllers, routes, templates, and seeders. You plug
-  them into the framework through `ArcApp::builder::<YourAggregate>()`.
+  them into the framework through
+  `ArcApp::builder().register_aggregate::<YourAggregate>()`.
 
 ## How the app plugs into the framework
 
 `crates/arc-app/src/main.rs` wires your app to the framework via the builder:
 
 ```rust
-ArcApp::builder::<UserAggregate>()
-    .register_aggregate(user_projectors())   // your read-model projectors
+ArcApp::builder()
+    .register_aggregate::<UserAggregate>()
+    .register_projectors(user_projectors())  // your read-model projectors
     .snapshot_policy(user_snapshot_policy())  // optional
     .register_routes(routes::config)          // your controllers/routes
     .serve(app_url, app_port)
@@ -38,7 +40,7 @@ source:
 | Surface        | How you customize it                                             |
 |----------------|------------------------------------------------------------------|
 | Routes         | `register_routes(cfg)` — mount your controllers                  |
-| Aggregate      | `builder::<A>()` + `register_aggregate(projectors)`              |
+| Aggregate      | `builder()` + `register_aggregate::<A>()` + projectors           |
 | Snapshots      | `snapshot_policy(..)`                                            |
 | Event handlers | Benthos handler manifests under `config/handlers/*.yaml` (ADR 0001) |
 
@@ -79,3 +81,20 @@ void the upgrade promise.
 - **Event envelopes** evolve additively within an `envelope_version`.
 - **Handler manifests** reject unknown keys at generation time, so a manifest
   that references a removed capability fails fast at `make benthos-config`.
+
+### 0.3 to 0.4
+
+`Event::new` now takes a named-field `NewEvent` parameter struct. Replace
+positional construction:
+
+```rust
+Event::new(NewEvent {
+    aggregate_type: "Product",
+    aggregate_id: product_id,
+    sequence: next_sequence,
+    event_type: "ProductCreated",
+    payload,
+})
+```
+
+Import both types with `use arc_core::event::{Event, NewEvent};`.

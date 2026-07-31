@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test clean format check lint doctor arc-check publish-check benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report docsify docsify-docs
+.PHONY: help install build dev serve migrate seed test clean format check lint doctor arc-check publish-check scaffold-check benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report docsify docsify-docs
 
 # Default target
 .DEFAULT_GOAL := help
@@ -152,6 +152,10 @@ arc-check: doctor ## Alias for doctor, matching ADR 0002 language
 publish-check: ## Package reusable crates and compile them outside the workspace
 	@echo "$(GREEN)Checking publishable crate packages...$(NC)"
 	bash scripts/check-publish-packages.sh $(PUBLISH_CRATES)
+
+scaffold-check: ## Generate and compile clean-room minimal and UI Arc applications
+	@echo "$(GREEN)Checking arc new outside the workspace...$(NC)"
+	bash scripts/check-arc-scaffold.sh
 
 benthos-config: ## Generate Benthos pipeline config from handler manifests
 	@echo "$(GREEN)Generating Benthos config...$(NC)"

@@ -255,7 +255,7 @@ impl Event {
 
 `crates/arc-core/src/event_store.rs`:
 ```rust
-use crate::event::Event;
+use crate::event::{Event, NewEvent};
 use async_trait::async_trait;
 use std::error::Error;
 
@@ -321,7 +321,7 @@ CREATE INDEX idx_events_id ON events(id);
 
 `crates/arc-core/src/event_bus.rs`:
 ```rust
-use crate::event::Event;
+use crate::event::{Event, NewEvent};
 use async_trait::async_trait;
 use std::error::Error;
 
@@ -411,7 +411,7 @@ impl InMemoryReadModelStore {
 
 `crates/arc-core/src/projection.rs`:
 ```rust
-use crate::event::Event;
+use crate::event::{Event, NewEvent};
 use crate::event_store::EventStore;
 use crate::read_model_store::ReadModelStore;
 use async_trait::async_trait;
@@ -569,7 +569,7 @@ impl ProjectionEngine {
 
 `crates/arc-core/src/aggregate.rs`:
 ```rust
-use crate::event::Event;
+use crate::event::{Event, NewEvent};
 use async_trait::async_trait;
 use std::error::Error;
 
@@ -720,18 +720,18 @@ impl Aggregate for UserAggregate {
                 // Hash password
                 let password_hash = hash_password(&password);
 
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    self.version + 1,
-                    "UserCreated",
-                    serde_json::to_value(UserEvent::UserCreated {
-                        id,
-                        name,
-                        email,
-                        password_hash,
-                    }).unwrap(),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: self.version + 1,
+                    event_type: "UserCreated",
+                    payload: serde_json::to_value(UserEvent::UserCreated {
+                                                id,
+                                                name,
+                                                email,
+                                                password_hash,
+                                            }).unwrap(),
+                })])
             }
 
             UserCommand::UpdateProfile { id, name } => {
@@ -739,13 +739,13 @@ impl Aggregate for UserAggregate {
                     return Err(UserError::NotFound);
                 }
 
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    self.version + 1,
-                    "ProfileUpdated",
-                    serde_json::to_value(UserEvent::ProfileUpdated { id, name }).unwrap(),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: self.version + 1,
+                    event_type: "ProfileUpdated",
+                    payload: serde_json::to_value(UserEvent::ProfileUpdated { id, name }).unwrap(),
+                })])
             }
 
             UserCommand::ChangePassword { id, old_password, new_password } => {
@@ -758,13 +758,13 @@ impl Aggregate for UserAggregate {
                     return Err(UserError::WeakPassword);
                 }
 
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    self.version + 1,
-                    "PasswordChanged",
-                    serde_json::to_value(UserEvent::PasswordChanged { id }).unwrap(),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: self.version + 1,
+                    event_type: "PasswordChanged",
+                    payload: serde_json::to_value(UserEvent::PasswordChanged { id }).unwrap(),
+                })])
             }
         }
     }
@@ -866,7 +866,7 @@ impl<A: Aggregate> CommandBus<A> {
 
 `crates/arc-app/src/projections/user_list.rs`:
 ```rust
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use arc_core::projection::{Projector, ProjectionResult, ProjectionError};
 use arc_core::read_model_store::ReadModelStore;
 use async_trait::async_trait;

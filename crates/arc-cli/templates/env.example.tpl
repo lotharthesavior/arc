@@ -1,0 +1,9 @@
+APP_NAME={{project-name}}
+APP_ENV=development
+APP_URL=127.0.0.1
+APP_PORT=8080
+DATABASE_DRIVER=sqlite
+DATABASE_URL=database/database.sqlite
+EVENT_BUS=inprocess
+SECRET_KEY=generate-me
+RUST_LOG={{crate-name}}=info,arc_web=info,actix_web=info

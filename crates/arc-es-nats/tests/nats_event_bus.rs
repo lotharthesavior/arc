@@ -1,5 +1,5 @@
 use arc_core::audit::AuditMetadata;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use arc_core::event_bus::EventBus;
 use arc_es_nats::{NatsEventBus, DLQ_STREAM};
 use async_nats::jetstream;
@@ -79,18 +79,18 @@ fn durable_name() -> String {
 }
 
 fn user_registered(id: &str) -> Event {
-    Event::new(
-        "User",
-        id,
-        1,
-        "UserRegistered",
-        json!({
+    Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: id,
+        sequence: 1,
+        event_type: "UserRegistered",
+        payload: json!({
             "id": id,
             "name": "Ada",
             "email": "ada@example.test",
             "password_hash": "$argon2$test"
         }),
-    )
+    })
     .with_audit(AuditMetadata::test_default())
 }
 

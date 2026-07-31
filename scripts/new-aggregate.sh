@@ -63,7 +63,10 @@ EOF
 cat > "$TARGET_DIR/aggregate.rs" <<EOF
 use crate::domain::${ENTITY_LOWER}::commands::${ENTITY_PASCAL}Command;
 use async_trait::async_trait;
-use arc_core::{aggregate::Aggregate, event::Event};
+use arc_core::{
+    aggregate::Aggregate,
+    event::{Event, NewEvent},
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -101,13 +104,13 @@ impl Aggregate for ${ENTITY_PASCAL}Aggregate {
                 if self.exists {
                     return Err(${ENTITY_PASCAL}AggregateError::AlreadyExists);
                 }
-                Ok(vec![Event::new(
-                    "${ENTITY_PASCAL}",
-                    id,
-                    self.version + 1,
-                    "${ENTITY_PASCAL}Created",
-                    serde_json::json!({ "id": id }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "${ENTITY_PASCAL}",
+                    aggregate_id: id,
+                    sequence: self.version + 1,
+                    event_type: "${ENTITY_PASCAL}Created",
+                    payload: serde_json::json!({ "id": id }),
+                })])
             }
         }
     }

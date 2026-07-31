@@ -1,5 +1,7 @@
 use actix_web::{post, web, HttpRequest, HttpResponse, Responder};
 use arc_core::event::Event;
+#[cfg(test)]
+use arc_core::event::NewEvent;
 use arc_core::projection::ProjectionEngine;
 use serde_json::json;
 
@@ -113,17 +115,17 @@ mod tests {
     }
 
     fn test_event() -> Event {
-        Event::new(
-            "User",
-            "user-123",
-            1,
-            "UserRegistered",
-            json!({
+        Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-123",
+            sequence: 1,
+            event_type: "UserRegistered",
+            payload: json!({
                 "name": "Ada Lovelace",
                 "email": "ada@example.com",
                 "password_hash": "hash",
             }),
-        )
+        })
         .with_audit(AuditMetadata::test_default())
     }
 

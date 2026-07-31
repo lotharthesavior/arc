@@ -1,0 +1,253 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const ARC_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub struct NewProject {
+    pub name: String,
+    pub destination: PathBuf,
+    pub ui: bool,
+    pub git: bool,
+}
+
+struct TemplateFile {
+    path: &'static str,
+    contents: &'static str,
+    ui_only: bool,
+}
+
+const FILES: &[TemplateFile] = &[
+    TemplateFile {
+        path: "Cargo.toml",
+        contents: include_str!("../templates/Cargo.toml.tpl"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "Makefile",
+        contents: include_str!("../templates/Makefile"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: ".env.example",
+        contents: include_str!("../templates/env.example.tpl"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: ".gitignore",
+        contents: include_str!("../templates/gitignore.tpl"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "README.md",
+        contents: include_str!("../templates/README.md.tpl"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/main.rs",
+        contents: include_str!("../templates/src/main.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain.rs",
+        contents: include_str!("../templates/src/domain.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/routes.rs",
+        contents: include_str!("../templates/src/routes.rs.tpl"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/ui.rs",
+        contents: include_str!("../templates/src/ui.rs"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/home.html",
+        contents: include_str!("../templates/resources/views/home.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "public/styles.css",
+        contents: include_str!("../templates/public/styles.css"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "migrations/00000000000000_arc_base/up.sql",
+        contents: include_str!("../templates/migrations/arc_base/up.sql"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "migrations/00000000000000_arc_base/down.sql",
+        contents: include_str!("../templates/migrations/arc_base/down.sql"),
+        ui_only: false,
+    },
+];
+
+pub fn create_project(project: &NewProject) -> Result<PathBuf, String> {
+    validate_name(&project.name)?;
+    let root = project.destination.join(&project.name);
+    if root.exists() {
+        return Err(format!(
+            "destination `{}` already exists; Arc will not overwrite it",
+            root.display()
+        ));
+    }
+
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("could not create `{}`: {error}", root.display()))?;
+
+    let result = write_project(project, &root);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&root);
+    }
+    result?;
+
+    if project.git {
+        initialize_git(&root)?;
+    }
+
+    Ok(root)
+}
+
+fn write_project(project: &NewProject, root: &Path) -> Result<(), String> {
+    for file in FILES {
+        if file.ui_only && !project.ui {
+            continue;
+        }
+        let path = root.join(file.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("could not create `{}`: {error}", parent.display()))?;
+        }
+        let contents = render(file.contents, project);
+        fs::write(&path, contents)
+            .map_err(|error| format!("could not write `{}`: {error}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn render(template: &str, project: &NewProject) -> String {
+    let rendered = template
+        .replace("{{project-name}}", &project.name)
+        .replace("{{crate-name}}", &project.name.replace('-', "_"))
+        .replace("{{arc-version}}", ARC_VERSION)
+        .replace("{{ui-module}}", if project.ui { "mod ui;" } else { "" })
+        .replace(
+            "{{ui-routes}}",
+            if project.ui {
+                ".service(crate::ui::home)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
+            } else {
+                ""
+            },
+        );
+
+    match std::env::var("ARC_CLI_TEST_LOCAL_ROOT") {
+        Ok(root) => rendered
+            .replace(
+                &format!("arc-core = \"{ARC_VERSION}\""),
+                &format!("arc-core = {{ path = \"{root}/crates/arc-core\" }}"),
+            )
+            .replace(
+                &format!("arc-web = \"{ARC_VERSION}\""),
+                &format!("arc-web = {{ path = \"{root}/crates/arc-web\" }}"),
+            ),
+        Err(_) => rendered,
+    }
+}
+
+fn validate_name(name: &str) -> Result<(), String> {
+    let mut chars = name.chars();
+    let valid_first = chars
+        .next()
+        .is_some_and(|character| character.is_ascii_alphabetic());
+    let valid_rest = chars.all(|character| character.is_ascii_alphanumeric() || character == '-');
+    if !valid_first || !valid_rest {
+        return Err(
+            "project name must start with an ASCII letter and contain only letters, numbers, or hyphens"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn initialize_git(root: &Path) -> Result<(), String> {
+    let status = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(root)
+        .status()
+        .map_err(|error| format!("could not run `git init`: {error}; retry with --no-git"))?;
+    if !status.success() {
+        return Err("`git init` failed; retry with --no-git".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("arc-cli-test-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn creates_minimal_project_without_ui_files() {
+        let destination = temp_root();
+        let project = NewProject {
+            name: "hello-arc".to_string(),
+            destination: destination.clone(),
+            ui: false,
+            git: false,
+        };
+        let root = create_project(&project).unwrap();
+        assert!(root.join("src/main.rs").is_file());
+        assert!(root
+            .join("migrations/00000000000000_arc_base/up.sql")
+            .is_file());
+        assert!(!root.join("src/ui.rs").exists());
+        assert!(fs::read_to_string(root.join("Cargo.toml"))
+            .unwrap()
+            .contains(&format!("arc-web = \"{ARC_VERSION}\"")));
+        fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn ui_flag_adds_web_files_and_routes() {
+        let destination = temp_root();
+        let project = NewProject {
+            name: "hello-ui".to_string(),
+            destination: destination.clone(),
+            ui: true,
+            git: false,
+        };
+        let root = create_project(&project).unwrap();
+        assert!(root.join("src/ui.rs").is_file());
+        assert!(root.join("resources/views/home.html").is_file());
+        let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
+        assert!(routes.contains("crate::ui::home"));
+        fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn refuses_to_overwrite_existing_destination() {
+        let destination = temp_root();
+        fs::create_dir_all(destination.join("taken")).unwrap();
+        let project = NewProject {
+            name: "taken".to_string(),
+            destination: destination.clone(),
+            ui: false,
+            git: false,
+        };
+        assert!(create_project(&project)
+            .unwrap_err()
+            .contains("will not overwrite"));
+        fs::remove_dir_all(destination).unwrap();
+    }
+}

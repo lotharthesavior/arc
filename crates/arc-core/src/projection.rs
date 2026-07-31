@@ -60,6 +60,8 @@
 //! ```
 
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 use crate::event_bus::EventHandler;
 use crate::event_store::EventStore;
 use crate::read_model_store::ReadModelStore;
@@ -735,13 +737,13 @@ mod tests {
         let projection = make_projection("Test", vec!["UserCreated".to_string()], rm_store.clone());
         engine.register(projection);
 
-        let event = Event::new(
-            "User",
-            "user-1",
-            1,
-            "UserCreated",
-            serde_json::json!({"name": "Alice"}),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: serde_json::json!({"name": "Alice"}),
+        });
 
         engine.process(&event).await.unwrap();
 
@@ -758,11 +760,23 @@ mod tests {
         engine.register(projection);
 
         // Event that should be handled
-        let event1 = Event::new("User", "user-1", 1, "UserCreated", serde_json::json!({}));
+        let event1 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: serde_json::json!({}),
+        });
         engine.process(&event1).await.unwrap();
 
         // Event that should be filtered out
-        let event2 = Event::new("User", "user-1", 2, "UserDeleted", serde_json::json!({}));
+        let event2 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 2,
+            event_type: "UserDeleted",
+            payload: serde_json::json!({}),
+        });
         engine.process(&event2).await.unwrap();
 
         assert_eq!(rm_store.get_rows("test_table").len(), 1);
@@ -772,20 +786,20 @@ mod tests {
     async fn test_rebuild_all() {
         let event_store = MockEventStore::new();
 
-        event_store.add_event(Event::new(
-            "User",
-            "user-1",
-            1,
-            "UserCreated",
-            serde_json::json!({}),
-        ));
-        event_store.add_event(Event::new(
-            "User",
-            "user-2",
-            1,
-            "UserCreated",
-            serde_json::json!({}),
-        ));
+        event_store.add_event(Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: serde_json::json!({}),
+        }));
+        event_store.add_event(Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-2",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: serde_json::json!({}),
+        }));
 
         let mut engine = ProjectionEngine::new(Box::new(event_store));
 
@@ -820,7 +834,13 @@ mod tests {
         engine.register(proj1);
         engine.register(proj2);
 
-        let event = Event::new("User", "user-1", 1, "UserCreated", serde_json::json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: serde_json::json!({}),
+        });
         engine.process(&event).await.unwrap();
 
         assert_eq!(rm_store1.get_rows("test_table").len(), 1);
@@ -837,9 +857,27 @@ mod tests {
         engine.register(projection);
 
         let events = vec![
-            Event::new("User", "user-1", 1, "UserCreated", serde_json::json!({})),
-            Event::new("User", "user-2", 1, "UserCreated", serde_json::json!({})),
-            Event::new("User", "user-3", 1, "UserCreated", serde_json::json!({})),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: serde_json::json!({}),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-2",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: serde_json::json!({}),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-3",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: serde_json::json!({}),
+            }),
         ];
 
         engine.process_batch(events).await.unwrap();

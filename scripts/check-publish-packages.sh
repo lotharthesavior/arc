@@ -8,7 +8,7 @@ version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
 if (($#)); then
     crates=("$@")
 else
-    crates=(arc-core arc-es-sqlite arc-es-postgres arc-es-nats arc-web)
+    crates=(arc-core arc-es-sqlite arc-es-postgres arc-es-nats arc-web arc-web-cli)
 fi
 
 for crate in "${crates[@]}"; do

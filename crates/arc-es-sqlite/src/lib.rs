@@ -10,6 +10,8 @@
 
 use arc_core::audit::AuditMetadata;
 use arc_core::event::Event;
+#[cfg(test)]
+use arc_core::event::NewEvent;
 use arc_core::event_store::{
     validate_audit_batch, EventStore, EventStoreError, EventStoreResult, VersionCheck,
 };
@@ -223,7 +225,7 @@ mod schema {
     }
 
     diesel::table! {
-        snapshots (aggregate_id) {
+        snapshots (aggregate_type, aggregate_id) {
             aggregate_id -> Text,
             aggregate_type -> Text,
             version -> BigInt,
@@ -351,6 +353,7 @@ fn verify_integrity_records(
 
 fn previous_signature_for_aggregate(
     conn: &mut SqliteConnection,
+    aggregate_type: Option<&str>,
     aggregate_id: &str,
     before_sequence: i64,
 ) -> EventStoreResult<EventSignature> {
@@ -358,9 +361,14 @@ fn previous_signature_for_aggregate(
         return Ok(EventSignature::genesis());
     }
 
-    let record = events::table
+    let mut query = events::table
         .filter(events::aggregate_id.eq(aggregate_id))
         .filter(events::sequence.lt(before_sequence))
+        .into_boxed();
+    if let Some(aggregate_type) = aggregate_type {
+        query = query.filter(events::aggregate_type.eq(aggregate_type));
+    }
+    let record = query
         .order(events::sequence.desc())
         .first::<EventRecord>(conn)
         .optional()
@@ -379,14 +387,20 @@ fn verify_stream_integrity_records(
 ) -> EventStoreResult<Vec<Event>> {
     use std::collections::HashMap;
 
-    let mut previous_by_aggregate: HashMap<String, EventSignature> = HashMap::new();
+    let mut previous_by_aggregate: HashMap<(String, String), EventSignature> = HashMap::new();
     let mut events = Vec::with_capacity(records.len());
 
     for record in records {
         let event = record.to_event()?;
-        let previous = match previous_by_aggregate.get(&event.aggregate_id) {
+        let stream = (event.aggregate_type.clone(), event.aggregate_id.clone());
+        let previous = match previous_by_aggregate.get(&stream) {
             Some(sig) => sig.clone(),
-            None => previous_signature_for_aggregate(conn, &event.aggregate_id, event.sequence)?,
+            None => previous_signature_for_aggregate(
+                conn,
+                Some(&event.aggregate_type),
+                &event.aggregate_id,
+                event.sequence,
+            )?,
         };
 
         let expected = integrity.chain.sign_event(&previous, &event)?;
@@ -399,7 +413,7 @@ fn verify_stream_integrity_records(
             }));
         }
 
-        previous_by_aggregate.insert(event.aggregate_id.clone(), claimed);
+        previous_by_aggregate.insert(stream, claimed);
         events.push(event);
     }
 
@@ -414,6 +428,21 @@ impl EventStore for SqliteEventStore {
         version_check: VersionCheck,
         new_events: Vec<Event>,
     ) -> EventStoreResult<()> {
+        let aggregate_type = new_events
+            .first()
+            .map(|event| event.aggregate_type.clone())
+            .unwrap_or_default();
+        self.append_to(&aggregate_type, aggregate_id, version_check, new_events)
+            .await
+    }
+
+    async fn append_to(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        version_check: VersionCheck,
+        new_events: Vec<Event>,
+    ) -> EventStoreResult<()> {
         if new_events.is_empty() {
             return Ok(());
         }
@@ -421,6 +450,7 @@ impl EventStore for SqliteEventStore {
         // Defense-in-depth: reject any event with invalid audit before touching the DB.
         validate_audit_batch(aggregate_id, &new_events)?;
 
+        let aggregate_type = aggregate_type.to_string();
         let aggregate_id = aggregate_id.to_string();
         let pool = self.pool.clone();
         let integrity = self.integrity.clone();
@@ -438,6 +468,7 @@ impl EventStore for SqliteEventStore {
 
             let result = (|| -> EventStoreResult<()> {
                 let current_version = events::table
+                    .filter(events::aggregate_type.eq(&aggregate_type))
                     .filter(events::aggregate_id.eq(&aggregate_id))
                     .select(diesel::dsl::max(events::sequence))
                     .first::<Option<i64>>(&mut *conn)
@@ -465,7 +496,12 @@ impl EventStore for SqliteEventStore {
                 }
 
                 let mut previous_signature = if integrity.is_some() {
-                    previous_signature_for_aggregate(&mut conn, &aggregate_id, current_version + 1)?
+                    previous_signature_for_aggregate(
+                        &mut conn,
+                        Some(&aggregate_type),
+                        &aggregate_id,
+                        current_version + 1,
+                    )?
                 } else {
                     EventSignature::genesis()
                 };
@@ -514,6 +550,14 @@ impl EventStore for SqliteEventStore {
         self.load_from(aggregate_id, 1).await
     }
 
+    async fn load_stream(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Vec<Event>> {
+        self.load_stream_from(aggregate_type, aggregate_id, 1).await
+    }
+
     async fn load_from(
         &self,
         aggregate_id: &str,
@@ -537,11 +581,56 @@ impl EventStore for SqliteEventStore {
 
             match integrity.as_ref() {
                 Some(integrity) => {
-                    let previous =
-                        previous_signature_for_aggregate(&mut conn, &aggregate_id, from_sequence)?;
+                    let previous = previous_signature_for_aggregate(
+                        &mut conn,
+                        None,
+                        &aggregate_id,
+                        from_sequence,
+                    )?;
                     verify_integrity_records(integrity, &records, previous)
                 }
                 None => records.iter().map(|r| r.to_event()).collect(),
+            }
+        })
+        .await
+        .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
+    }
+
+    async fn load_stream_from(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        from_sequence: i64,
+    ) -> EventStoreResult<Vec<Event>> {
+        let aggregate_type = aggregate_type.to_string();
+        let aggregate_id = aggregate_id.to_string();
+        let pool = self.pool.clone();
+        let integrity = self.integrity.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
+
+            let records: Vec<EventRecord> = events::table
+                .filter(events::aggregate_type.eq(&aggregate_type))
+                .filter(events::aggregate_id.eq(&aggregate_id))
+                .filter(events::sequence.ge(from_sequence))
+                .order(events::sequence.asc())
+                .load(&mut conn)
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+            match integrity.as_ref() {
+                Some(integrity) => {
+                    let previous = previous_signature_for_aggregate(
+                        &mut conn,
+                        Some(&aggregate_type),
+                        &aggregate_id,
+                        from_sequence,
+                    )?;
+                    verify_integrity_records(integrity, &records, previous)
+                }
+                None => records.iter().map(|record| record.to_event()).collect(),
             }
         })
         .await
@@ -594,6 +683,31 @@ impl EventStore for SqliteEventStore {
         .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
     }
 
+    async fn get_stream_version(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<i64> {
+        let aggregate_type = aggregate_type.to_string();
+        let aggregate_id = aggregate_id.to_string();
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
+            events::table
+                .filter(events::aggregate_type.eq(&aggregate_type))
+                .filter(events::aggregate_id.eq(&aggregate_id))
+                .select(diesel::dsl::max(events::sequence))
+                .first::<Option<i64>>(&mut conn)
+                .map(|version| version.unwrap_or(0))
+                .map_err(|e| EventStoreError::database(e.to_string()))
+        })
+        .await
+        .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
+    }
+
     async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
         let record = NewSnapshotRecord::from_snapshot(snapshot)?;
         let pool = self.pool.clone();
@@ -607,10 +721,9 @@ impl EventStore for SqliteEventStore {
             // than accumulating stale versions.
             diesel::insert_into(snapshots::table)
                 .values(&record)
-                .on_conflict(snapshots::aggregate_id)
+                .on_conflict((snapshots::aggregate_type, snapshots::aggregate_id))
                 .do_update()
                 .set((
-                    snapshots::aggregate_type.eq(&record.aggregate_type),
                     snapshots::version.eq(record.version),
                     snapshots::state.eq(&record.state),
                     snapshots::created_at.eq(record.created_at),
@@ -640,6 +753,33 @@ impl EventStore for SqliteEventStore {
                 .map_err(|e| EventStoreError::database(e.to_string()))?;
 
             record.map(|r| r.to_snapshot()).transpose()
+        })
+        .await
+        .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
+    }
+
+    async fn load_snapshot_for(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Option<Snapshot>> {
+        let aggregate_type = aggregate_type.to_string();
+        let aggregate_id = aggregate_id.to_string();
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                EventStoreError::database(format!("Failed to get connection: {}", e))
+            })?;
+
+            let record: Option<SnapshotRecord> = snapshots::table
+                .filter(snapshots::aggregate_type.eq(&aggregate_type))
+                .filter(snapshots::aggregate_id.eq(&aggregate_id))
+                .first::<SnapshotRecord>(&mut conn)
+                .optional()
+                .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+            record.map(|record| record.to_snapshot()).transpose()
         })
         .await
         .map_err(|e| EventStoreError::other(format!("Task join error: {}", e)))?
@@ -693,8 +833,14 @@ mod tests {
         event_type: &str,
         payload: serde_json::Value,
     ) -> Event {
-        Event::new(agg_type, agg_id, sequence, event_type, payload)
-            .with_audit(AuditMetadata::test_default())
+        Event::new(NewEvent {
+            aggregate_type: agg_type,
+            aggregate_id: agg_id,
+            sequence,
+            event_type,
+            payload,
+        })
+        .with_audit(AuditMetadata::test_default())
     }
 
     #[derive(QueryableByName, Debug)]
@@ -727,6 +873,50 @@ mod tests {
         assert_eq!(loaded[0].event_type, "UserCreated");
         assert_eq!(loaded[0].sequence, 1);
         assert_eq!(loaded[0].audit.actor_id, "test");
+    }
+
+    #[tokio::test]
+    async fn same_instance_id_is_isolated_by_aggregate_type() {
+        let store = setup_test_store().await;
+        store
+            .append_to(
+                "Product",
+                "shared-id",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "Product",
+                    "shared-id",
+                    1,
+                    "ProductCreated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+        store
+            .append_to(
+                "Order",
+                "shared-id",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "Order",
+                    "shared-id",
+                    1,
+                    "OrderPlaced",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.load_stream("Product", "shared-id").await.unwrap()[0].event_type,
+            "ProductCreated"
+        );
+        assert_eq!(
+            store.load_stream("Order", "shared-id").await.unwrap()[0].event_type,
+            "OrderPlaced"
+        );
     }
 
     #[tokio::test]
@@ -1096,8 +1286,14 @@ mod tests {
         let expected_corr = audit.correlation_id;
         let expected_caus = audit.causation_id;
 
-        let event =
-            Event::new("User", "u-audit", 1, "UserCreated", json!({})).with_audit(audit.clone());
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u-audit",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        })
+        .with_audit(audit.clone());
 
         store
             .append("u-audit", VersionCheck::New, vec![event])
@@ -1124,7 +1320,13 @@ mod tests {
     async fn test_append_rejects_pending_audit() {
         let store = setup_test_store().await;
         // Built without with_audit — audit stays pending.
-        let event = Event::new("User", "u-bad", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u-bad",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         let err = store
             .append("u-bad", VersionCheck::New, vec![event])
             .await
@@ -1140,7 +1342,14 @@ mod tests {
         let store = setup_test_store().await;
         let mut a = AuditMetadata::test_default();
         a.actor_id = "alice-uuid".to_string();
-        let event = Event::new("User", "u1", 1, "UserCreated", json!({})).with_audit(a);
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        })
+        .with_audit(a);
         store
             .append("u1", VersionCheck::New, vec![event])
             .await
@@ -1369,13 +1578,13 @@ mod tests {
                 self.v
             }
             async fn handle(&self, c: Self::Command) -> Result<Vec<CoreEvent>, Self::Error> {
-                Ok(vec![CoreEvent::new(
-                    "Counter",
-                    &c.id,
-                    self.v + 1,
-                    "Incremented",
-                    serde_json::json!({}),
-                )])
+                Ok(vec![CoreEvent::new(NewEvent {
+                    aggregate_type: "Counter",
+                    aggregate_id: &c.id,
+                    sequence: self.v + 1,
+                    event_type: "Incremented",
+                    payload: serde_json::json!({}),
+                })])
             }
             fn apply(&mut self, e: &CoreEvent) {
                 self.v = e.sequence;

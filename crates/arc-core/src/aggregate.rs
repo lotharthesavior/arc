@@ -110,7 +110,7 @@
 //!
 //! ```rust
 //! use arc_core::aggregate::Aggregate;
-//! use arc_core::event::Event;
+//! use arc_core::event::{Event, NewEvent};
 //! use thiserror::Error;
 //!
 //! # use serde::{Deserialize, Serialize};
@@ -187,30 +187,30 @@
 //!                 }
 //!
 //!                 // Produce event
-//!                 Ok(vec![Event::new(
-//!                     "User",
-//!                     &id,
-//!                     self.version + 1,
-//!                     "UserCreated",
-//!                     serde_json::json!({
-//!                         "id": id,
-//!                         "name": name,
-//!                         "email": email,
-//!                     }),
-//!                 )])
+//!                 Ok(vec![Event::new(NewEvent {
+//!                             aggregate_type: "User",
+//!                             aggregate_id: &id,
+//!                             sequence: self.version + 1,
+//!                             event_type: "UserCreated",
+//!                             payload: serde_json::json!({
+//!                                                         "id": id,
+//!                                                         "name": name,
+//!                                                         "email": email,
+//!                                                     }),
+//!                         })])
 //!             }
 //!             UserCommand::UpdateProfile { id, name } => {
 //!                 if !self.created {
 //!                     return Err(UserError::NotFound);
 //!                 }
 //!
-//!                 Ok(vec![Event::new(
-//!                     "User",
-//!                     &id,
-//!                     self.version + 1,
-//!                     "ProfileUpdated",
-//!                     serde_json::json!({ "name": name }),
-//!                 )])
+//!                 Ok(vec![Event::new(NewEvent {
+//!                             aggregate_type: "User",
+//!                             aggregate_id: &id,
+//!                             sequence: self.version + 1,
+//!                             event_type: "ProfileUpdated",
+//!                             payload: serde_json::json!({ "name": name }),
+//!                         })])
 //!             }
 //!             UserCommand::ChangeEmail { id, email } => {
 //!                 if !self.created {
@@ -221,13 +221,13 @@
 //!                     return Err(UserError::InvalidEmail);
 //!                 }
 //!
-//!                 Ok(vec![Event::new(
-//!                     "User",
-//!                     &id,
-//!                     self.version + 1,
-//!                     "EmailChanged",
-//!                     serde_json::json!({ "email": email }),
-//!                 )])
+//!                 Ok(vec![Event::new(NewEvent {
+//!                             aggregate_type: "User",
+//!                             aggregate_id: &id,
+//!                             sequence: self.version + 1,
+//!                             event_type: "EmailChanged",
+//!                             payload: serde_json::json!({ "email": email }),
+//!                         })])
 //!             }
 //!         }
 //!     }
@@ -258,7 +258,7 @@
 //!
 //! ```rust,no_run
 //! # use arc_core::aggregate::Aggregate;
-//! # use arc_core::event::Event;
+//! # use arc_core::event::{Event, NewEvent};
 //! # use thiserror::Error;
 //! # use serde::{Deserialize, Serialize};
 //! # use arc_core::aggregate::Command;
@@ -345,7 +345,7 @@
 //!
 //! ```rust
 //! # use arc_core::aggregate::Aggregate;
-//! # use arc_core::event::Event;
+//! # use arc_core::event::{Event, NewEvent};
 //! # use thiserror::Error;
 //! # use serde::{Deserialize, Serialize};
 //! # use arc_core::aggregate::Command;
@@ -399,8 +399,13 @@
 //! #                 if !email.contains('@') {
 //! #                     return Err(UserError::InvalidEmail);
 //! #                 }
-//! #                 Ok(vec![Event::new("User", &id, self.version + 1, "UserCreated",
-//! #                     serde_json::json!({ "id": id, "name": name, "email": email }))])
+//! #                 Ok(vec![Event::new(NewEvent {
+//! #                             aggregate_type: "User",
+//! #                             aggregate_id: &id,
+//! #                             sequence: self.version + 1,
+//! #                             event_type: "UserCreated",
+//! #                             payload: serde_json::json!({ "id": id, "name": name, "email": email }),
+//! #                         })])
 //! #             }
 //! #         }
 //! #     }
@@ -455,17 +460,17 @@
 //! async fn test_cannot_create_twice() {
 //!     // Given: An existing user (reconstructed from events)
 //!     let mut aggregate = UserAggregate::default();
-//!     let event = Event::new(
-//!         "User",
-//!         "user-789",
-//!         1,
-//!         "UserCreated",
-//!         serde_json::json!({
-//!             "id": "user-789",
-//!             "name": "Charlie",
-//!             "email": "charlie@example.com"
-//!         }),
-//!     );
+//!     let event = Event::new(NewEvent {
+//!                     aggregate_type: "User",
+//!                     aggregate_id: "user-789",
+//!                     sequence: 1,
+//!                     event_type: "UserCreated",
+//!                     payload: serde_json::json!({
+//!                                     "id": "user-789",
+//!                                     "name": "Charlie",
+//!                                     "email": "charlie@example.com"
+//!                                 }),
+//!                 });
 //!     aggregate.apply(&event);
 //!
 //!     // When: Trying to create the user again
@@ -497,9 +502,27 @@
 //!
 //!             // Produce multiple events
 //!             Ok(vec![
-//!                 Event::new("Order", &order_id, self.version + 1, "OrderPlaced", ...),
-//!                 Event::new("Order", &order_id, self.version + 2, "InventoryReserved", ...),
-//!                 Event::new("Order", &order_id, self.version + 3, "PaymentRequested", ...),
+//!                 Event::new(NewEvent {
+//!                     aggregate_type: "Order",
+//!                     aggregate_id: &order_id,
+//!                     sequence: self.version + 1,
+//!                     event_type: "OrderPlaced",
+//!                     payload: ...,
+//!                 }),
+//!                 Event::new(NewEvent {
+//!                     aggregate_type: "Order",
+//!                     aggregate_id: &order_id,
+//!                     sequence: self.version + 2,
+//!                     event_type: "InventoryReserved",
+//!                     payload: ...,
+//!                 }),
+//!                 Event::new(NewEvent {
+//!                     aggregate_type: "Order",
+//!                     aggregate_id: &order_id,
+//!                     sequence: self.version + 3,
+//!                     event_type: "PaymentRequested",
+//!                     payload: ...,
+//!                 }),
 //!             ])
 //!         }
 //!     }
@@ -519,7 +542,13 @@
 //!                 return Ok(vec![]);
 //!             }
 //!
-//!             Ok(vec![Event::new("User", &id, self.version + 1, "UserActivated", ...)])
+//!             Ok(vec![Event::new(NewEvent {
+//!                         aggregate_type: "User",
+//!                         aggregate_id: &id,
+//!                         sequence: self.version + 1,
+//!                         event_type: "UserActivated",
+//!                         payload: ...,
+//!                     })])
 //!         }
 //!     }
 //! }
@@ -543,13 +572,21 @@
 //!                 return Err(AccountError::DailyLimitExceeded);
 //!             }
 //!
-//!             Ok(vec![Event::new("Account", &self.id, self.version + 1, "Withdrawn", ...)])
+//!             Ok(vec![Event::new(NewEvent {
+//!                         aggregate_type: "Account",
+//!                         aggregate_id: &self.id,
+//!                         sequence: self.version + 1,
+//!                         event_type: "Withdrawn",
+//!                         payload: ...,
+//!                     })])
 //!         }
 //!     }
 //! }
 //! ```
 
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 use async_trait::async_trait;
 use std::error::Error;
 
@@ -675,7 +712,7 @@ pub trait Aggregate: Send + Sync + Default {
     ///
     /// ```rust
     /// # use arc_core::aggregate::{Aggregate, Command};
-    /// # use arc_core::event::Event;
+    /// # use arc_core::event::{Event, NewEvent};
     /// # use thiserror::Error;
     /// #
     /// # #[derive(Debug)]
@@ -722,7 +759,7 @@ pub trait Aggregate: Send + Sync + Default {
     ///
     /// ```rust
     /// # use arc_core::aggregate::{Aggregate, Command};
-    /// # use arc_core::event::Event;
+    /// # use arc_core::event::{Event, NewEvent};
     /// # use thiserror::Error;
     /// #
     /// # #[derive(Debug)]
@@ -801,7 +838,13 @@ pub trait Aggregate: Send + Sync + Default {
     ///             }
     ///
     ///             // Produce event
-    ///             Ok(vec![Event::new("User", &id, self.version + 1, "UserCreated", ...)])
+    ///             Ok(vec![Event::new(NewEvent {
+    ///                         aggregate_type: "User",
+    ///                         aggregate_id: &id,
+    ///                         sequence: self.version + 1,
+    ///                         event_type: "UserCreated",
+    ///                         payload: ...,
+    ///                     })])
     ///         }
     ///     }
     /// }
@@ -865,7 +908,7 @@ pub trait Aggregate: Send + Sync + Default {
     ///
     /// ```rust
     /// # use arc_core::aggregate::{Aggregate, Command};
-    /// # use arc_core::event::Event;
+    /// # use arc_core::event::{Event, NewEvent};
     /// # use thiserror::Error;
     /// #
     /// # #[derive(Debug)]
@@ -905,8 +948,20 @@ pub trait Aggregate: Send + Sync + Default {
     /// #
     /// // Load events from event store
     /// let events = vec![
-    ///     Event::new("User", "user-123", 1, "UserCreated", serde_json::json!({"id": "user-123"})),
-    ///     Event::new("User", "user-123", 2, "ProfileUpdated", serde_json::json!({"name": "Alice"})),
+    ///     Event::new(NewEvent {
+    ///         aggregate_type: "User",
+    ///         aggregate_id: "user-123",
+    ///         sequence: 1,
+    ///         event_type: "UserCreated",
+    ///         payload: serde_json::json!({"id": "user-123"}),
+    ///     }),
+    ///     Event::new(NewEvent {
+    ///         aggregate_type: "User",
+    ///         aggregate_id: "user-123",
+    ///         sequence: 2,
+    ///         event_type: "ProfileUpdated",
+    ///         payload: serde_json::json!({"name": "Alice"}),
+    ///     }),
     /// ];
     ///
     /// // Reconstruct aggregate
@@ -1019,13 +1074,13 @@ mod tests {
                         return Err(CounterError::AlreadyExists);
                     }
 
-                    Ok(vec![Event::new(
-                        "Counter",
-                        &id,
-                        self.version + 1,
-                        "Created",
-                        serde_json::json!({ "id": id }),
-                    )])
+                    Ok(vec![Event::new(NewEvent {
+                        aggregate_type: "Counter",
+                        aggregate_id: &id,
+                        sequence: self.version + 1,
+                        event_type: "Created",
+                        payload: serde_json::json!({ "id": id }),
+                    })])
                 }
                 CounterCommand::Increment { id, amount } => {
                     if !self.created {
@@ -1036,13 +1091,13 @@ mod tests {
                         return Err(CounterError::InvalidAmount);
                     }
 
-                    Ok(vec![Event::new(
-                        "Counter",
-                        &id,
-                        self.version + 1,
-                        "Incremented",
-                        serde_json::json!({ "amount": amount }),
-                    )])
+                    Ok(vec![Event::new(NewEvent {
+                        aggregate_type: "Counter",
+                        aggregate_id: &id,
+                        sequence: self.version + 1,
+                        event_type: "Incremented",
+                        payload: serde_json::json!({ "amount": amount }),
+                    })])
                 }
                 CounterCommand::Decrement { id, amount } => {
                     if !self.created {
@@ -1057,13 +1112,13 @@ mod tests {
                         return Err(CounterError::WouldGoNegative);
                     }
 
-                    Ok(vec![Event::new(
-                        "Counter",
-                        &id,
-                        self.version + 1,
-                        "Decremented",
-                        serde_json::json!({ "amount": amount }),
-                    )])
+                    Ok(vec![Event::new(NewEvent {
+                        aggregate_type: "Counter",
+                        aggregate_id: &id,
+                        sequence: self.version + 1,
+                        event_type: "Decremented",
+                        payload: serde_json::json!({ "amount": amount }),
+                    })])
                 }
             }
         }
@@ -1123,13 +1178,13 @@ mod tests {
     #[tokio::test]
     async fn test_cannot_create_twice() {
         let mut aggregate = CounterAggregate::default();
-        let event = Event::new(
-            "Counter",
-            "counter-1",
-            1,
-            "Created",
-            serde_json::json!({ "id": "counter-1" }),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "Counter",
+            aggregate_id: "counter-1",
+            sequence: 1,
+            event_type: "Created",
+            payload: serde_json::json!({ "id": "counter-1" }),
+        });
         aggregate.apply(&event);
 
         let command = CounterCommand::Create {
@@ -1143,13 +1198,13 @@ mod tests {
     #[tokio::test]
     async fn test_increment_counter() {
         let mut aggregate = CounterAggregate::default();
-        let event = Event::new(
-            "Counter",
-            "counter-1",
-            1,
-            "Created",
-            serde_json::json!({ "id": "counter-1" }),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "Counter",
+            aggregate_id: "counter-1",
+            sequence: 1,
+            event_type: "Created",
+            payload: serde_json::json!({ "id": "counter-1" }),
+        });
         aggregate.apply(&event);
 
         let command = CounterCommand::Increment {
@@ -1182,20 +1237,20 @@ mod tests {
 
         // Create and increment to 10
         let events = vec![
-            Event::new(
-                "Counter",
-                "counter-1",
-                1,
-                "Created",
-                serde_json::json!({ "id": "counter-1" }),
-            ),
-            Event::new(
-                "Counter",
-                "counter-1",
-                2,
-                "Incremented",
-                serde_json::json!({ "amount": 10 }),
-            ),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 1,
+                event_type: "Created",
+                payload: serde_json::json!({ "id": "counter-1" }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 2,
+                event_type: "Incremented",
+                payload: serde_json::json!({ "amount": 10 }),
+            }),
         ];
 
         for event in events {
@@ -1220,20 +1275,20 @@ mod tests {
         let mut aggregate = CounterAggregate::default();
 
         let events = vec![
-            Event::new(
-                "Counter",
-                "counter-1",
-                1,
-                "Created",
-                serde_json::json!({ "id": "counter-1" }),
-            ),
-            Event::new(
-                "Counter",
-                "counter-1",
-                2,
-                "Incremented",
-                serde_json::json!({ "amount": 5 }),
-            ),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 1,
+                event_type: "Created",
+                payload: serde_json::json!({ "id": "counter-1" }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 2,
+                event_type: "Incremented",
+                payload: serde_json::json!({ "amount": 5 }),
+            }),
         ];
 
         for event in events {
@@ -1255,34 +1310,34 @@ mod tests {
     #[tokio::test]
     async fn test_from_events() {
         let events = vec![
-            Event::new(
-                "Counter",
-                "counter-1",
-                1,
-                "Created",
-                serde_json::json!({ "id": "counter-1" }),
-            ),
-            Event::new(
-                "Counter",
-                "counter-1",
-                2,
-                "Incremented",
-                serde_json::json!({ "amount": 5 }),
-            ),
-            Event::new(
-                "Counter",
-                "counter-1",
-                3,
-                "Incremented",
-                serde_json::json!({ "amount": 3 }),
-            ),
-            Event::new(
-                "Counter",
-                "counter-1",
-                4,
-                "Decremented",
-                serde_json::json!({ "amount": 2 }),
-            ),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 1,
+                event_type: "Created",
+                payload: serde_json::json!({ "id": "counter-1" }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 2,
+                event_type: "Incremented",
+                payload: serde_json::json!({ "amount": 5 }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 3,
+                event_type: "Incremented",
+                payload: serde_json::json!({ "amount": 3 }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "Counter",
+                aggregate_id: "counter-1",
+                sequence: 4,
+                event_type: "Decremented",
+                payload: serde_json::json!({ "amount": 2 }),
+            }),
         ];
 
         let aggregate = CounterAggregate::from_events(events);
@@ -1298,23 +1353,23 @@ mod tests {
         assert_eq!(aggregate.version(), 0);
 
         let mut aggregate = CounterAggregate::default();
-        let event1 = Event::new(
-            "Counter",
-            "counter-1",
-            1,
-            "Created",
-            serde_json::json!({ "id": "counter-1" }),
-        );
+        let event1 = Event::new(NewEvent {
+            aggregate_type: "Counter",
+            aggregate_id: "counter-1",
+            sequence: 1,
+            event_type: "Created",
+            payload: serde_json::json!({ "id": "counter-1" }),
+        });
         aggregate.apply(&event1);
         assert_eq!(aggregate.version(), 1);
 
-        let event2 = Event::new(
-            "Counter",
-            "counter-1",
-            2,
-            "Incremented",
-            serde_json::json!({ "amount": 5 }),
-        );
+        let event2 = Event::new(NewEvent {
+            aggregate_type: "Counter",
+            aggregate_id: "counter-1",
+            sequence: 2,
+            event_type: "Incremented",
+            payload: serde_json::json!({ "amount": 5 }),
+        });
         aggregate.apply(&event2);
         assert_eq!(aggregate.version(), 2);
     }
@@ -1382,13 +1437,13 @@ mod tests {
         let mut aggregate = CounterAggregate::default();
 
         // Unknown event type should be silently ignored
-        let event = Event::new(
-            "Counter",
-            "counter-1",
-            1,
-            "UnknownEvent",
-            serde_json::json!({}),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "Counter",
+            aggregate_id: "counter-1",
+            sequence: 1,
+            event_type: "UnknownEvent",
+            payload: serde_json::json!({}),
+        });
 
         aggregate.apply(&event);
 

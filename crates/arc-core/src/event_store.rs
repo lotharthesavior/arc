@@ -19,6 +19,8 @@
 
 use crate::audit::AuditError;
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 use crate::integrity::IntegrityError;
 use crate::snapshot::Snapshot;
 use async_trait::async_trait;
@@ -169,7 +171,32 @@ pub trait EventStore: Send + Sync {
         events: Vec<Event>,
     ) -> EventStoreResult<()>;
 
+    /// Append to the stream identified by aggregate type and instance ID.
+    ///
+    /// The default preserves compatibility with stores that historically keyed
+    /// streams only by instance ID. Multi-aggregate stores override this to
+    /// enforce `(aggregate_type, aggregate_id, sequence)` identity.
+    async fn append_to(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        version_check: VersionCheck,
+        events: Vec<Event>,
+    ) -> EventStoreResult<()> {
+        let _ = aggregate_type;
+        self.append(aggregate_id, version_check, events).await
+    }
+
     async fn load(&self, aggregate_id: &str) -> EventStoreResult<Vec<Event>>;
+
+    async fn load_stream(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Vec<Event>> {
+        let _ = aggregate_type;
+        self.load(aggregate_id).await
+    }
 
     async fn load_from(
         &self,
@@ -177,9 +204,28 @@ pub trait EventStore: Send + Sync {
         from_sequence: i64,
     ) -> EventStoreResult<Vec<Event>>;
 
+    async fn load_stream_from(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        from_sequence: i64,
+    ) -> EventStoreResult<Vec<Event>> {
+        let _ = aggregate_type;
+        self.load_from(aggregate_id, from_sequence).await
+    }
+
     async fn stream_all(&self, from_position: i64) -> EventStoreResult<Vec<Event>>;
 
     async fn get_version(&self, aggregate_id: &str) -> EventStoreResult<i64>;
+
+    async fn get_stream_version(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<i64> {
+        let _ = aggregate_type;
+        self.get_version(aggregate_id).await
+    }
 
     /// Persist an aggregate snapshot (upsert by `aggregate_id`).
     ///
@@ -198,6 +244,15 @@ pub trait EventStore: Send + Sync {
     async fn load_snapshot(&self, aggregate_id: &str) -> EventStoreResult<Option<Snapshot>> {
         let _ = aggregate_id;
         Ok(None)
+    }
+
+    async fn load_snapshot_for(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Option<Snapshot>> {
+        let _ = aggregate_type;
+        self.load_snapshot(aggregate_id).await
     }
 }
 
@@ -220,7 +275,7 @@ mod in_memory {
     #[derive(Clone, Default)]
     pub struct InMemoryEventStore {
         events: Arc<TokioMutex<Vec<Event>>>,
-        snapshots: Arc<TokioMutex<HashMap<String, Snapshot>>>,
+        snapshots: Arc<TokioMutex<HashMap<(String, String), Snapshot>>>,
     }
 
     impl InMemoryEventStore {
@@ -262,11 +317,58 @@ mod in_memory {
             Ok(())
         }
 
+        async fn append_to(
+            &self,
+            aggregate_type: &str,
+            aggregate_id: &str,
+            version_check: VersionCheck,
+            events: Vec<Event>,
+        ) -> EventStoreResult<()> {
+            validate_audit_batch(aggregate_id, &events)?;
+            let mut store = self.events.lock().await;
+            let current_version = store
+                .iter()
+                .filter(|event| {
+                    event.aggregate_type == aggregate_type && event.aggregate_id == aggregate_id
+                })
+                .map(|event| event.sequence)
+                .max()
+                .unwrap_or(0);
+
+            if let Some(expected) = version_check.version() {
+                if current_version != expected {
+                    return Err(EventStoreError::ConcurrencyConflict {
+                        aggregate_id: aggregate_id.to_string(),
+                        expected,
+                        actual: current_version,
+                    });
+                }
+            }
+
+            store.extend(events);
+            Ok(())
+        }
+
         async fn load(&self, aggregate_id: &str) -> EventStoreResult<Vec<Event>> {
             let store = self.events.lock().await;
             Ok(store
                 .iter()
                 .filter(|e| e.aggregate_id == aggregate_id)
+                .cloned()
+                .collect())
+        }
+
+        async fn load_stream(
+            &self,
+            aggregate_type: &str,
+            aggregate_id: &str,
+        ) -> EventStoreResult<Vec<Event>> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|event| {
+                    event.aggregate_type == aggregate_type && event.aggregate_id == aggregate_id
+                })
                 .cloned()
                 .collect())
         }
@@ -280,6 +382,24 @@ mod in_memory {
             Ok(store
                 .iter()
                 .filter(|e| e.aggregate_id == aggregate_id && e.sequence >= from_sequence)
+                .cloned()
+                .collect())
+        }
+
+        async fn load_stream_from(
+            &self,
+            aggregate_type: &str,
+            aggregate_id: &str,
+            from_sequence: i64,
+        ) -> EventStoreResult<Vec<Event>> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|event| {
+                    event.aggregate_type == aggregate_type
+                        && event.aggregate_id == aggregate_id
+                        && event.sequence >= from_sequence
+                })
                 .cloned()
                 .collect())
         }
@@ -299,15 +419,51 @@ mod in_memory {
                 .unwrap_or(0))
         }
 
+        async fn get_stream_version(
+            &self,
+            aggregate_type: &str,
+            aggregate_id: &str,
+        ) -> EventStoreResult<i64> {
+            let store = self.events.lock().await;
+            Ok(store
+                .iter()
+                .filter(|event| {
+                    event.aggregate_type == aggregate_type && event.aggregate_id == aggregate_id
+                })
+                .map(|event| event.sequence)
+                .max()
+                .unwrap_or(0))
+        }
+
         async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
             let mut snapshots = self.snapshots.lock().await;
-            snapshots.insert(snapshot.aggregate_id.clone(), snapshot.clone());
+            snapshots.insert(
+                (
+                    snapshot.aggregate_type.clone(),
+                    snapshot.aggregate_id.clone(),
+                ),
+                snapshot.clone(),
+            );
             Ok(())
         }
 
         async fn load_snapshot(&self, aggregate_id: &str) -> EventStoreResult<Option<Snapshot>> {
             let snapshots = self.snapshots.lock().await;
-            Ok(snapshots.get(aggregate_id).cloned())
+            Ok(snapshots
+                .iter()
+                .find(|((_, id), _)| id == aggregate_id)
+                .map(|(_, snapshot)| snapshot.clone()))
+        }
+
+        async fn load_snapshot_for(
+            &self,
+            aggregate_type: &str,
+            aggregate_id: &str,
+        ) -> EventStoreResult<Option<Snapshot>> {
+            let snapshots = self.snapshots.lock().await;
+            Ok(snapshots
+                .get(&(aggregate_type.to_string(), aggregate_id.to_string()))
+                .cloned())
         }
     }
 }
@@ -357,7 +513,13 @@ mod tests {
 
     #[test]
     fn test_validate_audit_batch_rejects_pending() {
-        let mut e = Event::new("User", "u1", 1, "X", json!({}));
+        let mut e = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u1",
+            sequence: 1,
+            event_type: "X",
+            payload: json!({}),
+        });
         e.audit = AuditMetadata::pending();
         let err = validate_audit_batch("u1", &[e]).unwrap_err();
         assert!(matches!(
@@ -368,15 +530,27 @@ mod tests {
 
     #[test]
     fn test_validate_audit_batch_passes_stamped() {
-        let e =
-            Event::new("User", "u1", 1, "X", json!({})).with_audit(AuditMetadata::test_default());
+        let e = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u1",
+            sequence: 1,
+            event_type: "X",
+            payload: json!({}),
+        })
+        .with_audit(AuditMetadata::test_default());
         validate_audit_batch("u1", &[e]).expect("stamped audit must pass");
     }
 
     #[tokio::test]
     async fn test_in_memory_store_rejects_pending_audit() {
         let store = InMemoryEventStore::new();
-        let e = Event::new("User", "u1", 1, "X", json!({})); // pending
+        let e = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u1",
+            sequence: 1,
+            event_type: "X",
+            payload: json!({}),
+        }); // pending
         let err = store
             .append("u1", VersionCheck::New, vec![e])
             .await
@@ -387,8 +561,14 @@ mod tests {
     #[tokio::test]
     async fn test_in_memory_store_persists_stamped_event() {
         let store = InMemoryEventStore::new();
-        let e =
-            Event::new("User", "u1", 1, "X", json!({})).with_audit(AuditMetadata::test_default());
+        let e = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "u1",
+            sequence: 1,
+            event_type: "X",
+            payload: json!({}),
+        })
+        .with_audit(AuditMetadata::test_default());
         store
             .append("u1", VersionCheck::New, vec![e])
             .await

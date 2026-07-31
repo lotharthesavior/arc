@@ -16,10 +16,10 @@ CREATE TABLE events (
     correlation_id TEXT NOT NULL,
     integrity_signature TEXT,
     integrity_key_id TEXT,
-    UNIQUE(aggregate_id, sequence)
+    UNIQUE(aggregate_type, aggregate_id, sequence)
 );
 
-CREATE INDEX idx_events_aggregate ON events(aggregate_id, sequence);
+CREATE INDEX idx_events_aggregate ON events(aggregate_type, aggregate_id, sequence);
 CREATE INDEX idx_events_type ON events(event_type);
 CREATE INDEX idx_events_timestamp ON events(timestamp);
 CREATE INDEX idx_events_id ON events(id);
@@ -28,11 +28,12 @@ CREATE INDEX idx_events_correlation_id ON events(correlation_id);
 CREATE INDEX idx_events_integrity_key_id ON events(integrity_key_id);
 
 CREATE TABLE snapshots (
-    aggregate_id TEXT NOT NULL PRIMARY KEY,
     aggregate_type TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
     version BIGINT NOT NULL,
     state TEXT NOT NULL,
-    created_at BIGINT NOT NULL
+    created_at BIGINT NOT NULL,
+    PRIMARY KEY (aggregate_type, aggregate_id)
 );
 
 CREATE TABLE jwt_sessions (

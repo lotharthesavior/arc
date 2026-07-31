@@ -68,6 +68,28 @@ pub struct Event {
     pub timestamp: u64,
 }
 
+/// Named fields required to create a new domain event.
+///
+/// The string fields accept either borrowed values such as `"Product"` or
+/// owned `String` values. `Event::new` converts them into owned strings.
+#[derive(Debug, Clone)]
+pub struct NewEvent<AggregateType, AggregateId, EventType> {
+    /// Aggregate type (for example, `"Product"`).
+    pub aggregate_type: AggregateType,
+
+    /// Aggregate instance identifier.
+    pub aggregate_id: AggregateId,
+
+    /// Next sequence number in this aggregate's event stream.
+    pub sequence: i64,
+
+    /// Event type in past-tense PascalCase (for example, `"ProductCreated"`).
+    pub event_type: EventType,
+
+    /// Event-specific data.
+    pub payload: serde_json::Value,
+}
+
 impl Event {
     /// Create a new event with `audit = AuditMetadata::pending()`.
     ///
@@ -79,32 +101,33 @@ impl Event {
     /// # Example
     ///
     /// ```rust
-    /// use arc_core::event::Event;
+    /// use arc_core::event::{Event, NewEvent};
     /// use serde_json::json;
     ///
-    /// let event = Event::new(
-    ///     "User",
-    ///     "user-456",
-    ///     1,
-    ///     "UserCreated",
-    ///     json!({ "name": "Bob", "email": "bob@example.com" }),
-    /// );
+    /// let event = Event::new(NewEvent {
+    ///     aggregate_type: "User",
+    ///     aggregate_id: "user-456",
+    ///     sequence: 1,
+    ///     event_type: "UserCreated",
+    ///     payload: json!({ "name": "Bob", "email": "bob@example.com" }),
+    /// });
     /// assert!(event.audit.is_pending());
     /// ```
-    pub fn new(
-        aggregate_type: impl Into<String>,
-        aggregate_id: impl Into<String>,
-        sequence: i64,
-        event_type: impl Into<String>,
-        payload: serde_json::Value,
-    ) -> Self {
+    pub fn new<AggregateType, AggregateId, EventType>(
+        event: NewEvent<AggregateType, AggregateId, EventType>,
+    ) -> Self
+    where
+        AggregateType: Into<String>,
+        AggregateId: Into<String>,
+        EventType: Into<String>,
+    {
         Self {
             event_id: Uuid::new_v4(),
-            aggregate_type: aggregate_type.into(),
-            aggregate_id: aggregate_id.into(),
-            sequence,
-            event_type: event_type.into(),
-            payload,
+            aggregate_type: event.aggregate_type.into(),
+            aggregate_id: event.aggregate_id.into(),
+            sequence: event.sequence,
+            event_type: event.event_type.into(),
+            payload: event.payload,
             audit: AuditMetadata::pending(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -139,16 +162,16 @@ mod tests {
 
     #[test]
     fn test_event_creation() {
-        let event = Event::new(
-            "User",
-            "user-123",
-            1,
-            "UserCreated",
-            json!({
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-123",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({
                 "name": "Test User",
                 "email": "test@example.com"
             }),
-        );
+        });
 
         assert_eq!(event.aggregate_type, "User");
         assert_eq!(event.aggregate_id, "user-123");
@@ -162,21 +185,27 @@ mod tests {
     #[test]
     fn test_with_audit_overwrites_pending() {
         let stamp = AuditMetadata::test_default();
-        let event =
-            Event::new("User", "user-1", 1, "UserCreated", json!({})).with_audit(stamp.clone());
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        })
+        .with_audit(stamp.clone());
         assert!(!event.audit.is_pending());
         assert_eq!(event.audit, stamp);
     }
 
     #[test]
     fn test_event_serialization_roundtrips_audit() {
-        let event = Event::new(
-            "User",
-            "user-789",
-            3,
-            "ProfileUpdated",
-            json!({"name": "X"}),
-        )
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-789",
+            sequence: 3,
+            event_type: "ProfileUpdated",
+            payload: json!({"name": "X"}),
+        })
         .with_audit(AuditMetadata::test_default());
 
         let json_str = event.to_json().unwrap();
@@ -188,16 +217,40 @@ mod tests {
 
     #[test]
     fn test_event_ordering() {
-        let event1 = Event::new("User", "user-1", 1, "UserCreated", json!({}));
-        let event2 = Event::new("User", "user-1", 2, "ProfileUpdated", json!({}));
+        let event1 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
+        let event2 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 2,
+            event_type: "ProfileUpdated",
+            payload: json!({}),
+        });
 
         assert!(event1.sequence < event2.sequence);
     }
 
     #[test]
     fn test_event_uniqueness() {
-        let event1 = Event::new("User", "user-1", 1, "UserCreated", json!({}));
-        let event2 = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event1 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
+        let event2 = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         assert_ne!(event1.event_id, event2.event_id);
     }
 }

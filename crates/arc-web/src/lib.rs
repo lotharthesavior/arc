@@ -7,8 +7,10 @@
 //! [`ArcApp::builder`]. No concrete domain type lives here: the runtime is
 //! generic over [`arc_core::aggregate::Aggregate`].
 
-use std::marker::PhantomData;
+use std::any::TypeId;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::{env, fs};
 
@@ -68,50 +70,95 @@ impl ProjectorReg {
     }
 }
 
-/// Entry point to the framework. `ArcApp::builder::<MyAggregate>()` yields a
-/// builder the application configures with its aggregate, projectors, and
-/// routes, then drives with [`ArcAppBuilder::serve`].
+/// Entry point to the framework. Applications register one or more aggregate
+/// types, their projectors, and routes, then drive the result with
+/// [`ArcAppBuilder::serve`].
 pub struct ArcApp;
 
 impl ArcApp {
-    pub fn builder<A: Aggregate + 'static>() -> ArcAppBuilder<A> {
+    pub fn builder() -> ArcAppBuilder {
         ArcAppBuilder {
-            projectors: Vec::new(),
+            aggregates: Vec::new(),
             routes: None,
-            snapshot_policy: None,
-            _marker: PhantomData,
         }
     }
 }
 
 type RoutesFn = dyn Fn(&mut ServiceConfig) + Send + Sync + 'static;
+type AggregateBuildFuture = Pin<
+    Box<
+        dyn Future<Output = std::io::Result<commands::serve::BuiltAggregateRuntime>>
+            + Send
+            + 'static,
+    >,
+>;
+type AggregateBuildFn =
+    dyn FnOnce(Vec<ProjectorReg>, Option<SnapshotPolicy>) -> AggregateBuildFuture + Send + 'static;
 
-/// Application builder, generic over the domain aggregate `A`. The concrete
-/// `A` (e.g. an application's `UserAggregate`) is supplied by the application
-/// crate; the framework never names it.
-pub struct ArcAppBuilder<A: Aggregate + 'static> {
+struct AggregateRegistration {
+    type_id: TypeId,
+    aggregate_type: &'static str,
     projectors: Vec<ProjectorReg>,
-    routes: Option<Arc<RoutesFn>>,
     snapshot_policy: Option<SnapshotPolicy>,
-    _marker: PhantomData<A>,
+    build: Box<AggregateBuildFn>,
 }
 
-impl<A: Aggregate + 'static> ArcAppBuilder<A> {
-    /// Register the aggregate's read-model projectors. They are subscribed to
-    /// the in-process event bus so writes update their views synchronously.
-    pub fn register_aggregate(mut self, projectors: Vec<ProjectorReg>) -> Self {
-        self.projectors = projectors;
+impl AggregateRegistration {
+    fn new<A: Aggregate + 'static>() -> Self {
+        Self {
+            type_id: TypeId::of::<A>(),
+            aggregate_type: A::aggregate_type(),
+            projectors: Vec::new(),
+            snapshot_policy: None,
+            build: Box::new(|projectors, snapshot_policy| {
+                Box::pin(commands::serve::build_aggregate_runtime::<A>(
+                    projectors,
+                    snapshot_policy,
+                ))
+            }),
+        }
+    }
+}
+
+/// Application builder holding type-erased registrations for every aggregate
+/// served by the process. Each registration produces its own typed
+/// `CommandBus<A>` while sharing the configured storage backend.
+pub struct ArcAppBuilder {
+    aggregates: Vec<AggregateRegistration>,
+    routes: Option<Arc<RoutesFn>>,
+}
+
+impl ArcAppBuilder {
+    /// Register a writable aggregate type. Arc creates and injects a distinct
+    /// `CommandBus<A>` for every call.
+    pub fn register_aggregate<A: Aggregate + 'static>(mut self) -> Self {
+        assert!(
+            !self
+                .aggregates
+                .iter()
+                .any(|registration| registration.type_id == TypeId::of::<A>()),
+            "aggregate type {} is already registered",
+            A::aggregate_type()
+        );
+        self.aggregates.push(AggregateRegistration::new::<A>());
         self
     }
 
-    /// Register a single projector (chainable alternative to
-    /// [`register_aggregate`]).
+    /// Register all projectors for the most recently registered aggregate.
+    pub fn register_projectors(mut self, projectors: Vec<ProjectorReg>) -> Self {
+        self.current_aggregate_mut().projectors.extend(projectors);
+        self
+    }
+
+    /// Register a single projector for the most recently registered aggregate.
     pub fn register_projector(
         mut self,
         projector: impl Projector + 'static,
         view: impl Into<String>,
     ) -> Self {
-        self.projectors.push(ProjectorReg::new(projector, view));
+        self.current_aggregate_mut()
+            .projectors
+            .push(ProjectorReg::new(projector, view));
         self
     }
 
@@ -126,26 +173,33 @@ impl<A: Aggregate + 'static> ArcAppBuilder<A> {
         self
     }
 
-    /// Snapshot policy for the aggregate's command bus (e.g. every N events).
+    /// Snapshot policy for the most recently registered aggregate.
     pub fn snapshot_policy(mut self, policy: Option<SnapshotPolicy>) -> Self {
-        self.snapshot_policy = policy;
+        self.current_aggregate_mut().snapshot_policy = policy;
         self
     }
 
-    /// Boot the HTTP server with the configured aggregate, projectors, and
-    /// routes. Equivalent to the old `commands::serve::run`, now generic.
+    fn current_aggregate_mut(&mut self) -> &mut AggregateRegistration {
+        self.aggregates.last_mut().unwrap_or_else(|| {
+            panic!(
+                "register_aggregate::<A>() must be called before registering projectors or a snapshot policy"
+            )
+        })
+    }
+
+    /// Boot the HTTP server with every registered aggregate and the
+    /// application's routes.
     pub async fn serve(self, app_url: String, app_port: u16) -> std::io::Result<()> {
+        if self.aggregates.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ArcAppBuilder::serve requires at least one register_aggregate::<A>() call",
+            ));
+        }
         let routes = self
             .routes
             .expect("ArcAppBuilder::serve requires register_routes(..)");
-        commands::serve::run::<A>(
-            app_url,
-            app_port,
-            self.projectors,
-            self.snapshot_policy,
-            routes,
-        )
-        .await
+        commands::serve::run(app_url, app_port, self.aggregates, routes).await
     }
 }
 

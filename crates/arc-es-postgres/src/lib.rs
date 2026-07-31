@@ -1,5 +1,7 @@
 use arc_core::audit::AuditMetadata;
 use arc_core::event::Event;
+#[cfg(test)]
+use arc_core::event::NewEvent;
 use arc_core::event_store::{
     validate_audit_batch, EventStore, EventStoreError, EventStoreResult, VersionCheck,
 };
@@ -37,9 +39,29 @@ CREATE TABLE IF NOT EXISTS events (
     correlation_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
     integrity_signature TEXT,
     integrity_key_id TEXT,
-    UNIQUE(aggregate_id, sequence)
+    UNIQUE(aggregate_type, aggregate_id, sequence)
 );
-CREATE INDEX IF NOT EXISTS idx_events_aggregate ON events(aggregate_id, sequence);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'events_aggregate_id_sequence_key'
+    ) THEN
+        ALTER TABLE events
+            DROP CONSTRAINT events_aggregate_id_sequence_key;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'events_aggregate_type_aggregate_id_sequence_key'
+    ) THEN
+        ALTER TABLE events
+            ADD CONSTRAINT events_aggregate_type_aggregate_id_sequence_key
+            UNIQUE (aggregate_type, aggregate_id, sequence);
+    END IF;
+END $$;
+DROP INDEX IF EXISTS idx_events_aggregate;
+CREATE INDEX idx_events_aggregate
+    ON events(aggregate_type, aggregate_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events("timestamp");
 CREATE INDEX IF NOT EXISTS idx_events_actor_id ON events(actor_id);
@@ -49,12 +71,28 @@ CREATE INDEX IF NOT EXISTS idx_events_correlation_id ON events(correlation_id);
 /// DDL for the snapshot table. Idempotent.
 const SNAPSHOTS_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS snapshots (
-    aggregate_id TEXT NOT NULL PRIMARY KEY,
     aggregate_type TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
     version BIGINT NOT NULL,
     state JSONB NOT NULL,
-    created_at BIGINT NOT NULL
+    created_at BIGINT NOT NULL,
+    PRIMARY KEY (aggregate_type, aggregate_id)
 );
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'snapshots'::regclass
+          AND contype = 'p'
+          AND pg_get_constraintdef(oid) = 'PRIMARY KEY (aggregate_id)'
+    ) THEN
+        ALTER TABLE snapshots DROP CONSTRAINT snapshots_pkey;
+        ALTER TABLE snapshots
+            ADD CONSTRAINT snapshots_pkey
+            PRIMARY KEY (aggregate_type, aggregate_id);
+    END IF;
+END $$;
 "#;
 
 /// Plain, DB-free representation of an event row. Splitting conversion out from
@@ -285,6 +323,7 @@ impl PostgresEventStore {
     async fn previous_signature_for_aggregate(
         &self,
         executor: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        aggregate_type: Option<&str>,
         aggregate_id: &str,
         before_sequence: i64,
     ) -> EventStoreResult<EventSignature> {
@@ -293,8 +332,12 @@ impl PostgresEventStore {
         }
 
         let row = sqlx::query(
-            "SELECT * FROM events WHERE aggregate_id = $1 AND sequence < $2 ORDER BY sequence DESC LIMIT 1",
+            "SELECT * FROM events
+             WHERE ($1::text IS NULL OR aggregate_type = $1)
+               AND aggregate_id = $2 AND sequence < $3
+             ORDER BY sequence DESC LIMIT 1",
         )
+        .bind(aggregate_type)
         .bind(aggregate_id)
         .bind(before_sequence)
         .fetch_optional(&mut **executor)
@@ -348,16 +391,21 @@ impl PostgresEventStore {
     ) -> EventStoreResult<Vec<Event>> {
         use std::collections::HashMap;
 
-        let mut previous_by_aggregate: HashMap<String, EventSignature> = HashMap::new();
+        let mut previous_by_aggregate: HashMap<(String, String), EventSignature> = HashMap::new();
         let mut events = Vec::with_capacity(rows.len());
 
         for row in rows {
             let event = row.to_event()?;
-            let previous = match previous_by_aggregate.get(&event.aggregate_id) {
+            let stream = (event.aggregate_type.clone(), event.aggregate_id.clone());
+            let previous = match previous_by_aggregate.get(&stream) {
                 Some(sig) => sig.clone(),
                 None => {
-                    self.previous_signature_no_tx(&event.aggregate_id, event.sequence)
-                        .await?
+                    self.previous_signature_no_tx(
+                        Some(&event.aggregate_type),
+                        &event.aggregate_id,
+                        event.sequence,
+                    )
+                    .await?
                 }
             };
 
@@ -373,7 +421,7 @@ impl PostgresEventStore {
                 }));
             }
 
-            previous_by_aggregate.insert(event.aggregate_id.clone(), claimed);
+            previous_by_aggregate.insert(stream, claimed);
             events.push(event);
         }
 
@@ -382,6 +430,7 @@ impl PostgresEventStore {
 
     async fn previous_signature_no_tx(
         &self,
+        aggregate_type: Option<&str>,
         aggregate_id: &str,
         before_sequence: i64,
     ) -> EventStoreResult<EventSignature> {
@@ -390,8 +439,12 @@ impl PostgresEventStore {
         }
 
         let row = sqlx::query(
-            "SELECT * FROM events WHERE aggregate_id = $1 AND sequence < $2 ORDER BY sequence DESC LIMIT 1",
+            "SELECT * FROM events
+             WHERE ($1::text IS NULL OR aggregate_type = $1)
+               AND aggregate_id = $2 AND sequence < $3
+             ORDER BY sequence DESC LIMIT 1",
         )
+        .bind(aggregate_type)
         .bind(aggregate_id)
         .bind(before_sequence)
         .fetch_optional(&self.pool)
@@ -417,6 +470,21 @@ impl EventStore for PostgresEventStore {
         version_check: VersionCheck,
         new_events: Vec<Event>,
     ) -> EventStoreResult<()> {
+        let aggregate_type = new_events
+            .first()
+            .map(|event| event.aggregate_type.clone())
+            .unwrap_or_default();
+        self.append_to(&aggregate_type, aggregate_id, version_check, new_events)
+            .await
+    }
+
+    async fn append_to(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        version_check: VersionCheck,
+        new_events: Vec<Event>,
+    ) -> EventStoreResult<()> {
         if new_events.is_empty() {
             return Ok(());
         }
@@ -431,8 +499,10 @@ impl EventStore for PostgresEventStore {
             .map_err(|e| EventStoreError::database(e.to_string()))?;
 
         let current_version: i64 = sqlx::query(
-            "SELECT COALESCE(MAX(sequence), 0) AS v FROM events WHERE aggregate_id = $1",
+            "SELECT COALESCE(MAX(sequence), 0) AS v FROM events
+             WHERE aggregate_type = $1 AND aggregate_id = $2",
         )
+        .bind(aggregate_type)
         .bind(aggregate_id)
         .fetch_one(&mut *tx)
         .await
@@ -461,8 +531,13 @@ impl EventStore for PostgresEventStore {
         }
 
         let mut previous_signature = if self.integrity.is_some() {
-            self.previous_signature_for_aggregate(&mut tx, aggregate_id, current_version + 1)
-                .await?
+            self.previous_signature_for_aggregate(
+                &mut tx,
+                Some(aggregate_type),
+                aggregate_id,
+                current_version + 1,
+            )
+            .await?
         } else {
             EventSignature::genesis()
         };
@@ -526,6 +601,14 @@ impl EventStore for PostgresEventStore {
         self.load_from(aggregate_id, 1).await
     }
 
+    async fn load_stream(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Vec<Event>> {
+        self.load_stream_from(aggregate_type, aggregate_id, 1).await
+    }
+
     async fn load_from(
         &self,
         aggregate_id: &str,
@@ -553,7 +636,7 @@ impl EventStore for PostgresEventStore {
                     .await
                     .map_err(|e| EventStoreError::database(e.to_string()))?;
                 let previous = self
-                    .previous_signature_for_aggregate(&mut tx, aggregate_id, from_sequence)
+                    .previous_signature_for_aggregate(&mut tx, None, aggregate_id, from_sequence)
                     .await?;
                 self.verify_integrity_rows(integrity, &event_rows, previous)
                     .await
@@ -561,6 +644,54 @@ impl EventStore for PostgresEventStore {
             None => event_rows
                 .iter()
                 .map(|r| r.to_event())
+                .collect::<EventStoreResult<_>>(),
+        }
+    }
+
+    async fn load_stream_from(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+        from_sequence: i64,
+    ) -> EventStoreResult<Vec<Event>> {
+        let rows = sqlx::query(
+            "SELECT * FROM events
+             WHERE aggregate_type = $1 AND aggregate_id = $2 AND sequence >= $3
+             ORDER BY sequence ASC",
+        )
+        .bind(aggregate_type)
+        .bind(aggregate_id)
+        .bind(from_sequence)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+        let event_rows: Vec<EventRow> = rows
+            .iter()
+            .map(EventRow::from_pg_row)
+            .collect::<EventStoreResult<_>>()?;
+
+        match self.integrity.as_ref() {
+            Some(integrity) => {
+                let mut tx = self
+                    .pool
+                    .begin()
+                    .await
+                    .map_err(|e| EventStoreError::database(e.to_string()))?;
+                let previous = self
+                    .previous_signature_for_aggregate(
+                        &mut tx,
+                        Some(aggregate_type),
+                        aggregate_id,
+                        from_sequence,
+                    )
+                    .await?;
+                self.verify_integrity_rows(integrity, &event_rows, previous)
+                    .await
+            }
+            None => event_rows
+                .iter()
+                .map(|row| row.to_event())
                 .collect::<EventStoreResult<_>>(),
         }
     }
@@ -602,15 +733,33 @@ impl EventStore for PostgresEventStore {
         Ok(version)
     }
 
+    async fn get_stream_version(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<i64> {
+        let version: i64 = sqlx::query(
+            "SELECT COALESCE(MAX(sequence), 0) AS v FROM events
+             WHERE aggregate_type = $1 AND aggregate_id = $2",
+        )
+        .bind(aggregate_type)
+        .bind(aggregate_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| EventStoreError::database(e.to_string()))?
+        .try_get("v")
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+        Ok(version)
+    }
+
     async fn save_snapshot(&self, snapshot: &Snapshot) -> EventStoreResult<()> {
         // One snapshot per aggregate: replace in place rather than accumulating
         // stale versions.
         sqlx::query(
             r#"INSERT INTO snapshots (aggregate_id, aggregate_type, version, state, created_at)
                VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (aggregate_id) DO UPDATE
-                 SET aggregate_type = EXCLUDED.aggregate_type,
-                     version = EXCLUDED.version,
+               ON CONFLICT (aggregate_type, aggregate_id) DO UPDATE
+                 SET version = EXCLUDED.version,
                      state = EXCLUDED.state,
                      created_at = EXCLUDED.created_at"#,
         )
@@ -651,6 +800,46 @@ impl EventStore for PostgresEventStore {
                         .try_get("version")
                         .map_err(|e| EventStoreError::database(e.to_string()))?,
                     state: r
+                        .try_get("state")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    created_at: created_at as u64,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn load_snapshot_for(
+        &self,
+        aggregate_type: &str,
+        aggregate_id: &str,
+    ) -> EventStoreResult<Option<Snapshot>> {
+        let row = sqlx::query(
+            "SELECT aggregate_id, aggregate_type, version, state, created_at
+             FROM snapshots WHERE aggregate_type = $1 AND aggregate_id = $2",
+        )
+        .bind(aggregate_type)
+        .bind(aggregate_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| EventStoreError::database(e.to_string()))?;
+
+        match row {
+            Some(row) => {
+                let created_at: i64 = row
+                    .try_get("created_at")
+                    .map_err(|e| EventStoreError::database(e.to_string()))?;
+                Ok(Some(Snapshot {
+                    aggregate_id: row
+                        .try_get("aggregate_id")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    aggregate_type: row
+                        .try_get("aggregate_type")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    version: row
+                        .try_get("version")
+                        .map_err(|e| EventStoreError::database(e.to_string()))?,
+                    state: row
                         .try_get("state")
                         .map_err(|e| EventStoreError::database(e.to_string()))?,
                     created_at: created_at as u64,
@@ -716,8 +905,14 @@ mod tests {
         event_type: &str,
         payload: serde_json::Value,
     ) -> Event {
-        Event::new(agg_type, agg_id, sequence, event_type, payload)
-            .with_audit(AuditMetadata::test_default())
+        Event::new(NewEvent {
+            aggregate_type: agg_type,
+            aggregate_id: agg_id,
+            sequence,
+            event_type,
+            payload,
+        })
+        .with_audit(AuditMetadata::test_default())
     }
 
     #[tokio::test]
@@ -734,6 +929,53 @@ mod tests {
         let loaded = store.load("u1").await.unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].sequence, 1);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_live_same_id_is_isolated_by_aggregate_type() {
+        let Some(store) = setup_test_store().await else {
+            return;
+        };
+        store
+            .append_to(
+                "Product",
+                "shared-id",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "Product",
+                    "shared-id",
+                    1,
+                    "ProductCreated",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+        store
+            .append_to(
+                "Order",
+                "shared-id",
+                VersionCheck::New,
+                vec![stamped_event(
+                    "Order",
+                    "shared-id",
+                    1,
+                    "OrderPlaced",
+                    json!({}),
+                )],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.load_stream("Product", "shared-id").await.unwrap()[0].event_type,
+            "ProductCreated"
+        );
+        assert_eq!(
+            store.load_stream("Order", "shared-id").await.unwrap()[0].event_type,
+            "OrderPlaced"
+        );
     }
 
     #[tokio::test]

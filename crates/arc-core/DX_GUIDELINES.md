@@ -347,17 +347,18 @@ pub async fn create_user_simple(
     event_store: &dyn EventStore,
 ) -> Result<(), Box<dyn Error>> {
     // Create event
-    let event = Event::new(
-        "User",
-        id,
-        1,  // First event
-        "UserCreated",
-        json!({
-            "id": id,
-            "name": name,
-            "email": email,
-        }),
-    );
+    let event = Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: id,
+        sequence: 1,
+        event_type: // First event
+                    "UserCreated",
+        payload: json!({
+                        "id": id,
+                        "name": name,
+                        "email": email,
+                    }),
+    });
 
     // Append to store
     event_store.append(id, None, vec![event]).await?;
@@ -399,19 +400,19 @@ impl Aggregate for UserAggregate {
 
                 let password_hash = hash_password(&password)?;
 
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    self.version + 1,
-                    "UserCreated",
-                    json!(UserEvent::UserCreated {
-                        id,
-                        name,
-                        email,
-                        password_hash,
-                        created_at: Utc::now(),
-                    }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: self.version + 1,
+                    event_type: "UserCreated",
+                    payload: json!(UserEvent::UserCreated {
+                                                id,
+                                                name,
+                                                email,
+                                                password_hash,
+                                                created_at: Utc::now(),
+                                            }),
+                })])
             }
         }
     }
@@ -530,19 +531,19 @@ impl Aggregate for UserAggregate {
                 )?;
 
                 // Create event
-                Ok(vec![Event::new(
-                    "User",
-                    &id,
-                    1,
-                    "UserRegistered",
-                    json!(UserEvent::UserRegistered {
-                        id: id.clone(),
-                        email,
-                        name,
-                        password_hash,
-                        registered_at: Utc::now(),
-                    }),
-                )])
+                Ok(vec![Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: &id,
+                    sequence: 1,
+                    event_type: "UserRegistered",
+                    payload: json!(UserEvent::UserRegistered {
+                                                id: id.clone(),
+                                                email,
+                                                name,
+                                                password_hash,
+                                                registered_at: Utc::now(),
+                                            }),
+                })])
             }
         }
     }
@@ -942,19 +943,25 @@ Use doc comments with examples that actually compile:
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let event_store = SqliteEventStore::new("events.db").await?;
 ///
-/// let event = Event::new(
-///     "User",
-///     "user-123",
-///     1,
-///     "UserCreated",
-///     json!({"name": "Alice"}),
-/// );
+/// let event = Event::new(NewEvent {
+///                 aggregate_type: "User",
+///                 aggregate_id: "user-123",
+///                 sequence: 1,
+///                 event_type: "UserCreated",
+///                 payload: json!({"name": "Alice"}),
+///             });
 ///
 /// // First event - no version check needed
 /// event_store.append("user-123", None, vec![event]).await?;
 ///
 /// // Subsequent events - require version check
-/// let event2 = Event::new("User", "user-123", 2, "ProfileUpdated", json!({"name": "Bob"}));
+/// let event2 = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "user-123",
+    sequence: 2,
+    event_type: "ProfileUpdated",
+    payload: json!({"name": "Bob"}),
+});
 /// event_store.append("user-123", Some(1), vec![event2]).await?;
 /// # Ok(())
 /// # }
@@ -1209,17 +1216,17 @@ mod tests {
             .await
             // Then: UserCreated event
             .then_expect_events(vec![
-                Event::new(
-                    "User",
-                    "user-123",
-                    1,
-                    "UserCreated",
-                    json!({
-                        "id": "user-123",
-                        "name": "Alice",
-                        "email": "alice@example.com",
-                    }),
-                ),
+                Event::new(NewEvent {
+                    aggregate_type: "User",
+                    aggregate_id: "user-123",
+                    sequence: 1,
+                    event_type: "UserCreated",
+                    payload: json!({
+                                                "id": "user-123",
+                                                "name": "Alice",
+                                                "email": "alice@example.com",
+                                            }),
+                }),
             ]);
     }
 
@@ -1227,16 +1234,16 @@ mod tests {
     async fn test_duplicate_user_creation_fails() {
         // Given: User already created
         AggregateFixture::<UserAggregate>::new()
-            .given(Event::new(
-                "User",
-                "user-123",
-                1,
-                "UserCreated",
-                json!({
-                    "id": "user-123",
-                    "email": "alice@example.com",
-                }),
-            ))
+            .given(Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-123",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: json!({
+                                        "id": "user-123",
+                                        "email": "alice@example.com",
+                                    }),
+            }))
             // When: Try to create again
             .when(UserCommand::CreateUser {
                 id: "user-123".to_string(),

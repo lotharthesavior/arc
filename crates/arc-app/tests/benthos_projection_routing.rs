@@ -2,7 +2,7 @@ use actix_web::{web, App, HttpServer};
 use arc::domain::user::projector::{UserProjector, USERS_VIEW};
 use arc::http::controllers::internal_projection_controller::handle_user_projection;
 use arc_core::audit::AuditMetadata;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use arc_core::event_bus::EventBus;
 use arc_core::event_store::InMemoryEventStore;
 use arc_core::projection::ProjectionEngine;
@@ -255,18 +255,18 @@ fn stream_name() -> String {
 }
 
 fn user_registered(id: &str) -> Event {
-    Event::new(
-        "User",
-        id,
-        1,
-        "UserRegistered",
-        json!({
+    Event::new(NewEvent {
+        aggregate_type: "User",
+        aggregate_id: id,
+        sequence: 1,
+        event_type: "UserRegistered",
+        payload: json!({
             "id": id,
             "name": "Ada",
             "email": "ada@example.test",
             "password_hash": "$argon2$test"
         }),
-    )
+    })
     .with_audit(AuditMetadata::test_default())
 }
 

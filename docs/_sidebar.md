@@ -1,6 +1,7 @@
 <!-- docs/_sidebar.md -->
 
 * Getting Started
+  * [Quick Start](guides/getting-started.md)
   * [Overview](01-overview.md)
   * [Architecture](02-architecture.md)
 

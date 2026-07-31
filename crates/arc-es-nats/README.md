@@ -19,20 +19,20 @@ events; it does not implement a durable Rust consumer.
 
 ```rust
 use arc_core::audit::AuditMetadata;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use arc_core::event_bus::EventBus;
 use arc_es_nats::NatsEventBus;
 use serde_json::json;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let bus = NatsEventBus::new("nats://127.0.0.1:4222", "EVENTS").await?;
-let event = Event::new(
-    "User",
-    "user-123",
-    1,
-    "UserRegistered",
-    json!({ "email": "ada@example.test" }),
-)
+let event = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "user-123",
+    sequence: 1,
+    event_type: "UserRegistered",
+    payload: json!({ "email": "ada@example.test" }),
+})
 .with_audit(AuditMetadata::system());
 
 bus.publish(vec![event]).await?;

@@ -13,7 +13,7 @@
 //!
 //! ```rust
 //! use arc_core::event_bus::{EventBus, EventHandler, InProcessEventBus};
-//! use arc_core::event::Event;
+//! use arc_core::event::{Event, NewEvent};
 //! use serde_json::json;
 //! use async_trait::async_trait;
 //!
@@ -42,19 +42,21 @@
 //! event_bus.subscribe(Box::new(WelcomeEmailHandler)).await?;
 //!
 //! // Publish event
-//! let event = Event::new(
-//!     "User",
-//!     "user-123",
-//!     1,
-//!     "UserCreated",
-//!     json!({ "email": "alice@example.com" }),
-//! );
+//! let event = Event::new(NewEvent {
+//!                 aggregate_type: "User",
+//!                 aggregate_id: "user-123",
+//!                 sequence: 1,
+//!                 event_type: "UserCreated",
+//!                 payload: json!({ "email": "alice@example.com" }),
+//!             });
 //! event_bus.publish(vec![event]).await?;
 //! # Ok(())
 //! # }
 //! ```
 
 use crate::event::Event;
+#[cfg(test)]
+use crate::event::NewEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use thiserror::Error;
@@ -145,7 +147,7 @@ pub type EventBusResult<T> = Result<T, EventBusError>;
 ///
 /// ```rust
 /// use arc_core::event_bus::EventHandler;
-/// use arc_core::event::Event;
+/// use arc_core::event::{Event, NewEvent};
 /// use async_trait::async_trait;
 ///
 /// struct AuditLogHandler;
@@ -310,7 +312,7 @@ pub trait EventBus: Send + Sync {
 ///
 /// ```rust
 /// use arc_core::event_bus::{EventBus, EventHandler, InProcessEventBus};
-/// use arc_core::event::Event;
+/// use arc_core::event::{Event, NewEvent};
 /// use serde_json::json;
 /// use async_trait::async_trait;
 ///
@@ -332,7 +334,13 @@ pub trait EventBus: Send + Sync {
 /// let mut bus = InProcessEventBus::new();
 /// bus.subscribe(Box::new(LogHandler)).await?;
 ///
-/// let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+/// let event = Event::new(NewEvent {
+///                 aggregate_type: "User",
+///                 aggregate_id: "user-1",
+///                 sequence: 1,
+///                 event_type: "UserCreated",
+///                 payload: json!({}),
+///             });
 /// bus.publish(vec![event]).await?;
 /// # Ok(())
 /// # }
@@ -655,13 +663,13 @@ mod tests {
 
         bus.subscribe(Box::new(handler)).await.unwrap();
 
-        let event = Event::new(
-            "User",
-            "user-123",
-            1,
-            "UserCreated",
-            json!({ "name": "Alice" }),
-        );
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-123",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({ "name": "Alice" }),
+        });
 
         bus.publish(vec![event]).await.unwrap();
 
@@ -683,21 +691,27 @@ mod tests {
         bus.subscribe(Box::new(handler)).await.unwrap();
 
         let events = vec![
-            Event::new(
-                "User",
-                "user-1",
-                1,
-                "UserCreated",
-                json!({ "name": "Alice" }),
-            ),
-            Event::new(
-                "User",
-                "user-1",
-                2,
-                "UserUpdated",
-                json!({ "name": "Alice Smith" }),
-            ),
-            Event::new("User", "user-2", 1, "UserCreated", json!({ "name": "Bob" })),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: json!({ "name": "Alice" }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 2,
+                event_type: "UserUpdated",
+                payload: json!({ "name": "Alice Smith" }),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-2",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: json!({ "name": "Bob" }),
+            }),
         ];
 
         bus.publish(events).await.unwrap();
@@ -721,9 +735,27 @@ mod tests {
         bus.subscribe(Box::new(handler)).await.unwrap();
 
         let events = vec![
-            Event::new("User", "user-1", 1, "UserCreated", json!({})),
-            Event::new("User", "user-1", 2, "UserUpdated", json!({})),
-            Event::new("User", "user-1", 3, "UserDeleted", json!({})),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 1,
+                event_type: "UserCreated",
+                payload: json!({}),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 2,
+                event_type: "UserUpdated",
+                payload: json!({}),
+            }),
+            Event::new(NewEvent {
+                aggregate_type: "User",
+                aggregate_id: "user-1",
+                sequence: 3,
+                event_type: "UserDeleted",
+                payload: json!({}),
+            }),
         ];
 
         bus.publish(events).await.unwrap();
@@ -752,7 +784,13 @@ mod tests {
         bus.subscribe(Box::new(handler1)).await.unwrap();
         bus.subscribe(Box::new(handler2)).await.unwrap();
 
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         bus.publish(vec![event]).await.unwrap();
 
         // Both handlers should be called
@@ -770,7 +808,13 @@ mod tests {
 
         bus.subscribe(failing_handler).await.unwrap();
 
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         let result = bus.publish(vec![event]).await;
 
         assert!(result.is_err());
@@ -806,7 +850,13 @@ mod tests {
         .await
         .unwrap();
 
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         let result = bus.publish(vec![event]).await;
 
         assert!(matches!(result, Err(EventBusError::HandlerFailed { .. })));
@@ -823,7 +873,13 @@ mod tests {
         .await
         .unwrap();
 
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         let result = bus.publish(vec![event]).await;
 
         assert!(result.is_ok());
@@ -859,7 +915,13 @@ mod tests {
         let bus = InProcessEventBus::new();
 
         // No handlers subscribed
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         let result = bus.publish(vec![event]).await;
 
         // Should succeed - no handlers is not an error
@@ -901,7 +963,13 @@ mod tests {
             .unwrap();
         }
 
-        let event = Event::new("Test", "test-1", 1, "TestEvent", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "Test",
+            aggregate_id: "test-1",
+            sequence: 1,
+            event_type: "TestEvent",
+            payload: json!({}),
+        });
         bus.publish(vec![event]).await.unwrap();
 
         // Handlers should be called in subscription order
@@ -943,7 +1011,13 @@ mod tests {
             .unwrap();
         }
 
-        let event = Event::new("Test", "test-1", 1, "TestEvent", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "Test",
+            aggregate_id: "test-1",
+            sequence: 1,
+            event_type: "TestEvent",
+            payload: json!({}),
+        });
         bus.publish(vec![event]).await.unwrap();
 
         let call_order = order.lock().await;
@@ -970,7 +1044,13 @@ mod tests {
         assert_eq!(bus2.handler_count().await, 1);
 
         // Publishing through either should work
-        let event = Event::new("User", "user-1", 1, "UserCreated", json!({}));
+        let event = Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: "user-1",
+            sequence: 1,
+            event_type: "UserCreated",
+            payload: json!({}),
+        });
         bus2.publish(vec![event]).await.unwrap();
 
         assert_eq!(*counter.lock().await, 1);

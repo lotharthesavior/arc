@@ -1,22 +1,19 @@
-<!-- docsify-docs/_sidebar.md -->
+* Start
+  * [What Arc Is](README.md)
+  * [Create an App](getting-started.md)
+  * [Application Anatomy](project-structure.md)
+  * [Application Workflows](workflows.md)
+  * [Command Bus](command-bus.md)
 
-* Getting Started
-  * [Overview](01-overview.md)
-  * [Architecture](02-architecture.md)
+* Build
+  * [Add an Endpoint](endpoints.md)
+  * [Build a Resource](resources.md)
+  * [Add a UI Page](ui.md)
+  * [Configuration](configuration.md)
+  * [Testing](testing.md)
 
-* Development
-  * [Backend](03-backend.md)
-  * [Frontend](04-frontend.md)
-  * [Database](05-database.md)
-  * [Testing](06-testing.md)
-
-* Reference
-  * [API Reference](07-api-reference.md)
-  * [Gaps & Improvements](08-problems-and-improvements.md)
-
-* Event Sourcing
-  * [Architecture (as built)](09-event-sourcing-architecture.md)
-  * [Extending Arc](10-event-sourcing-implementation-guide.md)
-  * [Roadmap](roadmap.md)
+* Help
+  * [Troubleshooting](troubleshooting.md)
+  * [Published Packages](packages.md)
 
 * [GitHub](https://github.com/lotharthesavior/arc)

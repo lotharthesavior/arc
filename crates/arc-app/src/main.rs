@@ -105,8 +105,9 @@ async fn main() -> std::io::Result<()> {
 
     match command {
         "serve" => {
-            ArcApp::builder::<UserAggregate>()
-                .register_aggregate(user_projectors())
+            ArcApp::builder()
+                .register_aggregate::<UserAggregate>()
+                .register_projectors(user_projectors())
                 .snapshot_policy(user_snapshot_policy())
                 .register_routes(routes::config)
                 .serve(app_url, app_port)

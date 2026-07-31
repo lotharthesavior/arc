@@ -12,6 +12,8 @@
 //! [`ProjectionEngine::process`](arc_core::projection::ProjectionEngine::process).
 
 use arc_core::event::Event;
+#[cfg(test)]
+use arc_core::event::NewEvent;
 use arc_core::projection::{ProjectionError, ProjectionResult, Projector};
 use arc_core::read_model_store::{ReadModelStore, Upsert};
 use async_trait::async_trait;
@@ -146,7 +148,14 @@ mod tests {
     use arc_core::read_model_store::InMemoryReadModelStore;
 
     fn ev(agg_id: &str, seq: i64, ty: &str, payload: Value) -> Event {
-        Event::new("User", agg_id, seq, ty, payload).with_audit(AuditMetadata::test_default())
+        Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: agg_id,
+            sequence: seq,
+            event_type: ty,
+            payload,
+        })
+        .with_audit(AuditMetadata::test_default())
     }
 
     #[tokio::test]
@@ -293,7 +302,7 @@ mod replay_from_zero {
     use crate::helpers::database::MIGRATIONS;
     use crate::helpers::test::InMemoryTestGuard;
     use arc_core::audit::AuditMetadata;
-    use arc_core::event::Event;
+    use arc_core::event::{Event, NewEvent};
     use arc_core::event_store::{EventStore, VersionCheck};
     use arc_core::projection::ProjectionEngine;
     use arc_core::read_model_store::ReadModelStore;
@@ -305,7 +314,14 @@ mod replay_from_zero {
     use std::sync::Arc;
 
     fn ev(agg_id: &str, seq: i64, ty: &str, payload: serde_json::Value) -> Event {
-        Event::new("User", agg_id, seq, ty, payload).with_audit(AuditMetadata::test_default())
+        Event::new(NewEvent {
+            aggregate_type: "User",
+            aggregate_id: agg_id,
+            sequence: seq,
+            event_type: ty,
+            payload,
+        })
+        .with_audit(AuditMetadata::test_default())
     }
 
     #[serial]

@@ -18,20 +18,20 @@ and single-node applications.
 
 ```rust
 use arc_core::audit::AuditMetadata;
-use arc_core::event::Event;
+use arc_core::event::{Event, NewEvent};
 use arc_core::event_store::{EventStore, VersionCheck};
 use arc_es_sqlite::SqliteEventStore;
 use serde_json::json;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let store = SqliteEventStore::new("database/arc_dev.db").await?;
-let event = Event::new(
-    "User",
-    "user-123",
-    1,
-    "UserRegistered",
-    json!({ "email": "ada@example.test" }),
-)
+let event = Event::new(NewEvent {
+    aggregate_type: "User",
+    aggregate_id: "user-123",
+    sequence: 1,
+    event_type: "UserRegistered",
+    payload: json!({ "email": "ada@example.test" }),
+})
 .with_audit(AuditMetadata::system());
 
 store
