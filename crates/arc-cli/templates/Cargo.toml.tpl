@@ -20,3 +20,6 @@ tera = "1.20"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

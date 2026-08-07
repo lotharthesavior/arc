@@ -1,0 +1,110 @@
+use super::aggregate::{{Type}}Aggregate;
+use super::commands::{{Type}}Command;
+use super::projector::{{CONSTANT}}_VIEW;
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
+use arc_core::command_bus::{CommandBus, CommandContext};
+use arc_core::read_model_store::ReadModelStore;
+use serde::Deserialize;
+use serde_json::json;
+
+#[derive(Deserialize)]
+struct Create{{Type}} {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct Update{{Type}} {
+    name: String,
+}
+
+#[post("/api/{{view}}")]
+async fn create_{{module}}(
+    body: web::Json<Create{{Type}}>,
+    bus: web::Data<CommandBus<{{Type}}Aggregate>>,
+) -> impl Responder {
+    let command = {{Type}}Command::Create {
+        id: body.id.clone(),
+        name: body.name.clone(),
+    };
+    match bus
+        .dispatch(command, CommandContext::for_actor("anonymous"))
+        .await
+    {
+        Ok(_) => HttpResponse::Created().json(json!({
+            "id": body.id.clone(),
+            "name": body.name.clone(),
+        })),
+        Err(error) => HttpResponse::BadRequest().json(json!({ "error": error.to_string() })),
+    }
+}
+
+#[get("/api/{{view}}")]
+async fn list_{{view}}(store: web::Data<dyn ReadModelStore>) -> impl Responder {
+    match store.list({{CONSTANT}}_VIEW).await {
+        Ok(rows) => HttpResponse::Ok().json(rows),
+        Err(error) => {
+            HttpResponse::InternalServerError().json(json!({ "error": error.to_string() }))
+        }
+    }
+}
+
+#[get("/api/{{view}}/{id}")]
+async fn get_{{module}}(
+    id: web::Path<String>,
+    store: web::Data<dyn ReadModelStore>,
+) -> impl Responder {
+    match store.get({{CONSTANT}}_VIEW, id.as_str()).await {
+        Ok(Some(row)) => HttpResponse::Ok().json(row),
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(error) => {
+            HttpResponse::InternalServerError().json(json!({ "error": error.to_string() }))
+        }
+    }
+}
+
+#[put("/api/{{view}}/{id}")]
+async fn update_{{module}}(
+    id: web::Path<String>,
+    body: web::Json<Update{{Type}}>,
+    bus: web::Data<CommandBus<{{Type}}Aggregate>>,
+) -> impl Responder {
+    let command = {{Type}}Command::Rename {
+        id: id.into_inner(),
+        name: body.name.clone(),
+    };
+    match bus
+        .dispatch(command, CommandContext::for_actor("anonymous"))
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().json(json!({ "name": body.name.clone() })),
+        Err(error) => HttpResponse::BadRequest().json(json!({ "error": error.to_string() })),
+    }
+}
+
+#[delete("/api/{{view}}/{id}")]
+async fn delete_{{module}}(
+    id: web::Path<String>,
+    bus: web::Data<CommandBus<{{Type}}Aggregate>>,
+) -> impl Responder {
+    match bus
+        .dispatch(
+            {{Type}}Command::Delete {
+                id: id.into_inner(),
+            },
+            CommandContext::for_actor("anonymous"),
+        )
+        .await
+    {
+        Ok(_) => HttpResponse::NoContent().finish(),
+        Err(error) => HttpResponse::BadRequest().json(json!({ "error": error.to_string() })),
+    }
+}
+
+pub fn config(cfg: &mut web::ServiceConfig) {
+    cfg.service(create_{{module}})
+        .service(list_{{view}})
+        .service(get_{{module}})
+        .service(update_{{module}})
+        .service(delete_{{module}});
+}

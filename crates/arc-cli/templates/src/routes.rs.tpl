@@ -10,6 +10,6 @@ async fn health() -> impl Responder {
 }
 
 pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(health)
-        {{ui-routes}};
+    cfg.service(health){{ui-routes}};
+    // arc:api-routes
 }

@@ -133,11 +133,14 @@ fn render(template: &str, project: &NewProject) -> String {
         .replace("{{project-name}}", &project.name)
         .replace("{{crate-name}}", &project.name.replace('-', "_"))
         .replace("{{arc-version}}", ARC_VERSION)
-        .replace("{{ui-module}}", if project.ui { "mod ui;" } else { "" })
+        .replace(
+            "{{ui-module}}",
+            if project.ui { "\nmod ui;" } else { "" },
+        )
         .replace(
             "{{ui-routes}}",
             if project.ui {
-                ".service(crate::ui::home)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
+                "\n        .service(crate::ui::home)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
             } else {
                 ""
             },

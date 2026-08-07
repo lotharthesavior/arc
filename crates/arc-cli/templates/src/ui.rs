@@ -7,7 +7,9 @@ pub async fn home() -> impl Responder {
     let mut context = Context::new();
     context.insert("app_name", env!("CARGO_PKG_NAME"));
     match Tera::one_off(template, &context, true) {
-        Ok(html) => HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html),
+        Ok(html) => HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .body(html),
         Err(error) => HttpResponse::InternalServerError().body(format!("template error: {error}")),
     }
 }

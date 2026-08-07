@@ -25,11 +25,31 @@ cd catalog
 make setup
 ```
 
-The generated `AppAggregate` is a placeholder. This tutorial replaces it with `ProductAggregate`.
+The generated `AppAggregate` is a placeholder. Generate a complete Product resource beside it:
 
-## 2. Define the Product aggregate
+```bash
+arc generate resource Product --api
+make migrate
+```
 
-Create `src/product/mod.rs`:
+The command creates the aggregate, commands, event payloads, projector, read-model migration,
+focused tests, and JSON CRUD API, then registers them with the application. It refuses to overwrite
+an existing resource. `arc generate aggregate Product --api` is an alias.
+
+## 2. Understand the generated Product aggregate
+
+The generated files live under `src/domain/product/`:
+
+```text
+src/domain/product/
+├── aggregate.rs
+├── commands.rs
+├── events.rs
+├── mod.rs
+└── projector.rs
+```
+
+The generated aggregate follows this command/event pattern:
 
 ```rust
 use arc_core::aggregate::{Aggregate, Command};
@@ -113,9 +133,9 @@ impl Aggregate for ProductAggregate {
 
 `handle` validates intent and produces events. `apply` reconstructs state from stored events. Neither function writes to a database.
 
-## 3. Build the read model
+## 3. Understand the generated read model
 
-Create `src/product/projector.rs`:
+`src/domain/product/projector.rs` contains a version-gated projector like this:
 
 ```rust
 use arc_core::event::Event;
@@ -170,9 +190,9 @@ impl Projector for ProductProjector {
 
 Every projected row must contain an integer `version`. Arc uses it to make replayed upserts idempotent.
 
-## 4. Add the read-model migration
+## 4. Review the generated read-model migration
 
-Create:
+The generator chooses the next migration number and creates:
 
 ```text
 migrations/00000000000001_products_view/
@@ -196,7 +216,7 @@ CREATE TABLE products_view (
 DROP TABLE products_view;
 ```
 
-Apply it:
+Apply it if you have not already:
 
 ```bash
 make migrate
@@ -204,30 +224,14 @@ make migrate
 
 Arc's SQLite read-model store expects the standard `id`, `version`, and JSON `data` columns.
 
-## 5. Register the aggregate and projector
+## 5. Review the generated registration
 
-In `src/main.rs`, replace:
-
-```rust
-use crate::domain::AppAggregate;
-mod domain;
-```
-
-with:
-
-```rust
-use crate::product::projector::{
-    ProductProjector, PRODUCTS_VIEW,
-};
-use crate::product::ProductAggregate;
-
-mod product;
-```
-
-Then change the builder in `serve`:
+The generator adds imports for `ProductAggregate`, `ProductProjector`, and `PRODUCT_VIEW`, then
+extends the builder without removing the placeholder aggregate:
 
 ```rust
 ArcApp::builder()
+    .register_aggregate::<AppAggregate>()
     .register_aggregate::<ProductAggregate>()
     .register_projector(ProductProjector, PRODUCTS_VIEW)
     .register_routes(routes::config)
@@ -241,11 +245,14 @@ ArcApp::builder()
     })
 ```
 
-You can now remove the unused generated `src/domain.rs`.
+`src/domain.rs` also receives `pub mod product;`. The marker-based edits are deterministic, so
+future generated resources are appended at the same extension points.
 
-## 6. Add Product handlers
+## 6. Use the generated Product handlers
 
-Replace `src/routes.rs` with:
+The `--api` flag creates `src/domain/product/api.rs` and registers it in `src/routes.rs`. It exposes
+create, list, get, update, and delete endpoints. The generated handlers follow this abbreviated
+pattern:
 
 > **Note:** [`web::Data`](project-structure.md#actix-shared-application-data) gives these routes access to the command bus and read-model store that Arc created when the server started.
 
@@ -258,8 +265,9 @@ use arc_core::read_model_store::ReadModelStore;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::product::projector::PRODUCTS_VIEW;
-use crate::product::{ProductAggregate, ProductCommand};
+use crate::domain::product::projector::PRODUCTS_VIEW;
+use crate::domain::product::aggregate::ProductAggregate;
+use crate::domain::product::commands::ProductCommand;
 
 #[derive(Deserialize)]
 struct CreateProduct {
@@ -329,7 +337,9 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 }
 ```
 
-For a real public API, derive the actor from authentication rather than using `"anonymous"`. Authentication is not generated today.
+For a real public API, derive the actor from authentication rather than using `"anonymous"`.
+Authentication is not generated today, so these routes are intended as a development starting
+point rather than a production security boundary.
 
 ## 7. Run and verify
 
@@ -353,13 +363,40 @@ Then query the projection:
 ```bash
 curl --fail http://127.0.0.1:8080/api/products
 curl --fail http://127.0.0.1:8080/api/products/product-1
+
+curl --fail \
+  --request PUT \
+  --header 'content-type: application/json' \
+  --data '{"name":"Field Notebook"}' \
+  http://127.0.0.1:8080/api/products/product-1
+
+curl --fail \
+  --request DELETE \
+  http://127.0.0.1:8080/api/products/product-1
 ```
 
 Because the default event bus is `inprocess`, the Product projection is updated before the POST returns.
 
-## Extending the resource
+Inspect the persisted event stream directly during development:
 
-To add rename or delete behavior:
+```bash
+sqlite3 -json database/database.sqlite \
+  "SELECT sequence, aggregate_id, event_type, payload
+   FROM events
+   WHERE aggregate_type = 'Product'
+   ORDER BY aggregate_id, sequence;" | jq
+```
+
+Inspect the current projected rows:
+
+```bash
+sqlite3 -json database/database.sqlite \
+  "SELECT id, version, json(data) AS data FROM products_view;" | jq
+```
+
+## Customizing the resource
+
+The generated API already includes rename/update and delete behavior. To add another operation:
 
 1. Add variants to `ProductCommand`.
 2. Validate them in `ProductAggregate::handle`.

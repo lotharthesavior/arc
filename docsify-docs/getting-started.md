@@ -49,6 +49,20 @@ Open:
 
 Stop the server with `Ctrl+C`.
 
+## 4. Generate your first resource
+
+From the generated application root:
+
+```bash
+arc generate resource Product --api
+make migrate
+make test
+```
+
+Arc creates and registers a Product aggregate, commands, events, projector, read-model migration,
+focused tests, and JSON CRUD API. It refuses to overwrite an existing resource. Continue with
+[Build an Event-Sourced Resource](resources.md) to add HTTP routes.
+
 ## Port 8080 is busy
 
 Edit `.env`:

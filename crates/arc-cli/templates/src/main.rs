@@ -11,10 +11,10 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::domain::AppAggregate;
+// arc:resource-imports
 
 mod domain;
-mod routes;
-{{ui-module}}
+mod routes;{{ui-module}}
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
@@ -102,6 +102,7 @@ async fn serve() -> anyhow::Result<()> {
     info!(url = %format!("http://{host}:{port}"), "Arc application starting");
     ArcApp::builder()
         .register_aggregate::<AppAggregate>()
+        // arc:resource-registrations
         .register_routes(routes::config)
         .serve(host.clone(), port)
         .await

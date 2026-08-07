@@ -29,6 +29,16 @@ arc new my-app --ui
 
 The generated application owns its migrations, `.env.example`, Makefile, routes, and domain skeleton. `make setup` creates `.env` with a random local secret, creates SQLite, and runs migrations. It is safe to run again and does not replace an existing secret.
 
+Generate a complete event-sourced resource from the application root:
+
+```bash
+arc generate resource Product --api
+make migrate
+```
+
+This creates and registers the aggregate, commands, events, projector, read-model migration,
+focused tests, and JSON CRUD routes. Existing resources are never overwritten.
+
 Requirements: stable Rust, SQLite development libraries, and `make`.
 
 ## Contributing to Arc
@@ -96,7 +106,7 @@ Run `make help` for the complete command list.
 - `arc-es-postgres`: Postgres event, read-model, and snapshot stores
 - `arc-es-nats`: NATS JetStream event publisher
 - `arc-web`: reusable Actix runtime and framework helpers
-- `arc-web-cli`: the published package that installs the `arc new` application generator
+- `arc-web-cli`: the published package that installs the `arc new` application and resource generator
 - `arc-app`: application-owned domains, routes, templates, validation, and migrations
 
 Benthos is the only durable distributed event router. It consumes `events.>` and delivers to HTTP or NATS handlers; it never writes Arc databases directly.

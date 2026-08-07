@@ -3,6 +3,8 @@ use arc_core::event::Event;
 use async_trait::async_trait;
 use thiserror::Error;
 
+// arc:domain-modules
+
 #[derive(Default)]
 pub struct AppAggregate {
     version: i64,

@@ -478,7 +478,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "arc"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "actix",
  "actix-files",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "arc-core"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "hmac",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-nats"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "arc-core",
  "async-nats",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-postgres"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-sqlite"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "actix",
  "actix-files",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web-cli"
-version = "0.4.0"
+version = "0.4.2"
 
 [[package]]
 name = "argon2"

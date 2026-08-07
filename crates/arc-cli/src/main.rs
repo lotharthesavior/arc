@@ -2,8 +2,10 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+mod resource;
 mod scaffold;
 
+use resource::{create_resource, NewResource};
 use scaffold::{create_project, NewProject};
 
 fn main() -> ExitCode {
@@ -53,6 +55,52 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
             println!("  make dev");
             Ok(())
         }
+        Some("generate") => {
+            let kind = args.next().ok_or_else(|| {
+                "usage: arc generate resource <name> (alias: aggregate)".to_string()
+            })?;
+            if kind != "resource" && kind != "aggregate" {
+                return Err(format!(
+                    "unknown generator `{kind}`; expected `resource` or `aggregate`"
+                ));
+            }
+            let name = args.next().ok_or_else(|| {
+                "usage: arc generate resource <name> [--api] (alias: aggregate)".to_string()
+            })?;
+            let mut api = false;
+            for argument in args {
+                match argument.as_str() {
+                    "--api" => api = true,
+                    "--help" | "-h" => {
+                        print_generate_help();
+                        return Ok(());
+                    }
+                    _ => return Err(format!("unknown option `{argument}`")),
+                }
+            }
+
+            let resource = NewResource {
+                name,
+                root: PathBuf::from("."),
+                api,
+            };
+            let created = create_resource(&resource)?;
+            println!();
+            println!("Generated {} resource:", created.type_name);
+            for path in created.files {
+                println!("  {}", path.display());
+            }
+            println!();
+            if let Some(api_path) = created.api_path {
+                println!("Run `make migrate`, then use the CRUD API at {api_path}.");
+            } else {
+                println!(
+                    "Run `make migrate` and add routes that dispatch {}Command.",
+                    created.type_name
+                );
+            }
+            Ok(())
+        }
         Some("--version" | "-V") => {
             println!("arc {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -73,12 +121,29 @@ fn print_help() {
 
 Usage:
   arc new <name> [--ui] [--no-git]
+  arc generate resource <name> [--api]
+  arc generate aggregate <name> [--api]
 
 Options:
   --ui       Add Tera views and browser assets
   --no-git   Do not initialize a Git repository
   -h, --help Show help
   -V, --version Show version"
+    );
+}
+
+fn print_generate_help() {
+    println!(
+        "Generate and register an event-sourced aggregate resource
+
+Usage:
+  arc generate resource <name> [--api]
+  arc generate aggregate <name> [--api]
+
+Options:
+  --api  Add and register JSON CRUD endpoints
+
+Run this command from the root of an application created by `arc new`."
     );
 }
 
