@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arc new — zero-clone starter design</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f8fafc; --panel:#fff; --soft:#eef2ff; --ink:#111827; --muted:#64748b; --line:#e2e8f0; --brand:#6366f1; --brand2:#4338ca; --good:#047857; --warn:#b45309; }
+    @media (prefers-color-scheme:dark){:root{--bg:#0f172a;--panel:#111827;--soft:#1e1b4b;--ink:#f8fafc;--muted:#94a3b8;--line:#334155;--brand:#818cf8;--brand2:#a5b4fc;--good:#34d399;--warn:#fbbf24}}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{width:min(1180px,calc(100% - 32px));margin:auto;padding:48px 0 80px}.eyebrow{color:var(--brand);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:.75rem}
+    h1{font-size:clamp(2.5rem,7vw,5.5rem);line-height:.94;letter-spacing:-.055em;margin:.25em 0}.lead{font-size:clamp(1.1rem,2vw,1.35rem);max-width:780px;color:var(--muted)}
+    h2{font-size:clamp(1.55rem,3vw,2.2rem);letter-spacing:-.03em;margin:0 0 10px} h3{margin:0 0 8px}.section{margin-top:64px}.panel,.card,form{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;min-width:0}
+    .hero{position:relative;overflow:hidden;background:linear-gradient(145deg,var(--panel),var(--soft));border:1px solid var(--line);border-radius:28px;padding:clamp(28px,6vw,72px)}.hero:after{content:"";position:absolute;width:420px;height:420px;border-radius:50%;right:-180px;top:-220px;background:var(--brand);opacity:.12}
+    .command{font:700 clamp(.9rem,2vw,1.1rem)/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:#23241f;color:#f8fafc;padding:20px;border-radius:14px;margin:28px 0 8px;overflow-wrap:anywhere;white-space:pre-wrap}.caption,.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px}.span6{grid-column:span 6}.span4{grid-column:span 4}.span8{grid-column:span 8}.span12{grid-column:1/-1}
+    .recommended{border:2px solid var(--brand);position:relative}.badge{display:inline-flex;padding:4px 9px;border-radius:999px;background:var(--soft);color:var(--brand2);font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em}.check{color:var(--good);font-weight:700}.cost{color:var(--warn);font-weight:700}.kicker{font:700 .78rem ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+    ul{padding-left:20px;margin:12px 0 0}li+li{margin-top:7px}.tree{font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#23241f;color:#e5e7eb;border-radius:14px;padding:20px}
+    .decision{display:block;border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0;cursor:pointer}.decision:has(input:checked){border-color:var(--brand);background:var(--soft)}input{accent-color:var(--brand);margin-right:9px}button{border:0;border-radius:12px;background:var(--brand2);color:white;padding:11px 16px;font:700 14px inherit;cursor:pointer}button:hover{filter:brightness(1.08)}.queued{font-size:.82rem;color:var(--muted);margin-left:10px}
+    .step{display:flex;gap:14px}.num{flex:0 0 34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--brand);color:white;font-weight:800}.mermaid{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;overflow:auto}
+    #code-file{min-height:320px;border-radius:14px;overflow:hidden}.callout{border-left:4px solid var(--brand);padding:14px 18px;background:var(--soft);border-radius:0 12px 12px 0}.footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);color:var(--muted)}
+    @media(max-width:760px){main{width:min(100% - 20px,1180px);padding-top:14px}.hero{border-radius:20px}.span4,.span6,.span8{grid-column:1/-1}.panel,.card,form{padding:18px}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="eyebrow">Arc developer experience proposal</div>
+    <h1>Fresh app.<br>Zero cloning.</h1>
+    <p class="lead">Design the missing product surface: a published <strong>arc-web-cli</strong> package that installs the <code>arc</code> command and creates a self-contained, runnable Arc application.</p>
+    <div class="command">cargo install arc-web-cli
+arc new my-app
+cd my-app
+make setup
+make dev</div>
+    <p class="caption">Target promise: those five commands take a developer from an empty directory to a visible server—or a precise, actionable error.</p>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Outcome</div><h2>The contract we are designing</h2>
+    <div class="grid">
+      <div class="card span4"><span class="badge">Self-contained</span><h3>No Arc checkout</h3><p class="muted">The generated app depends on published crates and owns its migrations, environment, and project files.</p></div>
+      <div class="card span4"><span class="badge">Observable</span><h3>No silent exits</h3><p class="muted">Logging initializes first. Database, bind, and configuration failures print a direct explanation and next action.</p></div>
+      <div class="card span4"><span class="badge">Repeatable</span><h3>Tested externally</h3><p class="muted">Release verification scaffolds into a clean temporary directory, builds, migrates, starts, and probes health.</p></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Golden path</div><h2>What happens after <code>arc new</code>?</h2>
+    <div class="mermaid">
+flowchart TD
+  A["cargo install arc-web-cli"] --> B["arc new my-app"]
+  B --> C["Embedded versioned template is rendered"]
+  C --> D["cd my-app && make setup"]
+  D --> E["Create .env from .env.example"]
+  E --> F["Generate local secrets"]
+  F --> G["Create SQLite database and run app-owned migrations"]
+  G --> H["make dev"]
+  H --> I{"Preflight succeeds?"}
+  I -->|Yes| J["Server announces URL and health endpoint"]
+  I -->|No| K["Visible error: port, database, or config plus fix command"]
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Primary decision</div><h2>How should the starter ship?</h2>
+    <div class="grid">
+      <article class="card span4 recommended">
+        <span class="badge">Recommended</span><h3>Published <code>arc-web-cli</code></h3>
+        <p>Install once with Cargo. The binary embeds a template matching its release.</p>
+        <ul><li class="check">Exact five-command experience</li><li class="check">Works offline after installation</li><li class="check">Arc-specific validation and upgrades later</li><li class="cost">New crate and release responsibility</li></ul>
+      </article>
+      <article class="card span4">
+        <span class="badge">Alternative</span><h3><code>cargo-generate</code></h3>
+        <p>Use a generic generator and a remote template repository.</p>
+        <ul><li class="check">Less CLI code</li><li class="cost">Extra tool and Git/network dependency</li><li class="cost">Template release can drift from crates</li></ul>
+      </article>
+      <article class="card span4">
+        <span class="badge">Alternative</span><h3>Install script</h3>
+        <p>Pipe a hosted shell script that downloads project files.</p>
+        <ul><li class="check">Fast initial implementation</li><li class="cost">Harder to trust and support cross-platform</li><li class="cost">Always network-coupled</li></ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Generated shape</div><h2>A real application, not a fragile snippet</h2>
+    <div class="grid">
+      <div class="span6 tree">my-app/
+├── Cargo.toml
+├── Makefile
+├── .env.example
+├── .gitignore
+├── migrations/
+│   └── 00000000000000_arc_base/
+│       ├── up.sql
+│       └── down.sql
+├── src/
+│   ├── main.rs
+│   ├── config.rs
+│   ├── routes.rs
+│   └── domain/
+│       └── mod.rs
+├── tests/
+│   └── smoke.rs
+└── resources/       # only with --ui
+    ├── views/
+    └── assets/</div>
+      <div class="panel span6">
+        <h3>Ownership boundary</h3>
+        <p><strong>Arc crates own framework behavior.</strong> The generated project owns deployment choices: migrations, ports, secrets, routes, and domain code.</p>
+        <div class="callout"><strong>Why migrations are copied:</strong> database migrations are application state. Embedding them implicitly inside <code>arc-web</code> caused the published 0.2.2 build failure; the scaffold makes their location explicit and testable.</div>
+        <p class="muted">Plain <code>arc new my-app</code> stays deliberately small. <code>arc new my-app --ui</code> adds the full Tera/frontend application without burdening API-only apps.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Runtime behavior</div><h2>The generated entry point must speak</h2>
+    <p class="muted">Representative contract—not final implementation. The code surface uses the project’s Rust-centric visual language.</p>
+    <div id="code-file"></div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Implementation slices</div><h2>Small, releaseable steps</h2>
+    <div class="grid">
+      <div class="card span6 step"><div class="num">1</div><div><h3>Scaffolder crate</h3><p class="muted">Add publishable <code>arc-web-cli</code> with the <code>arc</code> binary, argument parsing, project-name validation, embedded templates, and safe refusal to overwrite.</p></div></div>
+      <div class="card span6 step"><div class="num">2</div><div><h3>Minimal template + UI overlay</h3><p class="muted">Generate the lean server contract by default. When <code>--ui</code> is present, overlay Tera views, frontend assets, and UI routes from the same embedded release.</p></div></div>
+      <div class="card span6 step"><div class="num">3</div><div><h3>Setup contract</h3><p class="muted"><code>make setup</code> idempotently creates local config/secrets, installs required frontend tools only when selected, and migrates SQLite.</p></div></div>
+      <div class="card span6 step"><div class="num">4</div><div><h3>External proof</h3><p class="muted">Package crates, install CLI from the package, generate outside the workspace, build, start on a free port, probe health, and clean up.</p></div></div>
+      <div class="card span12 step"><div class="num">5</div><div><h3>Publish and replace the tutorial</h3><p class="muted">Publish <code>arc-web-cli</code>, then make the five-command path the README’s primary quick start. Keep repository cloning only for Arc contributors.</p></div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Your choices</div><h2>Set the defaults before coding</h2>
+    <div class="grid">
+      <form class="span6" data-lavish-question="distribution" onsubmit="queueChoice(event,'distribution','Distribution')">
+        <h3>1. Distribution</h3><p class="muted">How should a new user obtain the generator?</p>
+        <label class="decision"><input type="radio" name="distribution" value="Published arc-web-cli with embedded templates and arc binary" checked><strong>Published arc-web-cli</strong><br><span class="muted">Installs the unchanged <code>arc</code> command; the shorter package name is already owned on crates.io.</span></label>
+        <label class="decision"><input type="radio" name="distribution" value="cargo-generate and a remote template"><strong>cargo-generate</strong><br><span class="muted">Less code, more external coupling.</span></label>
+        <button type="submit">Queue distribution choice</button><span class="queued">Queues one editable answer</span>
+      </form>
+      <form class="span6" data-lavish-question="profile" onsubmit="queueChoice(event,'profile','Default starter')">
+        <h3>2. Default starter profile</h3><p class="muted">What should plain <code>arc new my-app</code> create?</p>
+        <label class="decision"><input type="radio" name="profile" value="Minimal server by default; full web via --ui" checked><strong>Minimal + <code>--ui</code></strong><br><span class="muted">Plain command: health route, SQLite, domain skeleton. The flag adds Tera, assets, and UI routes.</span></label>
+        <label class="decision"><input type="radio" name="profile" value="Full web starter by default; minimal via --minimal"><strong>Full web + <code>--minimal</code></strong><br><span class="muted">Alternative: showcase the full web stack immediately.</span></label>
+        <button type="submit">Queue starter choice</button>
+      </form>
+      <form class="span6" data-lavish-question="git" onsubmit="queueChoice(event,'git','Git initialization')">
+        <h3>3. Git behavior</h3>
+        <label class="decision"><input type="radio" name="git" value="Initialize Git by default, allow --no-git" checked><strong>Initialize by default</strong><br><span class="muted">Common scaffolder behavior; no commit is created.</span></label>
+        <label class="decision"><input type="radio" name="git" value="Never initialize Git"><strong>Do not initialize</strong><br><span class="muted">Leave all source control decisions to the user.</span></label>
+        <button type="submit">Queue Git choice</button>
+      </form>
+      <form class="span6" data-lavish-question="setup" onsubmit="queueChoice(event,'setup','Setup behavior')">
+        <h3>4. Setup behavior</h3>
+        <label class="decision"><input type="radio" name="setup" value="make setup creates .env, secrets, SQLite DB, and runs migrations" checked><strong>Complete and idempotent</strong><br><span class="muted">The recommended zero-surprise contract.</span></label>
+        <label class="decision"><input type="radio" name="setup" value="arc new performs setup immediately"><strong>Set up during generation</strong><br><span class="muted">One fewer command, but generation gains side effects.</span></label>
+        <button type="submit">Queue setup choice</button>
+      </form>
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <h3>Ready to approve the complete direction?</h3>
+      <p class="muted">Queue any individual changes above first, then use this to tell the agent the design is implementation-ready.</p>
+      <button onclick="window.lavish.queuePrompt('Approve the proposed arc new design with the selected queued decisions. Produce the implementation-ready specification and begin coding only after confirming the final scope.',{tag:'approval',text:'Approve arc new design',queueKey:'arc-new-approval',element:this});">Queue design approval</button>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="eyebrow">Guardrails</div><h2>Definition of done</h2>
+    <div class="grid">
+      <div class="card span8"><h3>Acceptance checks</h3><ul><li>A user can start from an unrelated empty directory; no Arc repository files are assumed.</li><li>Generated dependency versions match the CLI/template release.</li><li>Plain generation has no frontend toolchain; <code>--ui</code> produces a buildable Tera/assets starter.</li><li><code>make setup</code> is safe to run twice and never replaces an existing secret.</li><li>A busy port produces a visible error naming the port and the override variable.</li><li>A missing/unwritable database produces a visible error before exit.</li><li>Clean-room smoke tests prove both profiles through generate → setup → build → serve → health.</li></ul></div>
+      <div class="card span4"><h3>Not in v1</h3><ul><li>Interactive TUI wizard</li><li>Postgres/NATS provisioning</li><li>Automatic project upgrades</li><li>Plugin marketplace</li><li>Production deployment</li></ul></div>
+    </div>
+  </section>
+
+  <div class="footer">Design source: Arc’s existing Tailwind palette and home-page language—indigo accent, neutral surfaces, dark-mode support, and a Monokai-style Rust code panel.</div>
+</main>
+
+<script>
+function queueChoice(event,name,label){
+  event.preventDefault();
+  const value=new FormData(event.currentTarget).get(name);
+  if(!value)return;
+  window.lavish.queuePrompt(`For arc new, choose ${label}: ${value}. Update the design and implementation specification to reflect this.`,{
+    tag:"choice",text:`${label}: ${value}`,queueKey:`arc-new-${name}`,element:event.currentTarget,data:{question:name,answer:value}
+  });
+}
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const dark=window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({startOnLoad:true,theme:dark?"dark":"neutral",securityLevel:"loose",flowchart:{curve:"basis"}});
+  import { File } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+  const contents=`use anyhow::Context;
+use tracing::info;
+
+#[actix_web::main]
+async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::init();
+
+    let config = Config::from_env().context("invalid application configuration")?;
+    let app = build_app(&config).await.context("failed to initialize Arc")?;
+
+    info!(url = %config.url(), "Arc application ready");
+    app.bind(config.bind_addr())
+        .with_context(|| format!("cannot bind {}; set APP_PORT to a free port", config.bind_addr()))?
+        .run()
+        .await
+        .context("Arc server stopped unexpectedly")
+}`;
+  new File({theme:{light:"github-light",dark:"github-dark"},themeType:dark?"dark":"light",overflow:"wrap"}).render({
+    containerWrapper:document.querySelector("#code-file"),file:{name:"src/main.rs",contents}
+  });
+</script>
+</body>
+</html>

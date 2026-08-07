@@ -231,7 +231,28 @@ pub struct AppError;
 
 ### `AppError`
 
-An aggregate returns domain errors when an intention violates a business rule. The generated error is never returned because its handler always succeeds.
+`AppError` is the error type required by this line in the aggregate implementation:
+
+```rust
+type Error = AppError;
+```
+
+Every aggregate handler returns `Result<Vec<Event>, Self::Error>`. The generated handler has no behavior yet, so `AppError` is only a placeholder that lets the empty aggregate compile.
+
+Replace it with errors that describe why a real command can be rejected:
+
+```rust
+#[derive(Debug, Error)]
+pub enum ProductError {
+    #[error("product already exists")]
+    AlreadyExists,
+
+    #[error("product name cannot be empty")]
+    EmptyName,
+}
+```
+
+The aggregate returns one of these errors when a command violates a business rule. The command bus passes that failure back to the controller, which decides which HTTP response to send. Rejected commands produce no events and make no state change.
 
 ```rust
 async fn handle(

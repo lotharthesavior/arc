@@ -7,6 +7,7 @@ Arc's reusable crates are published in dependency order:
 3. `arc-es-postgres`
 4. `arc-es-nats`
 5. `arc-web`
+6. `arc-web-cli`
 
 The storage and NATS crates depend on `arc-core` by version, with a local `path` retained for
 workspace development. Publish or make `arc-core` available in the registry before running
@@ -40,6 +41,9 @@ cargo publish -p arc-es-nats
 
 make publish-check PUBLISH_CRATES=arc-web
 cargo publish -p arc-web
+
+make publish-check PUBLISH_CRATES=arc-web-cli
+cargo publish -p arc-web-cli
 ```
 
 Publish in dependency order:
@@ -50,6 +54,7 @@ cargo publish -p arc-es-sqlite --dry-run
 cargo publish -p arc-es-postgres --dry-run
 cargo publish -p arc-es-nats --dry-run
 cargo publish -p arc-web --dry-run
+cargo publish -p arc-web-cli --dry-run
 ```
 
 If network access is unavailable, `cargo package -p arc-core --allow-dirty --offline --no-verify`
@@ -59,8 +64,8 @@ cache.
 
 ## Public API Policy
 
-All five reusable crates are pre-1.0 and versioned in lockstep. Within a
-compatible `0.2.x` line:
+All six reusable crates are pre-1.0 and versioned in lockstep. Within a
+compatible minor release line:
 
 - Keep `arc-core` traits source-compatible unless there is a documented migration.
 - Treat the event envelope, `EventStore`, `ReadModelStore`, `EventBus`, `Aggregate`, and projection
