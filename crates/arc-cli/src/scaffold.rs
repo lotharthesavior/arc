@@ -303,6 +303,7 @@ mod tests {
         assert!(root.join("resources/views/errors/500.html").is_file());
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
         assert!(routes.contains("crate::ui::config"));
+        assert!(routes.contains("fn api_config(_cfg: &mut web::ServiceConfig)"));
         fs::remove_dir_all(destination).unwrap();
     }
 

@@ -158,7 +158,7 @@ fn register_api_route(root: &Path, names: &Names) -> Result<(), String> {
         })?;
         contents.insert_str(closing, &format!("    {API_ROUTE_MARKER}\n"));
     }
-    let registration = format!("    crate::domain::{}::api::config(cfg);", names.module);
+    let registration = format!("    crate::domain::{}::api::config(_cfg);", names.module);
     if contents
         .lines()
         .any(|line| line.trim() == registration.trim())
@@ -514,7 +514,7 @@ mod tests {
         let domain = fs::read_to_string(root.join("src/domain.rs")).unwrap();
         assert!(domain.contains("pub mod order_item;"));
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
-        assert!(routes.contains("crate::domain::order_item::api::config(cfg);"));
+        assert!(routes.contains("crate::domain::order_item::api::config(_cfg);"));
         fs::remove_dir_all(destination).unwrap();
     }
 
@@ -584,7 +584,7 @@ mod tests {
         assert!(main.contains("register_aggregate::<ProductAggregate>()"));
         assert!(fs::read_to_string(routes_path)
             .unwrap()
-            .contains("crate::domain::product::api::config(cfg);"));
+            .contains("crate::domain::product::api::config(_cfg);"));
         fs::remove_dir_all(destination).unwrap();
     }
 

@@ -80,6 +80,6 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(web::scope("/api").wrap(JwtMiddleware).configure(api_config));
 }
 
-fn api_config(cfg: &mut web::ServiceConfig) {
+fn api_config(_cfg: &mut web::ServiceConfig) {
     // arc:api-routes
 }

@@ -37,6 +37,7 @@ generate_and_check() {
 
     (
         cd "$consumer_root/$name"
+        RUSTFLAGS="-D warnings" cargo check --quiet
         cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- \
             generate resource Product "${resource_args[@]}"
         cargo run --quiet -- setup
@@ -65,7 +66,7 @@ grep -q 'register_aggregate::<ProductAggregate>()' \
     "$consumer_root/arc-scaffold-minimal/src/main.rs"
 grep -q 'register_projector(ProductProjector, PRODUCTS_VIEW)' \
     "$consumer_root/arc-scaffold-ui/src/main.rs"
-grep -q 'crate::domain::product::api::config(cfg);' \
+grep -q 'crate::domain::product::api::config(_cfg);' \
     "$consumer_root/arc-scaffold-ui/src/routes.rs"
 
 pushd "$consumer_root/arc-scaffold-minimal" >/dev/null
