@@ -19,7 +19,7 @@ cd my-app
 
 The plain command creates a minimal server with a health route, SQLite persistence, app-owned migrations, and a domain skeleton.
 
-Add `--ui` to include a Tera home page and browser assets:
+Add `--ui` to include the Instrument Panel Tera interface, browser authentication, and assets:
 
 ```sh
 arc new my-app --ui
@@ -48,7 +48,22 @@ It is idempotent: running it again preserves the existing `.env` and secret.
 make dev
 ```
 
-Open <http://127.0.0.1:8080/health>. A `--ui` application also serves its home page at <http://127.0.0.1:8080/>.
+Open <http://127.0.0.1:8080/health>. A `--ui` application redirects `/` to its Focused home at
+<http://127.0.0.1:8080/home>; sign in at `/signin` and use the Dense Workbench at `/admin`.
+Development credentials come from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Set
+`ADMIN_PASSWORD_HASH` to an Argon2 PHC string in production; plaintext bootstrap passwords are
+rejected there.
+
+Generate browser resource pages and a JWT-protected API together:
+
+```sh
+arc generate resource Product --api --ui
+make migrate
+```
+
+`--ui` on a resource requires an application created with `arc new --ui`. The generated browser
+collection supports filtering, name sorting, pagination, empty states, and optimistic-conflict
+feedback. Its writes use the resource `CommandBus`; its reads use the projection.
 
 The server stays attached to the terminal while running. Stop it with `Ctrl+C`.
 

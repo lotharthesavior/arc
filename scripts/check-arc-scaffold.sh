@@ -23,6 +23,10 @@ export CARGO_TARGET_DIR="$consumer_target"
 generate_and_check() {
     local name="$1"
     shift
+    local resource_args=(--api)
+    if [[ " $* " == *" --ui "* ]]; then
+        resource_args+=(--ui)
+    fi
 
     (
         cd "$consumer_root"
@@ -34,7 +38,7 @@ generate_and_check() {
     (
         cd "$consumer_root/$name"
         cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- \
-            generate resource Product --api
+            generate resource Product "${resource_args[@]}"
         cargo run --quiet -- setup
         before="$(sed -n 's/^SECRET_KEY=//p' .env)"
         cargo run --quiet -- setup
@@ -75,23 +79,36 @@ for _ in {1..40}; do
     sleep 0.25
 done
 
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    http://127.0.0.1:39081/api/products)" = "401"
+token="$(curl --silent --fail \
+    --request POST \
+    --header 'content-type: application/json' \
+    --data '{"email":"admin@example.com","password":"change-me"}' \
+    http://127.0.0.1:39081/api/session | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+test -n "$token"
+auth_header="authorization: Bearer $token"
 curl --silent --fail \
     --request POST \
     --header 'content-type: application/json' \
+    --header "$auth_header" \
     --data '{"id":"product-1","name":"Notebook"}' \
     http://127.0.0.1:39081/api/products | grep -q 'Notebook'
-curl --silent --fail http://127.0.0.1:39081/api/products/product-1 | grep -q 'Notebook'
-curl --silent --fail http://127.0.0.1:39081/api/products | grep -q 'product-1'
+curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products/product-1 | grep -q 'Notebook'
+curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products | grep -q 'product-1'
 curl --silent --fail \
     --request PUT \
     --header 'content-type: application/json' \
+    --header "$auth_header" \
     --data '{"name":"Field Notebook"}' \
     http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
-curl --silent --fail http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
+curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
 curl --silent --fail \
     --request DELETE \
+    --header "$auth_header" \
     http://127.0.0.1:39081/api/products/product-1 >/dev/null
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "$auth_header" \
     http://127.0.0.1:39081/api/products/product-1)" = "404"
 test "$(sqlite3 database/database.sqlite \
     "SELECT COUNT(*) FROM events WHERE aggregate_type = 'Product' AND aggregate_id = 'product-1';")" = "3"

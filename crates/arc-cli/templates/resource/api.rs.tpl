@@ -18,7 +18,7 @@ struct Update{{Type}} {
     name: String,
 }
 
-#[post("/api/{{view}}")]
+#[post("/{{view}}")]
 async fn create_{{module}}(
     body: web::Json<Create{{Type}}>,
     bus: web::Data<CommandBus<{{Type}}Aggregate>>,
@@ -39,7 +39,7 @@ async fn create_{{module}}(
     }
 }
 
-#[get("/api/{{view}}")]
+#[get("/{{view}}")]
 async fn list_{{view}}(store: web::Data<dyn ReadModelStore>) -> impl Responder {
     match store.list({{CONSTANT}}_VIEW).await {
         Ok(rows) => HttpResponse::Ok().json(rows),
@@ -49,7 +49,7 @@ async fn list_{{view}}(store: web::Data<dyn ReadModelStore>) -> impl Responder {
     }
 }
 
-#[get("/api/{{view}}/{id}")]
+#[get("/{{view}}/{id}")]
 async fn get_{{module}}(
     id: web::Path<String>,
     store: web::Data<dyn ReadModelStore>,
@@ -63,7 +63,7 @@ async fn get_{{module}}(
     }
 }
 
-#[put("/api/{{view}}/{id}")]
+#[put("/{{view}}/{id}")]
 async fn update_{{module}}(
     id: web::Path<String>,
     body: web::Json<Update{{Type}}>,
@@ -82,7 +82,7 @@ async fn update_{{module}}(
     }
 }
 
-#[delete("/api/{{view}}/{id}")]
+#[delete("/{{view}}/{id}")]
 async fn delete_{{module}}(
     id: web::Path<String>,
     bus: web::Data<CommandBus<{{Type}}Aggregate>>,

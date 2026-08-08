@@ -69,6 +69,71 @@ const FILES: &[TemplateFile] = &[
         ui_only: true,
     },
     TemplateFile {
+        path: "resources/views/layouts/public.html",
+        contents: include_str!("../templates/resources/views/layouts/public.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/layouts/admin.html",
+        contents: include_str!("../templates/resources/views/layouts/admin.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/components/ui.html",
+        contents: include_str!("../templates/resources/views/components/ui.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/auth/signin.html",
+        contents: include_str!("../templates/resources/views/auth/signin.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/auth/register.html",
+        contents: include_str!("../templates/resources/views/auth/register.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/auth/forgot_password.html",
+        contents: include_str!("../templates/resources/views/auth/forgot_password.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/auth/reset_password.html",
+        contents: include_str!("../templates/resources/views/auth/reset_password.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/admin/dashboard.html",
+        contents: include_str!("../templates/resources/views/admin/dashboard.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/admin/profile.html",
+        contents: include_str!("../templates/resources/views/admin/profile.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/admin/settings.html",
+        contents: include_str!("../templates/resources/views/admin/settings.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/errors/403.html",
+        contents: include_str!("../templates/resources/views/errors/403.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/errors/404.html",
+        contents: include_str!("../templates/resources/views/errors/404.html"),
+        ui_only: true,
+    },
+    TemplateFile {
+        path: "resources/views/errors/500.html",
+        contents: include_str!("../templates/resources/views/errors/500.html"),
+        ui_only: true,
+    },
+    TemplateFile {
         path: "public/styles.css",
         contents: include_str!("../templates/public/styles.css"),
         ui_only: true,
@@ -140,7 +205,7 @@ fn render(template: &str, project: &NewProject) -> String {
         .replace(
             "{{ui-routes}}",
             if project.ui {
-                "\n        .service(crate::ui::home)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
+                "\n        .configure(crate::ui::config)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
             } else {
                 ""
             },
@@ -233,8 +298,11 @@ mod tests {
         let root = create_project(&project).unwrap();
         assert!(root.join("src/ui.rs").is_file());
         assert!(root.join("resources/views/home.html").is_file());
+        assert!(root.join("resources/views/layouts/admin.html").is_file());
+        assert!(root.join("resources/views/auth/signin.html").is_file());
+        assert!(root.join("resources/views/errors/500.html").is_file());
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
-        assert!(routes.contains("crate::ui::home"));
+        assert!(routes.contains("crate::ui::config"));
         fs::remove_dir_all(destination).unwrap();
     }
 

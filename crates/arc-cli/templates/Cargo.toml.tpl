@@ -5,8 +5,10 @@ edition = "2021"
 
 [dependencies]
 actix-files = "0.6"
+actix-session = "0.10"
 actix-web = "4"
 anyhow = "1"
+argon2 = "0.5"
 arc-core = "{{arc-version}}"
 arc-web = "{{arc-version}}"
 async-trait = "0.1"

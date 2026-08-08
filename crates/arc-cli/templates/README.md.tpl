@@ -7,7 +7,13 @@ make setup
 make dev
 ```
 
-Open <http://127.0.0.1:8080/health>. Change `APP_PORT` in `.env` if port 8080 is busy.
+Open <http://127.0.0.1:8080/health>. UI applications serve the Focused home at `/home` and the
+session-protected Dense Workbench at `/admin`. Change `APP_PORT` in `.env` if port 8080 is busy.
+
+Development bootstrap credentials are read from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Production
+refuses the plaintext password and requires an Argon2 PHC string in `ADMIN_PASSWORD_HASH`.
+`POST /api/session` exchanges those credentials for a revocable JWT; all generated resource APIs
+require that bearer token.
 
 ## Generate a resource
 
@@ -15,9 +21,11 @@ Create and register an event-sourced aggregate, commands, events, projector, rea
 and focused tests:
 
 ```sh
-arc generate resource Product --api
+arc generate resource Product --api --ui
 make migrate
 ```
 
-`--api` adds create/list/get/update/delete JSON endpoints. Generation refuses to overwrite an
-existing resource. `aggregate` is an alias for `resource`.
+`--api` adds JWT-protected create/list/get/update/delete JSON endpoints. In a project created with
+`arc new --ui`, `--ui` adds session-protected collection, detail, create, and edit pages. Browser
+writes retain CSRF protection and dispatch commands; reads use the resource projection. Generation
+refuses to overwrite an existing resource. `aggregate` is an alias for `resource`.

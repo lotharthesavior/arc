@@ -1,0 +1,1 @@
+{% extends "layouts/public.html" %}{% block content %}<p class="error-code">500 / FAULT</p><h1>System fault</h1><p class="lede">The request could not be completed. No internal details were exposed.</p>{% if correlation_id %}<p class="mono">REFERENCE / {{ correlation_id }}</p>{% endif %}<a class="button" href="/home">Return home</a>{% endblock content %}

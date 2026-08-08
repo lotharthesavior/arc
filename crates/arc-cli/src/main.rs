@@ -65,12 +65,14 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                 ));
             }
             let name = args.next().ok_or_else(|| {
-                "usage: arc generate resource <name> [--api] (alias: aggregate)".to_string()
+                "usage: arc generate resource <name> [--api] [--ui] (alias: aggregate)".to_string()
             })?;
             let mut api = false;
+            let mut ui = false;
             for argument in args {
                 match argument.as_str() {
                     "--api" => api = true,
+                    "--ui" => ui = true,
                     "--help" | "-h" => {
                         print_generate_help();
                         return Ok(());
@@ -83,6 +85,7 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                 name,
                 root: PathBuf::from("."),
                 api,
+                ui,
             };
             let created = create_resource(&resource)?;
             println!();
@@ -121,8 +124,8 @@ fn print_help() {
 
 Usage:
   arc new <name> [--ui] [--no-git]
-  arc generate resource <name> [--api]
-  arc generate aggregate <name> [--api]
+  arc generate resource <name> [--api] [--ui]
+  arc generate aggregate <name> [--api] [--ui]
 
 Options:
   --ui       Add Tera views and browser assets
@@ -137,11 +140,12 @@ fn print_generate_help() {
         "Generate and register an event-sourced aggregate resource
 
 Usage:
-  arc generate resource <name> [--api]
-  arc generate aggregate <name> [--api]
+  arc generate resource <name> [--api] [--ui]
+  arc generate aggregate <name> [--api] [--ui]
 
 Options:
-  --api  Add and register JSON CRUD endpoints
+  --api  Add JWT-protected JSON CRUD endpoints
+  --ui   Add session-protected browser CRUD pages (requires `arc new --ui`)
 
 Run this command from the root of an application created by `arc new`."
     );

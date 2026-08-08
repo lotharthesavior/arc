@@ -10,6 +10,7 @@ pub struct NewResource {
     pub name: String,
     pub root: PathBuf,
     pub api: bool,
+    pub ui: bool,
 }
 
 #[derive(Debug)]
@@ -41,7 +42,10 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
     let main = read_main(&main_path)?;
 
     let migration_version = next_migration_version(&resource.root.join("migrations"))?;
-    let files = generated_files(&names, migration_version, resource.api);
+    if resource.ui && !resource.root.join("src/ui.rs").is_file() {
+        return Err("resource UI requires an application created with `arc new --ui`".to_string());
+    }
+    let files = generated_files(&names, migration_version, resource.api, resource.ui);
     let collisions = files
         .iter()
         .map(|file| resource.root.join(&file.relative))
@@ -97,12 +101,49 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
     if resource.api {
         register_api_route(&resource.root, &names)?;
     }
+    if resource.ui {
+        register_ui_route(&resource.root, &names)?;
+    }
 
     Ok(CreatedResource {
         type_name: names.type_name,
         files: files.into_iter().map(|file| file.relative).collect(),
         api_path: resource.api.then(|| format!("/api/{}", names.view)),
     })
+}
+
+fn register_ui_route(root: &Path, names: &Names) -> Result<(), String> {
+    let path = root.join("src/routes.rs");
+    let mut contents = read_file(&path)?;
+    let marker = "    // arc:browser-resource-routes";
+    if !contents.contains(marker) {
+        let anchor = "    cfg.service(health)";
+        if !contents.contains(anchor) {
+            return Err(format!(
+                "`{}` has no route configuration anchor",
+                path.display()
+            ));
+        }
+        contents = contents.replace(anchor, &format!("{marker}\n{anchor}"));
+    }
+    let registration = format!("    crate::domain::{}::ui::config(cfg);", names.module);
+    contents = contents.replace(marker, &format!("{registration}\n{marker}"));
+    fs::write(&path, contents)
+        .map_err(|error| format!("could not update `{}`: {error}", path.display()))?;
+
+    let layout_path = root.join("resources/views/layouts/admin.html");
+    let marker = "<!-- arc:resource-navigation -->";
+    let mut layout = read_file(&layout_path)?;
+    if !layout.contains(marker) {
+        return Err(format!(
+            "`{}` has no resource navigation marker",
+            layout_path.display()
+        ));
+    }
+    let link = format!("<a href=\"/admin/{}\">{}</a>", names.view, names.type_name);
+    layout = layout.replace(marker, &format!("{link}{marker}"));
+    fs::write(&layout_path, layout)
+        .map_err(|error| format!("could not update `{}`: {error}", layout_path.display()))
 }
 
 fn register_api_route(root: &Path, names: &Names) -> Result<(), String> {
@@ -331,19 +372,26 @@ fn next_migration_version(migrations: &Path) -> Result<String, String> {
     Ok(format!("{:014}", max + 1))
 }
 
-fn generated_files(names: &Names, migration_version: String, api: bool) -> Vec<GeneratedFile> {
+fn generated_files(
+    names: &Names,
+    migration_version: String,
+    api: bool,
+    ui: bool,
+) -> Vec<GeneratedFile> {
     let base = PathBuf::from(format!("src/domain/{}", names.module));
     let migration = PathBuf::from(format!(
         "migrations/{}_{}_view",
         migration_version, names.view
     ));
     let replacements = |template: &str| {
-        template
+        let rendered = template
             .replace("{{Type}}", &names.type_name)
             .replace("{{module}}", &names.module)
             .replace("{{view}}", &names.view)
             .replace("{{CONSTANT}}", &names.constant)
-            .replace("{{api-module}}", if api { "pub mod api;" } else { "" })
+            .replace("{{api-module}}", if api { "pub mod api;\n" } else { "" })
+            .replace("{{ui-module}}", if ui { "pub mod ui;\n" } else { "" });
+        format!("{}\n", rendered.trim_end())
     };
     let mut templates = vec![
         (
@@ -379,6 +427,33 @@ fn generated_files(names: &Names, migration_version: String, api: bool) -> Vec<G
         templates.push((
             base.join("api.rs"),
             include_str!("../templates/resource/api.rs.tpl"),
+        ));
+    }
+    if ui {
+        templates.push((
+            base.join("ui.rs"),
+            include_str!("../templates/resource/ui.rs.tpl"),
+        ));
+        templates.push((
+            PathBuf::from(format!(
+                "resources/views/resources/{}/collection.html",
+                names.module
+            )),
+            include_str!("../templates/resource/collection.html.tpl"),
+        ));
+        templates.push((
+            PathBuf::from(format!(
+                "resources/views/resources/{}/detail.html",
+                names.module
+            )),
+            include_str!("../templates/resource/detail.html.tpl"),
+        ));
+        templates.push((
+            PathBuf::from(format!(
+                "resources/views/resources/{}/form.html",
+                names.module
+            )),
+            include_str!("../templates/resource/form.html.tpl"),
         ));
     }
     templates
@@ -422,6 +497,7 @@ mod tests {
             name: "OrderItem".to_string(),
             root: root.clone(),
             api: true,
+            ui: false,
         })
         .unwrap();
 
@@ -450,6 +526,7 @@ mod tests {
             name: "Product".to_string(),
             root: root.clone(),
             api: false,
+            ui: false,
         };
         create_resource(&resource).unwrap();
         let before = fs::read_to_string(root.join("src/main.rs")).unwrap();
@@ -497,6 +574,7 @@ mod tests {
             name: "Product".to_string(),
             root: root.clone(),
             api: true,
+            ui: false,
         })
         .unwrap();
 
@@ -518,7 +596,43 @@ mod tests {
             name: "Product".to_string(),
             root: temp_root(),
             api: false,
+            ui: false,
         })
         .is_err());
+    }
+
+    #[test]
+    fn generates_session_protected_resource_ui_for_ui_projects() {
+        let destination = temp_root();
+        let root = create_project(&NewProject {
+            name: "catalog-ui".to_string(),
+            destination: destination.clone(),
+            ui: true,
+            git: false,
+        })
+        .unwrap();
+        let created = create_resource(&NewResource {
+            name: "Product".to_string(),
+            root: root.clone(),
+            api: true,
+            ui: true,
+        })
+        .unwrap();
+        assert_eq!(created.files.len(), 12);
+        assert!(root.join("src/domain/product/ui.rs").is_file());
+        assert!(root
+            .join("resources/views/resources/product/collection.html")
+            .is_file());
+        let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
+        assert!(routes.contains("crate::domain::product::ui::config(cfg);"));
+        assert!(
+            fs::read_to_string(root.join("resources/views/layouts/admin.html"))
+                .unwrap()
+                .contains("/admin/products")
+        );
+        let ui = fs::read_to_string(root.join("src/domain/product/ui.rs")).unwrap();
+        assert!(ui.contains("CommandBus<ProductAggregate>"));
+        assert!(ui.contains("AuthMiddleware"));
+        fs::remove_dir_all(destination).unwrap();
     }
 }
