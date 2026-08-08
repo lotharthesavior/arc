@@ -1,0 +1,16 @@
+[package]
+name = "arc-auth-rbac"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Simple role-based authorization policy for Arc"
+
+[dependencies]
+arc-auth-core = { path = "../arc-auth-core", version = "0.7.0" }
+arc-web = { path = "../arc-web", version = "0.7.0" }
+async-trait.workspace = true
+actix-session.workspace = true
+actix-web.workspace = true
+futures-util.workspace = true

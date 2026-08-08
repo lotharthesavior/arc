@@ -37,12 +37,17 @@ generate_and_check() {
 
     (
         cd "$consumer_root/$name"
-        export ARC_SETUP_ADMIN_NAME="Scaffold Administrator"
-        export ARC_SETUP_ADMIN_EMAIL="admin@example.com"
-        export ARC_SETUP_ADMIN_PASSWORD="change-me-now"
         RUSTFLAGS="-D warnings" cargo check --quiet
-        cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- \
-            generate resource Product "${resource_args[@]}"
+        if [[ " $* " == *" --ui "* ]]; then
+            ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- plugin add auth-db-session
+            ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- plugin add auth-jwt
+            ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- generate resource Product "${resource_args[@]}" --api-auth jwt --ui-auth session --roles admin
+            export ARC_SETUP_ADMIN_NAME="Scaffold Administrator"
+            export ARC_SETUP_ADMIN_EMAIL="admin@example.com"
+            export ARC_SETUP_ADMIN_PASSWORD="change-me-now"
+        else
+            cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- generate resource Product "${resource_args[@]}"
+        fi
         cargo run --quiet -- setup
         before="$(sed -n 's/^SECRET_KEY=//p' .env)"
         cargo run --quiet -- setup
@@ -84,35 +89,24 @@ for _ in {1..40}; do
 done
 
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
-    http://127.0.0.1:39081/api/products)" = "401"
-token="$(curl --silent --fail \
-    --request POST \
-    --header 'content-type: application/json' \
-    --data '{"email":"admin@example.com","password":"change-me-now"}' \
-    http://127.0.0.1:39081/api/session | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
-test -n "$token"
-auth_header="authorization: Bearer $token"
+    http://127.0.0.1:39081/api/products)" = "200"
 curl --silent --fail \
     --request POST \
     --header 'content-type: application/json' \
-    --header "$auth_header" \
     --data '{"id":"product-1","name":"Notebook"}' \
     http://127.0.0.1:39081/api/products | grep -q 'Notebook'
-curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products/product-1 | grep -q 'Notebook'
-curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products | grep -q 'product-1'
+curl --silent --fail http://127.0.0.1:39081/api/products/product-1 | grep -q 'Notebook'
+curl --silent --fail http://127.0.0.1:39081/api/products | grep -q 'product-1'
 curl --silent --fail \
     --request PUT \
     --header 'content-type: application/json' \
-    --header "$auth_header" \
     --data '{"name":"Field Notebook"}' \
     http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
-curl --silent --fail --header "$auth_header" http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
+curl --silent --fail http://127.0.0.1:39081/api/products/product-1 | grep -q 'Field Notebook'
 curl --silent --fail \
     --request DELETE \
-    --header "$auth_header" \
     http://127.0.0.1:39081/api/products/product-1 >/dev/null
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
-    --header "$auth_header" \
     http://127.0.0.1:39081/api/products/product-1)" = "404"
 test "$(sqlite3 database/database.sqlite \
     "SELECT COUNT(*) FROM events WHERE aggregate_type = 'Product' AND aggregate_id = 'product-1';")" = "3"

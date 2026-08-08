@@ -1,0 +1,13 @@
+[package]
+name = "arc-auth-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Composable identity and authorization contracts for Arc"
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+thiserror.workspace = true

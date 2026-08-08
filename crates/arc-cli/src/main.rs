@@ -2,6 +2,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+mod plugin;
 mod resource;
 mod scaffold;
 
@@ -24,13 +25,15 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
         Some("new") => {
             let name = args
                 .next()
-                .ok_or_else(|| "usage: arc new <name> [--ui] [--no-git]".to_string())?;
+                .ok_or_else(|| "usage: arc new <name> [--ui] [--api] [--no-git]".to_string())?;
             let mut ui = false;
+            let mut api = false;
             let mut git = true;
 
             for argument in args {
                 match argument.as_str() {
                     "--ui" => ui = true,
+                    "--api" => api = true,
                     "--no-git" => git = false,
                     "--help" | "-h" => {
                         print_new_help();
@@ -44,6 +47,7 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                 name,
                 destination: PathBuf::from("."),
                 ui,
+                api,
                 git,
             };
             let path = create_project(&project)?;
@@ -69,10 +73,27 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
             })?;
             let mut api = false;
             let mut ui = false;
-            for argument in args {
+            let mut api_auth = None;
+            let mut ui_auth = None;
+            let mut roles = Vec::new();
+            while let Some(argument) = args.next() {
                 match argument.as_str() {
                     "--api" => api = true,
                     "--ui" => ui = true,
+                    "--api-auth" => {
+                        api_auth = Some(args.next().ok_or("--api-auth requires jwt or none")?)
+                    }
+                    "--ui-auth" => {
+                        ui_auth = Some(args.next().ok_or("--ui-auth requires session or none")?)
+                    }
+                    "--roles" => {
+                        roles = args
+                            .next()
+                            .ok_or("--roles requires a comma-separated value")?
+                            .split(',')
+                            .map(str::to_owned)
+                            .collect()
+                    }
                     "--help" | "-h" => {
                         print_generate_help();
                         return Ok(());
@@ -86,6 +107,9 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                 root: PathBuf::from("."),
                 api,
                 ui,
+                api_auth,
+                ui_auth,
+                roles,
             };
             let created = create_resource(&resource)?;
             println!();
@@ -102,6 +126,15 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                     created.type_name
                 );
             }
+            Ok(())
+        }
+        Some("plugin") => {
+            if args.next().as_deref() != Some("add") {
+                return Err("usage: arc plugin add <auth-db|auth-session|auth-jwt|auth-rbac|auth-db-session|auth-db-jwt>".into());
+            }
+            let name = args.next().ok_or("plugin name is required")?;
+            plugin::add_plugin(PathBuf::from("."), &name)?;
+            println!("Installed {name}.");
             Ok(())
         }
         Some("--version" | "-V") => {
@@ -123,8 +156,9 @@ fn print_help() {
         "Arc application generator
 
 Usage:
-  arc new <name> [--ui] [--no-git]
-  arc generate resource <name> [--api] [--ui]
+  arc new <name> [--ui] [--api] [--no-git]
+  arc plugin add <name>
+  arc generate resource <name> [--api] [--ui] [--api-auth jwt] [--ui-auth session] [--roles admin,user]
   arc generate aggregate <name> [--api] [--ui]
 
 Options:
@@ -144,8 +178,11 @@ Usage:
   arc generate aggregate <name> [--api] [--ui]
 
 Options:
-  --api  Add JWT-protected JSON CRUD endpoints
-  --ui   Add session-protected browser CRUD pages (requires `arc new --ui`)
+  --api  Add public JSON CRUD endpoints
+  --ui   Add public browser CRUD pages (requires `arc new --ui`)
+  --api-auth jwt      Explicitly protect this API resource
+  --ui-auth session   Explicitly protect this browser resource
+  --roles LIST        Require any listed role (requires auth)
 
 Run this command from the root of an application created by `arc new`."
     );
@@ -156,6 +193,6 @@ fn print_new_help() {
         "Create a self-contained Arc application
 
 Usage:
-  arc new <name> [--ui] [--no-git]"
+  arc new <name> [--ui] [--api] [--no-git]"
     );
 }

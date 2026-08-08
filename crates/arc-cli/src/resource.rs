@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const DOMAIN_MARKER: &str = "// arc:domain-modules";
 const IMPORT_MARKER: &str = "// arc:resource-imports";
@@ -11,6 +12,9 @@ pub struct NewResource {
     pub root: PathBuf,
     pub api: bool,
     pub ui: bool,
+    pub api_auth: Option<String>,
+    pub ui_auth: Option<String>,
+    pub roles: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -35,6 +39,7 @@ struct GeneratedFile {
 pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String> {
     let names = parse_name(&resource.name)?;
     validate_project(&resource.root)?;
+    validate_auth(resource)?;
 
     let domain_path = resource.root.join("src/domain.rs");
     let main_path = resource.root.join("src/main.rs");
@@ -45,7 +50,15 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
     if resource.ui && !resource.root.join("src/ui.rs").is_file() {
         return Err("resource UI requires an application created with `arc new --ui`".to_string());
     }
-    let files = generated_files(&names, migration_version, resource.api, resource.ui);
+    let files = generated_files(
+        &names,
+        migration_version,
+        resource.api,
+        resource.ui,
+        resource.api_auth.as_deref(),
+        resource.ui_auth.as_deref(),
+        &resource.roles,
+    );
     let collisions = files
         .iter()
         .map(|file| resource.root.join(&file.relative))
@@ -104,12 +117,67 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
     if resource.ui {
         register_ui_route(&resource.root, &names)?;
     }
+    format_project(&resource.root)?;
 
     Ok(CreatedResource {
         type_name: names.type_name,
         files: files.into_iter().map(|file| file.relative).collect(),
         api_path: resource.api.then(|| format!("/api/{}", names.view)),
     })
+}
+
+fn format_project(root: &Path) -> Result<(), String> {
+    let status = Command::new("cargo")
+        .arg("fmt")
+        .current_dir(root)
+        .status()
+        .map_err(|e| format!("could not run cargo fmt: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("cargo fmt failed for generated resource".into())
+    }
+}
+
+fn validate_auth(resource: &NewResource) -> Result<(), String> {
+    if resource
+        .api_auth
+        .as_deref()
+        .is_some_and(|v| v != "none" && v != "jwt")
+    {
+        return Err("--api-auth must be jwt or none".into());
+    }
+    if resource
+        .ui_auth
+        .as_deref()
+        .is_some_and(|v| v != "none" && v != "session")
+    {
+        return Err("--ui-auth must be session or none".into());
+    }
+    if resource.api_auth.as_deref() == Some("jwt") && !resource.api {
+        return Err("--api-auth jwt requires --api".into());
+    }
+    if resource.ui_auth.as_deref() == Some("session") && !resource.ui {
+        return Err("--ui-auth session requires --ui".into());
+    }
+    if !resource.roles.is_empty()
+        && resource.api_auth.as_deref() != Some("jwt")
+        && resource.ui_auth.as_deref() != Some("session")
+    {
+        return Err("--roles requires an authenticated resource".into());
+    }
+    let manifest =
+        fs::read_to_string(resource.root.join("Cargo.toml")).map_err(|e| e.to_string())?;
+    if resource.api_auth.as_deref() == Some("jwt") && !manifest.contains("arc-auth-jwt") {
+        return Err("install JWT capability first: arc plugin add auth-db-jwt".into());
+    }
+    if resource.ui_auth.as_deref() == Some("session") && !manifest.contains("arc-auth-session") {
+        return Err("install session capability first: arc plugin add auth-db-session".into());
+    }
+    if !resource.roles.is_empty() && !manifest.contains("arc-auth-rbac") {
+        return Err("install RBAC capability first: arc plugin add auth-rbac".into());
+    }
+    Ok(())
 }
 
 fn register_ui_route(root: &Path, names: &Names) -> Result<(), String> {
@@ -377,6 +445,9 @@ fn generated_files(
     migration_version: String,
     api: bool,
     ui: bool,
+    api_auth: Option<&str>,
+    ui_auth: Option<&str>,
+    roles: &[String],
 ) -> Vec<GeneratedFile> {
     let base = PathBuf::from(format!("src/domain/{}", names.module));
     let migration = PathBuf::from(format!(
@@ -384,6 +455,14 @@ fn generated_files(
         migration_version, names.view
     ));
     let replacements = |template: &str| {
+        let role_wrap = format!(
+            ".wrap(RequireRoles::new(&[{}]))",
+            roles
+                .iter()
+                .map(|r| format!("\"{r}\""))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         let rendered = template
             .replace("{{Type}}", &names.type_name)
             .replace("{{module}}", &names.module)
@@ -391,6 +470,72 @@ fn generated_files(
             .replace("{{CONSTANT}}", &names.constant)
             .replace("{{api-module}}", if api { "pub mod api;\n" } else { "" })
             .replace("{{ui-module}}", if ui { "pub mod ui;\n" } else { "" });
+        let rendered = rendered
+            .replace(
+                "{{api-auth-import}}",
+                if api_auth == Some("jwt") {
+                    "use arc_auth_jwt::RequireJwt;\n"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{api-auth-wrap}}",
+                if api_auth == Some("jwt") {
+                    ".wrap(RequireJwt)"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{api-role-import}}",
+                if !roles.is_empty() && api_auth == Some("jwt") {
+                    "use arc_auth_rbac::RequireRoles;\n"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{api-role-wrap}}",
+                if !roles.is_empty() && api_auth == Some("jwt") {
+                    &role_wrap
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{ui-auth-import}}",
+                if ui_auth == Some("session") {
+                    "use arc_auth_session::RequireSession;\n"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{ui-auth-wrap}}",
+                if ui_auth == Some("session") {
+                    ".wrap(RequireSession)"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{ui-role-import}}",
+                if !roles.is_empty() && ui_auth == Some("session") {
+                    "use arc_auth_rbac::RequireRoles;\n"
+                } else {
+                    ""
+                },
+            )
+            .replace(
+                "{{ui-role-wrap}}",
+                if !roles.is_empty() && ui_auth == Some("session") {
+                    &role_wrap
+                } else {
+                    ""
+                },
+            )
+            .replace("{{required-roles}}", &roles.join(","));
         format!("{}\n", rendered.trim_end())
     };
     let mut templates = vec![
@@ -481,6 +626,7 @@ mod tests {
 
     fn project(destination: &Path) -> PathBuf {
         create_project(&NewProject {
+            api: false,
             name: "catalog".to_string(),
             destination: destination.to_path_buf(),
             ui: false,
@@ -494,6 +640,9 @@ mod tests {
         let destination = temp_root();
         let root = project(&destination);
         let created = create_resource(&NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
             name: "OrderItem".to_string(),
             root: root.clone(),
             api: true,
@@ -506,7 +655,7 @@ mod tests {
         assert!(root.join("src/domain/order_item/aggregate.rs").is_file());
         assert!(root.join("src/domain/order_item/api.rs").is_file());
         assert!(root
-            .join("migrations/00000000000002_order_items_view/up.sql")
+            .join("migrations/00000000000001_order_items_view/up.sql")
             .is_file());
         let main = fs::read_to_string(root.join("src/main.rs")).unwrap();
         assert!(main.contains("register_aggregate::<OrderItemAggregate>()"));
@@ -523,6 +672,9 @@ mod tests {
         let destination = temp_root();
         let root = project(&destination);
         let resource = NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
             name: "Product".to_string(),
             root: root.clone(),
             api: false,
@@ -571,6 +723,9 @@ mod tests {
         .unwrap();
 
         create_resource(&NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
             name: "Product".to_string(),
             root: root.clone(),
             api: true,
@@ -593,6 +748,9 @@ mod tests {
         assert!(parse_name("3products").is_err());
         assert!(parse_name("type").is_err());
         assert!(create_resource(&NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
             name: "Product".to_string(),
             root: temp_root(),
             api: false,
@@ -602,9 +760,10 @@ mod tests {
     }
 
     #[test]
-    fn generates_session_protected_resource_ui_for_ui_projects() {
+    fn generates_public_resource_ui_by_default() {
         let destination = temp_root();
         let root = create_project(&NewProject {
+            api: false,
             name: "catalog-ui".to_string(),
             destination: destination.clone(),
             ui: true,
@@ -612,6 +771,9 @@ mod tests {
         })
         .unwrap();
         let created = create_resource(&NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
             name: "Product".to_string(),
             root: root.clone(),
             api: true,
@@ -632,7 +794,7 @@ mod tests {
         );
         let ui = fs::read_to_string(root.join("src/domain/product/ui.rs")).unwrap();
         assert!(ui.contains("CommandBus<ProductAggregate>"));
-        assert!(ui.contains("AuthMiddleware"));
+        assert!(!ui.contains("RequireSession"));
         fs::remove_dir_all(destination).unwrap();
     }
 }

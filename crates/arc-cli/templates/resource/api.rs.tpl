@@ -6,7 +6,7 @@ use arc_core::command_bus::{CommandBus, CommandContext};
 use arc_core::read_model_store::ReadModelStore;
 use serde::Deserialize;
 use serde_json::json;
-
+{{api-auth-import}}{{api-role-import}}
 #[derive(Deserialize)]
 struct Create{{Type}} {
     id: String,
@@ -102,9 +102,12 @@ async fn delete_{{module}}(
 }
 
 pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(create_{{module}})
-        .service(list_{{view}})
-        .service(get_{{module}})
-        .service(update_{{module}})
-        .service(delete_{{module}});
+    cfg.service(
+        web::scope(""){{api-role-wrap}}{{api-auth-wrap}}
+            .service(create_{{module}})
+            .service(list_{{view}})
+            .service(get_{{module}})
+            .service(update_{{module}})
+            .service(delete_{{module}}),
+    );
 }

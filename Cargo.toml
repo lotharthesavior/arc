@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/arc-auth-core",
+    "crates/arc-auth-db",
+    "crates/arc-auth-session",
+    "crates/arc-auth-jwt",
+    "crates/arc-auth-rbac",
     "crates/arc-core",
     "crates/arc-es-sqlite",
     "crates/arc-es-postgres",
@@ -11,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 authors = ["Savio Resende <savio@savioresende.com>"]
 license = "MIT"

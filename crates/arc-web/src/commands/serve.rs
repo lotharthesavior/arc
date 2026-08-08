@@ -130,7 +130,8 @@ pub(crate) async fn run(
     app_url: String,
     app_port: u16,
     registrations: Vec<AggregateRegistration>,
-    routes: Arc<RoutesFn>,
+    routes: Vec<Arc<RoutesFn>>,
+    plugin_app_data: Vec<Arc<AppDataFn>>,
 ) -> io::Result<()> {
     crate::check_database_health();
 
@@ -226,6 +227,7 @@ pub(crate) async fn run(
         }
 
         let routes = routes.clone();
+        let plugin_app_data = plugin_app_data.clone();
         let aggregate_runtimes = aggregate_runtimes.clone();
 
         App::new()
@@ -246,7 +248,12 @@ pub(crate) async fn run(
                 for runtime in aggregate_runtimes.iter() {
                     runtime.configure(cfg);
                 }
-                routes.as_ref()(cfg);
+                for register_data in &plugin_app_data {
+                    register_data.as_ref()(cfg);
+                }
+                for register_routes in &routes {
+                    register_routes.as_ref()(cfg);
+                }
             })
     })
     .bind((app_url, app_port))?

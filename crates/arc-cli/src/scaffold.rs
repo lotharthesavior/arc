@@ -8,6 +8,7 @@ pub struct NewProject {
     pub name: String,
     pub destination: PathBuf,
     pub ui: bool,
+    pub api: bool,
     pub git: bool,
 }
 
@@ -54,36 +55,6 @@ const FILES: &[TemplateFile] = &[
         ui_only: false,
     },
     TemplateFile {
-        path: "src/auth.rs",
-        contents: include_str!("../templates/src/auth.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "src/domain/user/mod.rs",
-        contents: include_str!("../templates/src/domain/user/mod.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "src/domain/user/commands.rs",
-        contents: include_str!("../templates/src/domain/user/commands.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "src/domain/user/events.rs",
-        contents: include_str!("../templates/src/domain/user/events.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "src/domain/user/aggregate.rs",
-        contents: include_str!("../templates/src/domain/user/aggregate.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "src/domain/user/projector.rs",
-        contents: include_str!("../templates/src/domain/user/projector.rs"),
-        ui_only: false,
-    },
-    TemplateFile {
         path: "src/routes.rs",
         contents: include_str!("../templates/src/routes.rs.tpl"),
         ui_only: false,
@@ -114,18 +85,8 @@ const FILES: &[TemplateFile] = &[
         ui_only: true,
     },
     TemplateFile {
-        path: "resources/views/auth/signin.html",
-        contents: include_str!("../templates/resources/views/auth/signin.html"),
-        ui_only: true,
-    },
-    TemplateFile {
         path: "resources/views/admin/dashboard.html",
         contents: include_str!("../templates/resources/views/admin/dashboard.html"),
-        ui_only: true,
-    },
-    TemplateFile {
-        path: "resources/views/admin/profile.html",
-        contents: include_str!("../templates/resources/views/admin/profile.html"),
         ui_only: true,
     },
     TemplateFile {
@@ -156,16 +117,6 @@ const FILES: &[TemplateFile] = &[
     TemplateFile {
         path: "migrations/00000000000000_arc_base/down.sql",
         contents: include_str!("../templates/migrations/arc_base/down.sql"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "migrations/00000000000001_users_view/up.sql",
-        contents: include_str!("../templates/migrations/users_view/up.sql"),
-        ui_only: false,
-    },
-    TemplateFile {
-        path: "migrations/00000000000001_users_view/down.sql",
-        contents: include_str!("../templates/migrations/users_view/down.sql"),
         ui_only: false,
     },
 ];
@@ -214,6 +165,7 @@ fn write_project(project: &NewProject, root: &Path) -> Result<(), String> {
 }
 
 fn render(template: &str, project: &NewProject) -> String {
+    let _api_requested = project.api;
     let rendered = template
         .replace("{{project-name}}", &project.name)
         .replace("{{crate-name}}", &project.name.replace('-', "_"))
@@ -223,9 +175,9 @@ fn render(template: &str, project: &NewProject) -> String {
             if project.ui { "mod ui;\n" } else { "" },
         )
         .replace(
-            "        // {{ui-routes}}\n",
+            "{{ui-routes}}",
             if project.ui {
-                "        .configure(crate::ui::config)\n        .service(actix_files::Files::new(\"/public\", \"public\"))\n"
+                ".configure(crate::ui::config).service(actix_files::Files::new(\"/public\", \"public\"))"
             } else {
                 ""
             },
@@ -289,6 +241,7 @@ mod tests {
     fn creates_minimal_project_without_ui_files() {
         let destination = temp_root();
         let project = NewProject {
+            api: false,
             name: "hello-arc".to_string(),
             destination: destination.clone(),
             ui: false,
@@ -310,6 +263,7 @@ mod tests {
     fn ui_flag_adds_web_files_and_routes() {
         let destination = temp_root();
         let project = NewProject {
+            api: false,
             name: "hello-ui".to_string(),
             destination: destination.clone(),
             ui: true,
@@ -319,16 +273,14 @@ mod tests {
         assert!(root.join("src/ui.rs").is_file());
         assert!(root.join("resources/views/home.html").is_file());
         assert!(root.join("resources/views/layouts/admin.html").is_file());
-        assert!(root.join("resources/views/auth/signin.html").is_file());
         assert!(root.join("resources/views/errors/500.html").is_file());
-        assert!(root.join("src/domain/user/aggregate.rs").is_file());
-        assert!(root
-            .join("migrations/00000000000001_users_view/up.sql")
-            .is_file());
+        assert!(!root.join("resources/views/auth/signin.html").exists());
+        assert!(!root.join("src/domain/user/aggregate.rs").exists());
         assert!(!root.join("resources/views/admin/settings.html").exists());
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
         assert!(routes.contains("crate::ui::config"));
         assert!(routes.contains("fn api_config(_cfg: &mut web::ServiceConfig)"));
+        assert!(!routes.contains("JwtMiddleware"));
         assert!(
             !fs::read_to_string(root.join("resources/views/layouts/admin.html"))
                 .unwrap()
@@ -342,6 +294,7 @@ mod tests {
         let destination = temp_root();
         fs::create_dir_all(destination.join("taken")).unwrap();
         let project = NewProject {
+            api: false,
             name: "taken".to_string(),
             destination: destination.clone(),
             ui: false,

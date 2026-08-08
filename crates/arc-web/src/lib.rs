@@ -9,12 +9,12 @@
 
 use std::any::TypeId;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::{env, fs};
 
-use actix_web::web::ServiceConfig;
+use actix_web::web::{self, ServiceConfig};
 use arc_core::aggregate::Aggregate;
 use arc_core::command_bus::SnapshotPolicy;
 use arc_core::projection::Projector;
@@ -79,12 +79,16 @@ impl ArcApp {
     pub fn builder() -> ArcAppBuilder {
         ArcAppBuilder {
             aggregates: Vec::new(),
-            routes: None,
+            routes: Vec::new(),
+            app_data: Vec::new(),
+            plugin_names: Vec::new(),
+            plugins: Vec::new(),
         }
     }
 }
 
 type RoutesFn = dyn Fn(&mut ServiceConfig) + Send + Sync + 'static;
+type AppDataFn = dyn Fn(&mut ServiceConfig) + Send + Sync + 'static;
 type AggregateBuildFuture = Pin<
     Box<
         dyn Future<Output = std::io::Result<commands::serve::BuiltAggregateRuntime>>
@@ -125,7 +129,35 @@ impl AggregateRegistration {
 /// `CommandBus<A>` while sharing the configured storage backend.
 pub struct ArcAppBuilder {
     aggregates: Vec<AggregateRegistration>,
-    routes: Option<Arc<RoutesFn>>,
+    routes: Vec<Arc<RoutesFn>>,
+    app_data: Vec<Arc<AppDataFn>>,
+    plugin_names: Vec<&'static str>,
+    plugins: Vec<Arc<dyn ArcPlugin>>,
+}
+
+/// Setup-time inputs shared by installed capability packages.
+pub struct PluginSetupContext<'a> {
+    pub database_url: &'a str,
+    pub project_root: &'a Path,
+}
+
+/// Compile-time extension package registered through [`ArcAppBuilder`].
+///
+/// Plugins remain ordinary Cargo dependencies: registration is explicit,
+/// typed, and visible in application code. Implementations may add routes,
+/// aggregates, projectors, and other builder-supported capabilities.
+#[async_trait::async_trait]
+pub trait ArcPlugin: Send + Sync + 'static {
+    /// Stable identifier used for collision detection and diagnostics.
+    fn name(&self) -> &'static str;
+
+    /// Contribute this package's capabilities to the application builder.
+    fn register(&self, builder: ArcAppBuilder) -> ArcAppBuilder;
+
+    /// Run package-owned migrations and idempotent setup work.
+    async fn setup(&self, _context: &PluginSetupContext<'_>) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl ArcAppBuilder {
@@ -169,8 +201,47 @@ impl ArcAppBuilder {
     where
         F: Fn(&mut ServiceConfig) + Send + Sync + 'static,
     {
-        self.routes = Some(Arc::new(f));
+        self.routes.push(Arc::new(f));
         self
+    }
+
+    /// Inject shared typed state contributed by an application or plugin.
+    pub fn register_data<T>(mut self, data: Arc<T>) -> Self
+    where
+        T: ?Sized + Send + Sync + 'static,
+    {
+        let data = web::Data::from(data);
+        self.app_data.push(Arc::new(move |cfg| {
+            cfg.app_data(data.clone());
+        }));
+        self
+    }
+
+    /// Register a compile-time capability package.
+    pub fn register_plugin<P: ArcPlugin>(mut self, plugin: P) -> Self {
+        let name = plugin.name();
+        assert!(
+            !self.plugin_names.contains(&name),
+            "plugin {name} is already registered"
+        );
+        self.plugin_names.push(name);
+        let plugin = Arc::new(plugin);
+        let mut builder = plugin.register(self);
+        builder.plugins.push(plugin);
+        builder
+    }
+
+    /// Run setup hooks for every registered capability package in order.
+    pub async fn setup_plugins(&self, context: &PluginSetupContext<'_>) -> std::io::Result<()> {
+        for plugin in &self.plugins {
+            plugin.setup(context).await.map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("plugin {} setup failed: {error}", plugin.name()),
+                )
+            })?;
+        }
+        Ok(())
     }
 
     /// Snapshot policy for the most recently registered aggregate.
@@ -196,10 +267,20 @@ impl ArcAppBuilder {
                 "ArcAppBuilder::serve requires at least one register_aggregate::<A>() call",
             ));
         }
-        let routes = self
-            .routes
-            .expect("ArcAppBuilder::serve requires register_routes(..)");
-        commands::serve::run(app_url, app_port, self.aggregates, routes).await
+        if self.routes.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ArcAppBuilder::serve requires at least one route registration",
+            ));
+        }
+        commands::serve::run(
+            app_url,
+            app_port,
+            self.aggregates,
+            self.routes,
+            self.app_data,
+        )
+        .await
     }
 }
 

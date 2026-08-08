@@ -478,7 +478,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "arc"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "actix",
  "actix-files",
@@ -521,8 +521,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-auth-core"
+version = "0.7.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "arc-auth-db"
+version = "0.7.0"
+dependencies = [
+ "arc-auth-core",
+ "arc-web",
+ "argon2",
+ "async-trait",
+ "diesel",
+ "rand",
+ "uuid",
+]
+
+[[package]]
+name = "arc-auth-jwt"
+version = "0.7.0"
+dependencies = [
+ "actix-web",
+ "arc-auth-core",
+ "arc-core",
+ "arc-web",
+ "async-trait",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "arc-auth-rbac"
+version = "0.7.0"
+dependencies = [
+ "actix-session 0.10.1",
+ "actix-web",
+ "arc-auth-core",
+ "arc-web",
+ "async-trait",
+ "futures-util",
+]
+
+[[package]]
+name = "arc-auth-session"
+version = "0.7.0"
+dependencies = [
+ "actix-session 0.10.1",
+ "actix-web",
+ "arc-auth-core",
+ "arc-web",
+ "async-trait",
+ "futures-util",
+ "serde",
+]
+
+[[package]]
 name = "arc-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "hmac",
@@ -537,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-nats"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arc-core",
  "async-nats",
@@ -550,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-postgres"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -566,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-sqlite"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -590,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "actix",
  "actix-files",
@@ -633,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web-cli"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "argon2"

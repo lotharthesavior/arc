@@ -299,14 +299,11 @@ fn invalid_form(session: &Session, form: &ResourceForm, error: &str, mode: &str)
     )
 }
 
+{{ui-auth-import}}{{ui-role-import}}
 pub fn config(cfg: &mut web::ServiceConfig) {
-    use arc_web::http::middlewares::{
-        auth_middleware::AuthMiddleware, idle_timeout_middleware::IdleTimeoutMiddleware,
-    };
     cfg.service(
         web::scope("/admin/{{view}}")
-            .wrap(AuthMiddleware)
-            .wrap(IdleTimeoutMiddleware::from_env())
+            {{ui-role-wrap}}{{ui-auth-wrap}}
             .route("", web::get().to(collection))
             .route("/new", web::get().to(new_form))
             .route("/new", web::post().to(create))
