@@ -32,6 +32,13 @@ const BASE: &[(&str, &str)] = &[
     ),
 ];
 
+#[derive(Serialize)]
+struct ResourceFormState {
+    id: String,
+    name: String,
+    version: String,
+}
+
 fn render(name: &str, mut context: Context, status: actix_web::http::StatusCode) -> HttpResponse {
     context.insert("app_name", env!("CARGO_PKG_NAME"));
     let mut tera = Tera::default();
@@ -139,6 +146,14 @@ async fn new_form(session: Session) -> HttpResponse {
     context.insert("csrf_token", &csrf::get_csrf_token(&session));
     context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
     context.insert("mode", "create");
+    context.insert(
+        "form_state",
+        &ResourceFormState {
+            id: String::new(),
+            name: String::new(),
+            version: String::new(),
+        },
+    );
     render(
         "resources/form.html",
         context,
@@ -195,6 +210,17 @@ async fn edit_form(
             context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
             context.insert("mode", "edit");
             context.insert("row", &row);
+            context.insert(
+                "form_state",
+                &ResourceFormState {
+                    id: row["id"].as_str().unwrap_or_default().to_owned(),
+                    name: row["name"].as_str().unwrap_or_default().to_owned(),
+                    version: row["version"]
+                        .as_i64()
+                        .map(|version| version.to_string())
+                        .unwrap_or_default(),
+                },
+            );
             render(
                 "resources/form.html",
                 context,
@@ -254,6 +280,17 @@ fn invalid_form(session: &Session, form: &ResourceForm, error: &str, mode: &str)
     context.insert("session_csrf_token", &csrf::get_csrf_token(session));
     context.insert("mode", mode);
     context.insert("form", form);
+    context.insert(
+        "form_state",
+        &ResourceFormState {
+            id: form.id.clone().unwrap_or_default(),
+            name: form.name.clone(),
+            version: form
+                .version
+                .map(|version| version.to_string())
+                .unwrap_or_default(),
+        },
+    );
     context.insert("error", error);
     render(
         "resources/form.html",

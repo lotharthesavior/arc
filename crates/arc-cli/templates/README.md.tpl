@@ -10,10 +10,14 @@ make dev
 Open <http://127.0.0.1:8080/health>. UI applications serve the Focused home at `/home` and the
 session-protected Dense Workbench at `/admin`. Change `APP_PORT` in `.env` if port 8080 is busy.
 
-Development bootstrap credentials are read from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Production
-refuses the plaintext password and requires an Argon2 PHC string in `ADMIN_PASSWORD_HASH`.
-`POST /api/session` exchanges those credentials for a revocable JWT; all generated resource APIs
-require that bearer token.
+On a fresh database, `make setup` prompts for the first administrator's name, email, and password.
+Noninteractive environments must provide `ARC_SETUP_ADMIN_NAME`, `ARC_SETUP_ADMIN_EMAIL`, and
+`ARC_SETUP_ADMIN_PASSWORD` for that first run. These are one-shot setup inputs: they are never
+written to `.env`, and rerunning setup never resets credentials. `POST /api/session` exchanges the
+same projection-backed credentials for a revocable JWT; all generated resource APIs require it.
+
+The administrator Profile page updates name/email through User commands. Password changes verify
+the current password and revoke existing API sessions.
 
 ## Generate a resource
 

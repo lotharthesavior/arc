@@ -506,7 +506,7 @@ mod tests {
         assert!(root.join("src/domain/order_item/aggregate.rs").is_file());
         assert!(root.join("src/domain/order_item/api.rs").is_file());
         assert!(root
-            .join("migrations/00000000000001_order_items_view/up.sql")
+            .join("migrations/00000000000002_order_items_view/up.sql")
             .is_file());
         let main = fs::read_to_string(root.join("src/main.rs")).unwrap();
         assert!(main.contains("register_aggregate::<OrderItemAggregate>()"));

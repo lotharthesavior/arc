@@ -54,6 +54,36 @@ const FILES: &[TemplateFile] = &[
         ui_only: false,
     },
     TemplateFile {
+        path: "src/auth.rs",
+        contents: include_str!("../templates/src/auth.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain/user/mod.rs",
+        contents: include_str!("../templates/src/domain/user/mod.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain/user/commands.rs",
+        contents: include_str!("../templates/src/domain/user/commands.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain/user/events.rs",
+        contents: include_str!("../templates/src/domain/user/events.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain/user/aggregate.rs",
+        contents: include_str!("../templates/src/domain/user/aggregate.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "src/domain/user/projector.rs",
+        contents: include_str!("../templates/src/domain/user/projector.rs"),
+        ui_only: false,
+    },
+    TemplateFile {
         path: "src/routes.rs",
         contents: include_str!("../templates/src/routes.rs.tpl"),
         ui_only: false,
@@ -89,21 +119,6 @@ const FILES: &[TemplateFile] = &[
         ui_only: true,
     },
     TemplateFile {
-        path: "resources/views/auth/register.html",
-        contents: include_str!("../templates/resources/views/auth/register.html"),
-        ui_only: true,
-    },
-    TemplateFile {
-        path: "resources/views/auth/forgot_password.html",
-        contents: include_str!("../templates/resources/views/auth/forgot_password.html"),
-        ui_only: true,
-    },
-    TemplateFile {
-        path: "resources/views/auth/reset_password.html",
-        contents: include_str!("../templates/resources/views/auth/reset_password.html"),
-        ui_only: true,
-    },
-    TemplateFile {
         path: "resources/views/admin/dashboard.html",
         contents: include_str!("../templates/resources/views/admin/dashboard.html"),
         ui_only: true,
@@ -111,11 +126,6 @@ const FILES: &[TemplateFile] = &[
     TemplateFile {
         path: "resources/views/admin/profile.html",
         contents: include_str!("../templates/resources/views/admin/profile.html"),
-        ui_only: true,
-    },
-    TemplateFile {
-        path: "resources/views/admin/settings.html",
-        contents: include_str!("../templates/resources/views/admin/settings.html"),
         ui_only: true,
     },
     TemplateFile {
@@ -146,6 +156,16 @@ const FILES: &[TemplateFile] = &[
     TemplateFile {
         path: "migrations/00000000000000_arc_base/down.sql",
         contents: include_str!("../templates/migrations/arc_base/down.sql"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "migrations/00000000000001_users_view/up.sql",
+        contents: include_str!("../templates/migrations/users_view/up.sql"),
+        ui_only: false,
+    },
+    TemplateFile {
+        path: "migrations/00000000000001_users_view/down.sql",
+        contents: include_str!("../templates/migrations/users_view/down.sql"),
         ui_only: false,
     },
 ];
@@ -199,13 +219,13 @@ fn render(template: &str, project: &NewProject) -> String {
         .replace("{{crate-name}}", &project.name.replace('-', "_"))
         .replace("{{arc-version}}", ARC_VERSION)
         .replace(
-            "{{ui-module}}",
-            if project.ui { "\nmod ui;" } else { "" },
+            "// {{ui-module}}\n",
+            if project.ui { "mod ui;\n" } else { "" },
         )
         .replace(
-            "{{ui-routes}}",
+            "        // {{ui-routes}}\n",
             if project.ui {
-                "\n        .configure(crate::ui::config)\n        .service(actix_files::Files::new(\"/public\", \"public\"))"
+                "        .configure(crate::ui::config)\n        .service(actix_files::Files::new(\"/public\", \"public\"))\n"
             } else {
                 ""
             },
@@ -301,9 +321,19 @@ mod tests {
         assert!(root.join("resources/views/layouts/admin.html").is_file());
         assert!(root.join("resources/views/auth/signin.html").is_file());
         assert!(root.join("resources/views/errors/500.html").is_file());
+        assert!(root.join("src/domain/user/aggregate.rs").is_file());
+        assert!(root
+            .join("migrations/00000000000001_users_view/up.sql")
+            .is_file());
+        assert!(!root.join("resources/views/admin/settings.html").exists());
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
         assert!(routes.contains("crate::ui::config"));
         assert!(routes.contains("fn api_config(_cfg: &mut web::ServiceConfig)"));
+        assert!(
+            !fs::read_to_string(root.join("resources/views/layouts/admin.html"))
+                .unwrap()
+                .contains("/admin/settings")
+        );
         fs::remove_dir_all(destination).unwrap();
     }
 

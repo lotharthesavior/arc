@@ -16,6 +16,7 @@ diesel = { version = "2.2", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2.2"
 dotenv = "0.15"
 rand = "0.8"
+rpassword = "7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tera = "1.20"

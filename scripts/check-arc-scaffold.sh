@@ -37,6 +37,9 @@ generate_and_check() {
 
     (
         cd "$consumer_root/$name"
+        export ARC_SETUP_ADMIN_NAME="Scaffold Administrator"
+        export ARC_SETUP_ADMIN_EMAIL="admin@example.com"
+        export ARC_SETUP_ADMIN_PASSWORD="change-me-now"
         RUSTFLAGS="-D warnings" cargo check --quiet
         cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- \
             generate resource Product "${resource_args[@]}"
@@ -85,7 +88,7 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
 token="$(curl --silent --fail \
     --request POST \
     --header 'content-type: application/json' \
-    --data '{"email":"admin@example.com","password":"change-me"}' \
+    --data '{"email":"admin@example.com","password":"change-me-now"}' \
     http://127.0.0.1:39081/api/session | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
 test -n "$token"
 auth_header="authorization: Bearer $token"
@@ -113,6 +116,43 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     http://127.0.0.1:39081/api/products/product-1)" = "404"
 test "$(sqlite3 database/database.sqlite \
     "SELECT COUNT(*) FROM events WHERE aggregate_type = 'Product' AND aggregate_id = 'product-1';")" = "3"
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+popd >/dev/null
+
+pushd "$consumer_root/arc-scaffold-ui" >/dev/null
+sed -i 's/^APP_PORT=.*/APP_PORT=39082/' .env
+cargo run --quiet -- serve >server.log 2>&1 &
+server_pid=$!
+for _ in {1..40}; do
+    if curl --silent --fail http://127.0.0.1:39082/health >/dev/null; then
+        break
+    fi
+    sleep 0.25
+done
+
+cookie_jar="$consumer_root/ui-cookies.txt"
+signin_html="$(curl --silent --fail --cookie-jar "$cookie_jar" http://127.0.0.1:39082/signin)"
+csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$signin_html")"
+test -n "$csrf_token"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+    --request POST --data-urlencode "csrf_token=$csrf_token" \
+    --data-urlencode 'email=admin@example.com' --data-urlencode 'password=change-me-now' \
+    http://127.0.0.1:39082/signin)" = "303"
+new_html="$(curl --silent --fail --cookie "$cookie_jar" http://127.0.0.1:39082/admin/products/new)"
+csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$new_html")"
+test -n "$csrf_token"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+    --request POST --data-urlencode "csrf_token=$csrf_token" \
+    --data-urlencode 'id=browser-product' --data-urlencode 'name=Browser Notebook' \
+    http://127.0.0.1:39082/admin/products/new)" = "303"
+curl --silent --fail --cookie "$cookie_jar" \
+    http://127.0.0.1:39082/admin/products/browser-product | grep -q 'Browser Notebook'
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' --cookie "$cookie_jar" \
+    http://127.0.0.1:39082/admin/settings)" = "404"
 kill "$server_pid"
 wait "$server_pid" 2>/dev/null || true
 server_pid=""
