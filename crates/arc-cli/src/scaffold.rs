@@ -175,6 +175,10 @@ fn render(template: &str, project: &NewProject) -> String {
             if project.ui { "mod ui;\n" } else { "" },
         )
         .replace(
+            "        // {{ui-host-registration}}",
+            if project.ui { "        // arc:ui-host-registration\n        .register_ui_host(ui::host())\n        .register_ui(ui::contribution())" } else { "" },
+        )
+        .replace(
             "{{ui-routes}}",
             if project.ui {
                 ".configure(crate::ui::config).service(actix_files::Files::new(\"/public\", \"public\"))"
@@ -282,7 +286,8 @@ mod tests {
         assert!(routes.contains("fn api_config(_cfg: &mut web::ServiceConfig)"));
         assert!(!routes.contains("JwtMiddleware"));
         let ui_source = fs::read_to_string(root.join("src/ui.rs")).unwrap();
-        assert!(ui_source.contains("add_raw_templates"));
+        assert!(ui_source.contains("pub fn host()->UiHost"));
+        assert!(ui_source.contains("HOST_TEMPLATES"));
         let mut tera = tera::Tera::default();
         tera.add_raw_templates([
             (

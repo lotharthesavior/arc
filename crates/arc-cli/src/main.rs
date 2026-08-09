@@ -129,8 +129,14 @@ fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
             Ok(())
         }
         Some("plugin") => {
-            if args.next().as_deref() != Some("add") {
-                return Err("usage: arc plugin add <auth-db|auth-session|auth-jwt|auth-rbac|auth-db-session|auth-db-jwt>".into());
+            let operation = args.next();
+            if operation.as_deref() == Some("migrate-auth-ui") {
+                plugin::migrate_auth_ui(PathBuf::from("."))?;
+                println!("Auth UI host migration complete.");
+                return Ok(());
+            }
+            if operation.as_deref() != Some("add") {
+                return Err("usage: arc plugin <add NAME|migrate-auth-ui>".into());
             }
             let name = args.next().ok_or("plugin name is required")?;
             plugin::add_plugin(PathBuf::from("."), &name)?;

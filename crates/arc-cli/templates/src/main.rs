@@ -42,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
 fn builder() -> ArcAppBuilder {
     ArcApp::builder()
         .register_aggregate::<AppAggregate>()
+        // {{ui-host-registration}}
         // arc:resource-registrations
         // arc:plugin-registrations
         .register_routes(routes::config)

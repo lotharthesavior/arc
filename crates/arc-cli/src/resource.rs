@@ -95,8 +95,9 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
         names.module, names.type_name, names.module, names.type_name, names.constant
     );
     let registration = format!(
-        "        .register_aggregate::<{}Aggregate>()\n        .register_projector({}Projector, {}_VIEW)",
-        names.type_name, names.type_name, names.constant
+        "        .register_aggregate::<{}Aggregate>()\n        .register_projector({}Projector, {}_VIEW){}",
+        names.type_name, names.type_name, names.constant,
+        if resource.ui { format!("\n        .register_ui(crate::domain::{}::ui::contribution())", names.module) } else { String::new() }
     );
     let updated_domain = domain.replace(DOMAIN_MARKER, &format!("{DOMAIN_MARKER}\n{module_line}"));
     let updated_main = main
@@ -206,19 +207,7 @@ fn register_ui_route(root: &Path, names: &Names) -> Result<(), String> {
     fs::write(&path, contents)
         .map_err(|error| format!("could not update `{}`: {error}", path.display()))?;
 
-    let layout_path = root.join("resources/views/layouts/admin.html");
-    let marker = "<!-- arc:resource-navigation -->";
-    let mut layout = read_file(&layout_path)?;
-    if !layout.contains(marker) {
-        return Err(format!(
-            "`{}` has no resource navigation marker",
-            layout_path.display()
-        ));
-    }
-    let link = format!("<a href=\"/admin/{}\">{}</a>", names.view, names.type_name);
-    layout = layout.replace(marker, &format!("{link}{marker}"));
-    fs::write(&layout_path, layout)
-        .map_err(|error| format!("could not update `{}`: {error}", layout_path.display()))
+    Ok(())
 }
 
 fn register_api_route(root: &Path, names: &Names) -> Result<(), String> {
@@ -794,11 +783,8 @@ mod tests {
             .is_file());
         let routes = fs::read_to_string(root.join("src/routes.rs")).unwrap();
         assert!(routes.contains("crate::domain::product::ui::config(cfg);"));
-        assert!(
-            fs::read_to_string(root.join("resources/views/layouts/admin.html"))
-                .unwrap()
-                .contains("/admin/products")
-        );
+        let main = fs::read_to_string(root.join("src/main.rs")).unwrap();
+        assert!(main.contains("register_ui(crate::domain::product::ui::contribution())"));
         let ui = fs::read_to_string(root.join("src/domain/product/ui.rs")).unwrap();
         assert!(ui.contains("CommandBus<ProductAggregate>"));
         assert!(!ui.contains("RequireSession"));

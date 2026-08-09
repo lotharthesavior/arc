@@ -15,9 +15,10 @@ test.describe('UI signout flow', () => {
   }) => {
     await signinSeeded(page);
 
-    await page.goto('/signout');
-    // /signout 302's to /; we land on / regardless of public route shape.
-    await expect(page).not.toHaveURL(/\/admin$/);
+    // Use the context request client so the redirect target's UI lifecycle
+    // cannot obscure the protocol assertion. It shares the browser cookie jar.
+    const signout = await context.request.get('/signout');
+    expect(signout.ok()).toBeTruthy();
 
     // Cookie either gone or replaced — definitely no longer authenticates.
     await page.goto('/admin');

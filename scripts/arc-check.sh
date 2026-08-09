@@ -62,6 +62,15 @@ forbid_path "crates/arc-app/src/commands/serve.rs" "the serve bootstrap lives in
 
 echo "arc-check: checking publishable-crate file boundaries..."
 
+if find crates/arc-auth-session -type f \( -name '*.html' -o -name '*.tera' \) | grep -q .; then
+  echo "OWNERSHIP VIOLATION: arc-auth-session must not ship browser templates." >&2
+  fail=1
+fi
+if rg -n 'tera' crates/arc-auth-session/Cargo.toml; then
+  echo "OWNERSHIP VIOLATION: arc-auth-session must remain independent of Tera." >&2
+  fail=1
+fi
+
 publishable_crates=(
   crates/arc-core
   crates/arc-es-sqlite

@@ -45,7 +45,10 @@ pub mod http {
 }
 
 pub mod commands;
+pub mod ui;
 pub mod websocket;
+
+pub use ui::{UiContribution, UiHost, UiRegistry};
 
 /// Shared application state accessible by request handlers via `web::Data`.
 #[derive(Debug)]
@@ -83,6 +86,8 @@ impl ArcApp {
             app_data: Vec::new(),
             plugin_names: Vec::new(),
             plugins: Vec::new(),
+            ui_host: None,
+            ui_contributions: Vec::new(),
         }
     }
 }
@@ -133,6 +138,8 @@ pub struct ArcAppBuilder {
     app_data: Vec<Arc<AppDataFn>>,
     plugin_names: Vec<&'static str>,
     plugins: Vec<Arc<dyn ArcPlugin>>,
+    ui_host: Option<UiHost>,
+    ui_contributions: Vec<UiContribution>,
 }
 
 /// Setup-time inputs shared by installed capability packages.
@@ -161,6 +168,27 @@ pub trait ArcPlugin: Send + Sync + 'static {
 }
 
 impl ArcAppBuilder {
+    /// Register the application's sole browser UI host.
+    pub fn register_ui_host(mut self, host: UiHost) -> Self {
+        if self.ui_host.is_some() {
+            self.ui_contributions
+                .push(UiContribution::duplicate_host(host.owner));
+        } else {
+            self.ui_host = Some(host);
+        }
+        self
+    }
+
+    /// Register namespaced templates and shell metadata from a capability.
+    pub fn register_ui(mut self, contribution: UiContribution) -> Self {
+        self.ui_contributions.push(contribution);
+        self
+    }
+
+    /// Validate and build the immutable UI registry without starting a server.
+    pub fn build_ui_registry(&self) -> Result<Option<UiRegistry>, ui::UiError> {
+        UiRegistry::build(self.ui_host.as_ref(), &self.ui_contributions)
+    }
     /// Register a writable aggregate type. Arc creates and injects a distinct
     /// `CommandBus<A>` for every call.
     pub fn register_aggregate<A: Aggregate + 'static>(mut self) -> Self {
@@ -273,12 +301,14 @@ impl ArcAppBuilder {
                 "ArcAppBuilder::serve requires at least one route registration",
             ));
         }
+        let ui_registry = self.build_ui_registry().map_err(std::io::Error::other)?;
         commands::serve::run(
             app_url,
             app_port,
             self.aggregates,
             self.routes,
             self.app_data,
+            ui_registry.map(Arc::new),
         )
         .await
     }

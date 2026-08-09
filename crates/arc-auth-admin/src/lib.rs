@@ -1,0 +1,598 @@
+//! Host-rendered authentication administration pages.
+
+use actix_session::Session;
+use actix_web::{http::StatusCode, web, HttpRequest, HttpResponse};
+use arc_auth_core::{Identity, IdentityStore};
+use arc_auth_session::{identity, RequireSession};
+use arc_web::ui::{
+    ActionMethod, AdminAction, AdminNavItem, Audience, TemplateBundle, TemplateDef, TemplateName,
+    UiContribution, UiPage,
+};
+use arc_web::{ArcAppBuilder, ArcPlugin, UiRegistry};
+use serde::Deserialize;
+use tera::Context;
+
+const TEMPLATES: &[TemplateDef] = &[
+    TemplateDef {
+        name: TemplateName("capabilities/auth-admin/signin.html"),
+        source: include_str!("../templates/signin.html"),
+    },
+    TemplateDef {
+        name: TemplateName("capabilities/auth-admin/profile.html"),
+        source: include_str!("../templates/profile.html"),
+    },
+    TemplateDef {
+        name: TemplateName("capabilities/auth-admin/users/index.html"),
+        source: include_str!("../templates/users/index.html"),
+    },
+    TemplateDef {
+        name: TemplateName("capabilities/auth-admin/users/form.html"),
+        source: include_str!("../templates/users/form.html"),
+    },
+    TemplateDef {
+        name: TemplateName("capabilities/auth-admin/users/detail.html"),
+        source: include_str!("../templates/users/detail.html"),
+    },
+];
+
+pub struct AuthAdminPlugin;
+#[async_trait::async_trait]
+impl ArcPlugin for AuthAdminPlugin {
+    fn name(&self) -> &'static str {
+        "auth-admin"
+    }
+    fn register(&self, builder: ArcAppBuilder) -> ArcAppBuilder {
+        builder
+            .register_ui(UiContribution {
+                owner: "auth-admin",
+                templates: TemplateBundle {
+                    templates: TEMPLATES,
+                },
+                navigation: vec![
+                    AdminNavItem {
+                        id: "auth-profile",
+                        label: "Profile",
+                        href: "/admin/profile",
+                        order: 800,
+                        audience: Audience::Authenticated,
+                    },
+                    AdminNavItem {
+                        id: "auth-users",
+                        label: "Users",
+                        href: "/admin/users",
+                        order: 810,
+                        audience: Audience::AnyRole(&["admin"]),
+                    },
+                ],
+                actions: vec![AdminAction {
+                    id: "auth-signout",
+                    label: "Sign out",
+                    href: "/signout",
+                    method: ActionMethod::PostWithCsrf,
+                    audience: Audience::Authenticated,
+                }],
+                ..UiContribution::default()
+            })
+            .register_routes(routes)
+    }
+}
+
+fn render(
+    registry: &UiRegistry,
+    request: &HttpRequest,
+    session: &Session,
+    name: &'static str,
+    title: &str,
+    mut context: Context,
+    status: StatusCode,
+) -> HttpResponse {
+    context.insert("title", title);
+    registry.render(
+        UiPage {
+            template: TemplateName(name),
+            title: title.into(),
+            context,
+            status,
+        },
+        request,
+        session,
+    )
+}
+fn csrf(session: &Session, token: &str) -> bool {
+    arc_web::helpers::csrf::validate_and_regenerate_csrf_token(session, token)
+}
+fn admin(session: &Session) -> Result<Identity, HttpResponse> {
+    match identity(session) {
+        Some(v) if v.has_role("admin") => Ok(v),
+        Some(_) => Err(HttpResponse::Forbidden().finish()),
+        None => Err(HttpResponse::Unauthorized().finish()),
+    }
+}
+
+#[derive(Deserialize)]
+struct SignInForm {
+    email: String,
+    password: String,
+    csrf_token: String,
+}
+async fn signin_page(
+    req: HttpRequest,
+    session: Session,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    signin_response(&req, &session, &registry, "", None, StatusCode::OK)
+}
+fn signin_response(
+    req: &HttpRequest,
+    session: &Session,
+    registry: &UiRegistry,
+    email: &str,
+    error: Option<&str>,
+    status: StatusCode,
+) -> HttpResponse {
+    let mut c = Context::new();
+    c.insert("email", email);
+    c.insert("error", &error);
+    render(
+        registry,
+        req,
+        session,
+        "capabilities/auth-admin/signin.html",
+        "Sign in",
+        c,
+        status,
+    )
+}
+async fn signin(
+    req: HttpRequest,
+    form: web::Form<SignInForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    match arc_auth_session::authenticate(&session, store.get_ref(), &form.email, &form.password)
+        .await
+    {
+        Ok(_) => HttpResponse::SeeOther()
+            .insert_header(("Location", "/admin"))
+            .finish(),
+        Err(_) => signin_response(
+            &req,
+            &session,
+            &registry,
+            &form.email,
+            Some("Email or password was not recognized."),
+            StatusCode::UNAUTHORIZED,
+        ),
+    }
+}
+#[derive(Deserialize)]
+struct CsrfForm {
+    csrf_token: String,
+}
+async fn signout(form: web::Form<CsrfForm>, session: Session) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    arc_auth_session::sign_out(&session);
+    HttpResponse::SeeOther()
+        .insert_header(("Location", "/"))
+        .finish()
+}
+
+async fn profile(
+    req: HttpRequest,
+    session: Session,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    let Some(user) = identity(&session) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    profile_response(&req, &session, &registry, &user, None, StatusCode::OK)
+}
+fn profile_response(
+    req: &HttpRequest,
+    session: &Session,
+    registry: &UiRegistry,
+    user: &Identity,
+    error: Option<&str>,
+    status: StatusCode,
+) -> HttpResponse {
+    let mut c = Context::new();
+    c.insert("user", user);
+    c.insert("error", &error);
+    render(
+        registry,
+        req,
+        session,
+        "capabilities/auth-admin/profile.html",
+        "Profile",
+        c,
+        status,
+    )
+}
+#[derive(Deserialize)]
+struct ProfileForm {
+    name: String,
+    email: String,
+    csrf_token: String,
+}
+async fn profile_save(
+    req: HttpRequest,
+    form: web::Form<ProfileForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    let Some(user) = identity(&session) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match store
+        .update_profile(&user.id, &form.name, &form.email)
+        .await
+    {
+        Ok(updated) => {
+            arc_auth_session::cache_identity(&session, &updated);
+            HttpResponse::SeeOther()
+                .insert_header(("Location", "/admin/profile"))
+                .finish()
+        }
+        Err(e) => profile_response(
+            &req,
+            &session,
+            &registry,
+            &user,
+            Some(&e.to_string()),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    }
+}
+#[derive(Deserialize)]
+struct PasswordForm {
+    current_password: String,
+    new_password: String,
+    csrf_token: String,
+}
+async fn password_save(
+    req: HttpRequest,
+    form: web::Form<PasswordForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    let Some(user) = identity(&session) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if store
+        .authenticate(&user.email, &form.current_password)
+        .await
+        .is_err()
+    {
+        return profile_response(
+            &req,
+            &session,
+            &registry,
+            &user,
+            Some("Current password is incorrect."),
+            StatusCode::UNAUTHORIZED,
+        );
+    }
+    match store.change_password(&user.id, &form.new_password).await {
+        Ok(()) => HttpResponse::SeeOther()
+            .insert_header(("Location", "/admin/profile"))
+            .finish(),
+        Err(e) => profile_response(
+            &req,
+            &session,
+            &registry,
+            &user,
+            Some(&e.to_string()),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+struct UsersQuery {
+    filter: Option<String>,
+    page: Option<usize>,
+}
+async fn users(
+    req: HttpRequest,
+    query: web::Query<UsersQuery>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.list().await {
+        Ok(mut users) => {
+            let filter = query
+                .filter
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            if !filter.is_empty() {
+                users.retain(|u| {
+                    u.name.to_ascii_lowercase().contains(&filter)
+                        || u.email.to_ascii_lowercase().contains(&filter)
+                })
+            }
+            users.sort_by(|a, b| a.email.cmp(&b.email).then(a.id.cmp(&b.id)));
+            let page = query.page.unwrap_or(1).max(1);
+            let total_pages = users.len().div_ceil(20).max(1);
+            let users = users
+                .into_iter()
+                .skip((page - 1) * 20)
+                .take(20)
+                .collect::<Vec<_>>();
+            let mut c = Context::new();
+            c.insert("users", &users);
+            c.insert("filter", &filter);
+            c.insert("page", &page);
+            c.insert("total_pages", &total_pages);
+            render(
+                &registry,
+                &req,
+                &session,
+                "capabilities/auth-admin/users/index.html",
+                "Users",
+                c,
+                StatusCode::OK,
+            )
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+async fn user_new(
+    req: HttpRequest,
+    session: Session,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    user_form(&req, &session, &registry, None, None, StatusCode::OK)
+}
+fn user_form(
+    req: &HttpRequest,
+    session: &Session,
+    registry: &UiRegistry,
+    user: Option<&Identity>,
+    error: Option<&str>,
+    status: StatusCode,
+) -> HttpResponse {
+    let mut c = Context::new();
+    c.insert("user", &user);
+    c.insert("error", &error);
+    c.insert("creating", &user.is_none());
+    render(
+        registry,
+        req,
+        session,
+        "capabilities/auth-admin/users/form.html",
+        if user.is_some() {
+            "Edit user"
+        } else {
+            "Create user"
+        },
+        c,
+        status,
+    )
+}
+#[derive(Deserialize)]
+struct CreateForm {
+    name: String,
+    email: String,
+    password: String,
+    roles: String,
+    csrf_token: String,
+}
+fn roles(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+async fn user_create(
+    req: HttpRequest,
+    form: web::Form<CreateForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store
+        .create_user(&form.name, &form.email, &form.password, &roles(&form.roles))
+        .await
+    {
+        Ok(user) => HttpResponse::SeeOther()
+            .insert_header(("Location", format!("/admin/users/{}", user.id)))
+            .finish(),
+        Err(e) => user_form(
+            &req,
+            &session,
+            &registry,
+            None,
+            Some(&e.to_string()),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    }
+}
+async fn user_detail(
+    req: HttpRequest,
+    id: web::Path<String>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.get(&id).await {
+        Ok(Some(user)) => {
+            let mut c = Context::new();
+            c.insert("user", &user);
+            render(
+                &registry,
+                &req,
+                &session,
+                "capabilities/auth-admin/users/detail.html",
+                "User detail",
+                c,
+                StatusCode::OK,
+            )
+        }
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+async fn user_edit(
+    req: HttpRequest,
+    id: web::Path<String>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.get(&id).await {
+        Ok(Some(user)) => user_form(&req, &session, &registry, Some(&user), None, StatusCode::OK),
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+#[derive(Deserialize)]
+struct EditForm {
+    name: String,
+    email: String,
+    csrf_token: String,
+}
+async fn user_update(
+    req: HttpRequest,
+    id: web::Path<String>,
+    form: web::Form<EditForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+    registry: web::Data<UiRegistry>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.update_profile(&id, &form.name, &form.email).await {
+        Ok(_) => HttpResponse::SeeOther()
+            .insert_header(("Location", format!("/admin/users/{id}")))
+            .finish(),
+        Err(e) => {
+            let user = store.get(&id).await.ok().flatten();
+            user_form(
+                &req,
+                &session,
+                &registry,
+                user.as_ref(),
+                Some(&e.to_string()),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+        }
+    }
+}
+#[derive(Deserialize)]
+struct RolesForm {
+    roles: String,
+    csrf_token: String,
+}
+async fn roles_save(
+    id: web::Path<String>,
+    form: web::Form<RolesForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.set_roles(&id, &roles(&form.roles)).await {
+        Ok(_) => HttpResponse::SeeOther()
+            .insert_header(("Location", format!("/admin/users/{id}")))
+            .finish(),
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+#[derive(Deserialize)]
+struct ActivationForm {
+    active: bool,
+    csrf_token: String,
+}
+async fn activation(
+    id: web::Path<String>,
+    form: web::Form<ActivationForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+) -> HttpResponse {
+    if !csrf(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    if let Err(r) = admin(&session) {
+        return r;
+    }
+    match store.set_active(&id, form.active).await {
+        Ok(_) => HttpResponse::SeeOther()
+            .insert_header(("Location", format!("/admin/users/{id}")))
+            .finish(),
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+pub fn routes(cfg: &mut web::ServiceConfig) {
+    let idle =
+        || arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware::from_env();
+    cfg.route("/signin", web::get().to(signin_page))
+        .route("/signin", web::post().to(signin))
+        .route("/signout", web::post().to(signout))
+        .service(
+            web::scope("/admin/profile")
+                .wrap(RequireSession)
+                .wrap(idle())
+                .route("", web::get().to(profile))
+                .route("", web::post().to(profile_save))
+                .route("/password", web::post().to(password_save)),
+        )
+        .service(
+            web::scope("/admin/users")
+                .wrap(RequireSession)
+                .wrap(idle())
+                .route("", web::get().to(users))
+                .route("/new", web::get().to(user_new))
+                .route("/new", web::post().to(user_create))
+                .route("/{id}", web::get().to(user_detail))
+                .route("/{id}/edit", web::get().to(user_edit))
+                .route("/{id}/edit", web::post().to(user_update))
+                .route("/{id}/roles", web::post().to(roles_save))
+                .route("/{id}/activation", web::post().to(activation)),
+        );
+}

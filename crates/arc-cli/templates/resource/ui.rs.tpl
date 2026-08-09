@@ -2,35 +2,21 @@ use super::aggregate::{{Type}}Aggregate;
 use super::commands::{{Type}}Command;
 use super::projector::{{CONSTANT}}_VIEW;
 use actix_session::Session;
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use arc_core::command_bus::{CommandBus, CommandContext};
 use arc_core::read_model_store::ReadModelStore;
 use arc_web::helpers::csrf;
 use serde::{Deserialize, Serialize};
-use tera::{Context, Tera};
+use tera::Context;
+use arc_web::ui::{AdminNavItem, Audience, TemplateBundle, TemplateDef, TemplateName, UiContribution, UiPage};
+use arc_web::UiRegistry;
 
-const BASE: &[(&str, &str)] = &[
-    (
-        "layouts/admin.html",
-        include_str!("../../../resources/views/layouts/admin.html"),
-    ),
-    (
-        "components/ui.html",
-        include_str!("../../../resources/views/components/ui.html"),
-    ),
-    (
-        "resources/collection.html",
-        include_str!("../../../resources/views/resources/{{module}}/collection.html"),
-    ),
-    (
-        "resources/detail.html",
-        include_str!("../../../resources/views/resources/{{module}}/detail.html"),
-    ),
-    (
-        "resources/form.html",
-        include_str!("../../../resources/views/resources/{{module}}/form.html"),
-    ),
+const TEMPLATES:&[TemplateDef]=&[
+ TemplateDef{name:TemplateName("capabilities/app-{{module}}/collection.html"),source:include_str!("../../../resources/views/resources/{{module}}/collection.html")},
+ TemplateDef{name:TemplateName("capabilities/app-{{module}}/detail.html"),source:include_str!("../../../resources/views/resources/{{module}}/detail.html")},
+ TemplateDef{name:TemplateName("capabilities/app-{{module}}/form.html"),source:include_str!("../../../resources/views/resources/{{module}}/form.html")},
 ];
+pub fn contribution()->UiContribution{UiContribution{owner:"app-{{module}}",templates:TemplateBundle{templates:TEMPLATES},navigation:vec![AdminNavItem{id:"resource-{{module}}",label:"{{Type}}",href:"/admin/{{view}}",order:100,audience:Audience::Authenticated}],actions:vec![],duplicate_host:false}}
 
 #[derive(Serialize)]
 struct ResourceFormState {
@@ -39,18 +25,8 @@ struct ResourceFormState {
     version: String,
 }
 
-fn render(name: &str, mut context: Context, status: actix_web::http::StatusCode) -> HttpResponse {
-    context.insert("app_name", env!("CARGO_PKG_NAME"));
-    let mut tera = Tera::default();
-    if let Err(error) = tera.add_raw_templates(BASE.iter().copied()) {
-        return HttpResponse::InternalServerError().body(format!("template error: {error}"));
-    }
-    match tera.render(name, &context) {
-        Ok(html) => HttpResponse::build(status)
-            .content_type("text/html; charset=utf-8")
-            .body(html),
-        Err(error) => HttpResponse::InternalServerError().body(format!("template error: {error}")),
-    }
+fn render(registry:&UiRegistry, req:&HttpRequest, session:&Session, name: &'static str, context: Context, status: actix_web::http::StatusCode) -> HttpResponse {
+    registry.render(UiPage{template:TemplateName(name),title:"{{Type}}".into(),context,status},req,session)
 }
 
 #[derive(Deserialize)]
@@ -61,9 +37,11 @@ struct ListQuery {
 }
 
 async fn collection(
+    req: HttpRequest,
     query: web::Query<ListQuery>,
     session: Session,
     store: web::Data<dyn ReadModelStore>,
+    registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     match store.list({{CONSTANT}}_VIEW).await {
         Ok(mut rows) => {
@@ -101,19 +79,18 @@ async fn collection(
                 .take(per_page)
                 .collect::<Vec<_>>();
             let mut context = Context::new();
-            context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
             context.insert("rows", &rows);
             context.insert("filter", &query.filter);
             context.insert("page", &page);
             context.insert("has_next", &(page * per_page < total));
             render(
-                "resources/collection.html",
+                &registry, &req, &session, "capabilities/app-{{module}}/collection.html",
                 context,
                 actix_web::http::StatusCode::OK,
             )
         }
         Err(_) => render(
-            "resources/collection.html",
+            &registry, &req, &session, "capabilities/app-{{module}}/collection.html",
             Context::new(),
             actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
         ),
@@ -121,17 +98,18 @@ async fn collection(
 }
 
 async fn detail(
+    req: HttpRequest,
     id: web::Path<String>,
     session: Session,
     store: web::Data<dyn ReadModelStore>,
+    registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     match store.get({{CONSTANT}}_VIEW, id.as_str()).await {
         Ok(Some(row)) => {
             let mut context = Context::new();
-            context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
             context.insert("row", &row);
             render(
-                "resources/detail.html",
+                &registry, &req, &session, "capabilities/app-{{module}}/detail.html",
                 context,
                 actix_web::http::StatusCode::OK,
             )
@@ -141,10 +119,8 @@ async fn detail(
     }
 }
 
-async fn new_form(session: Session) -> HttpResponse {
+async fn new_form(req: HttpRequest, session: Session, registry:web::Data<UiRegistry>) -> HttpResponse {
     let mut context = Context::new();
-    context.insert("csrf_token", &csrf::get_csrf_token(&session));
-    context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
     context.insert("mode", "create");
     context.insert(
         "form_state",
@@ -155,7 +131,7 @@ async fn new_form(session: Session) -> HttpResponse {
         },
     );
     render(
-        "resources/form.html",
+        &registry, &req, &session, "capabilities/app-{{module}}/form.html",
         context,
         actix_web::http::StatusCode::OK,
     )
@@ -170,16 +146,18 @@ struct ResourceForm {
 }
 
 async fn create(
+    req: HttpRequest,
     form: web::Form<ResourceForm>,
     session: Session,
     bus: web::Data<CommandBus<{{Type}}Aggregate>>,
+    registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if !csrf::validate_and_regenerate_csrf_token(&session, &form.csrf_token) {
         return HttpResponse::Forbidden().finish();
     }
     let id = form.id.clone().unwrap_or_default();
     if id.trim().is_empty() || form.name.trim().is_empty() {
-        return invalid_form(&session, &form, "ID and name are required.", "create");
+        return invalid_form(&registry, &req, &session, &form, "ID and name are required.", "create");
     }
     match bus
         .dispatch(
@@ -194,20 +172,20 @@ async fn create(
         Ok(_) => HttpResponse::SeeOther()
             .insert_header(("Location", format!("/admin/{{view}}/{id}")))
             .finish(),
-        Err(error) => invalid_form(&session, &form, &error.to_string(), "create"),
+        Err(error) => invalid_form(&registry, &req, &session, &form, &error.to_string(), "create"),
     }
 }
 
 async fn edit_form(
+    req: HttpRequest,
     id: web::Path<String>,
     session: Session,
     store: web::Data<dyn ReadModelStore>,
+    registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     match store.get({{CONSTANT}}_VIEW, id.as_str()).await {
         Ok(Some(row)) => {
             let mut context = Context::new();
-            context.insert("csrf_token", &csrf::get_csrf_token(&session));
-            context.insert("session_csrf_token", &csrf::get_csrf_token(&session));
             context.insert("mode", "edit");
             context.insert("row", &row);
             context.insert(
@@ -222,7 +200,7 @@ async fn edit_form(
                 },
             );
             render(
-                "resources/form.html",
+                &registry, &req, &session, "capabilities/app-{{module}}/form.html",
                 context,
                 actix_web::http::StatusCode::OK,
             )
@@ -232,11 +210,13 @@ async fn edit_form(
 }
 
 async fn update(
+    req: HttpRequest,
     id: web::Path<String>,
     form: web::Form<ResourceForm>,
     session: Session,
     store: web::Data<dyn ReadModelStore>,
     bus: web::Data<CommandBus<{{Type}}Aggregate>>,
+    registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if !csrf::validate_and_regenerate_csrf_token(&session, &form.csrf_token) {
         return HttpResponse::Forbidden().finish();
@@ -248,7 +228,7 @@ async fn update(
         .and_then(|v| v.as_i64());
     if current_version != form.version {
         return invalid_form(
-            &session,
+            &registry, &req, &session,
             &form,
             "This record changed after you opened it. Reload and try again.",
             "edit",
@@ -270,14 +250,12 @@ async fn update(
                 format!("/admin/{{view}}/{}", form.id.as_deref().unwrap_or("")),
             ))
             .finish(),
-        Err(error) => invalid_form(&session, &form, &error.to_string(), "edit"),
+        Err(error) => invalid_form(&registry, &req, &session, &form, &error.to_string(), "edit"),
     }
 }
 
-fn invalid_form(session: &Session, form: &ResourceForm, error: &str, mode: &str) -> HttpResponse {
+fn invalid_form(registry:&UiRegistry, req:&HttpRequest, session: &Session, form: &ResourceForm, error: &str, mode: &str) -> HttpResponse {
     let mut context = Context::new();
-    context.insert("csrf_token", &csrf::get_csrf_token(session));
-    context.insert("session_csrf_token", &csrf::get_csrf_token(session));
     context.insert("mode", mode);
     context.insert("form", form);
     context.insert(
@@ -293,7 +271,7 @@ fn invalid_form(session: &Session, form: &ResourceForm, error: &str, mode: &str)
     );
     context.insert("error", error);
     render(
-        "resources/form.html",
+        registry, req, session, "capabilities/app-{{module}}/form.html",
         context,
         actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
     )

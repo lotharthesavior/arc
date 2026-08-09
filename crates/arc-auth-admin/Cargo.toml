@@ -1,17 +1,18 @@
 [package]
-name = "arc-auth-jwt"
+name = "arc-auth-admin"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Optional JWT API authentication plugin for Arc"
+description = "Optional host-rendered browser administration for Arc authentication"
 
 [dependencies]
 arc-auth-core = { path = "../arc-auth-core", version = "0.8.0" }
-arc-core = { path = "../arc-core", version = "0.8.0" }
+arc-auth-session = { path = "../arc-auth-session", version = "0.8.0" }
 arc-web = { path = "../arc-web", version = "0.8.0" }
+actix-session.workspace = true
 actix-web.workspace = true
 async-trait.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+tera.workspace = true

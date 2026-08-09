@@ -478,7 +478,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "arc"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "actix",
  "actix-files",
@@ -521,8 +521,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-auth-admin"
+version = "0.8.0"
+dependencies = [
+ "actix-session 0.10.1",
+ "actix-web",
+ "arc-auth-core",
+ "arc-auth-session",
+ "arc-web",
+ "async-trait",
+ "serde",
+ "tera",
+]
+
+[[package]]
 name = "arc-auth-core"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -531,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-db"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "arc-auth-core",
  "arc-web",
@@ -544,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-jwt"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "actix-web",
  "arc-auth-core",
@@ -557,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-rbac"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "actix-session 0.10.1",
  "actix-web",
@@ -569,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-session"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "actix-session 0.10.1",
  "actix-web",
@@ -578,12 +592,11 @@ dependencies = [
  "async-trait",
  "futures-util",
  "serde",
- "tera",
 ]
 
 [[package]]
 name = "arc-core"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "hmac",
@@ -598,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-nats"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "arc-core",
  "async-nats",
@@ -611,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-postgres"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -627,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-sqlite"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -651,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "actix",
  "actix-files",
@@ -694,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web-cli"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "tera",
 ]

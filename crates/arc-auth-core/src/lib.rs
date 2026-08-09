@@ -52,6 +52,7 @@ pub trait IdentityStore: Send + Sync {
     ) -> Result<Identity, AuthError>;
     async fn change_password(&self, id: &str, password: &str) -> Result<(), AuthError>;
     async fn set_roles(&self, id: &str, roles: &[String]) -> Result<Identity, AuthError>;
+    async fn set_active(&self, id: &str, active: bool) -> Result<Identity, AuthError>;
 }
 
 pub trait AuthorizationPolicy: Send + Sync {

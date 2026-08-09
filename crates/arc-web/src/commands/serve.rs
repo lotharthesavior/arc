@@ -3,7 +3,7 @@ use crate::helpers::es_stack;
 use crate::helpers::rate_limit;
 use crate::http::middlewares::rate_limit_middleware::GlobalRateLimit;
 use crate::websocket::server::WsServer;
-use crate::{AggregateRegistration, AppState, ProjectorReg};
+use crate::{AggregateRegistration, AppState, ProjectorReg, UiRegistry};
 use actix::prelude::*;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{config::PersistentSession, SessionMiddleware};
@@ -132,6 +132,7 @@ pub(crate) async fn run(
     registrations: Vec<AggregateRegistration>,
     routes: Vec<Arc<RoutesFn>>,
     plugin_app_data: Vec<Arc<AppDataFn>>,
+    ui_registry: Option<Arc<UiRegistry>>,
 ) -> io::Result<()> {
     crate::check_database_health();
 
@@ -229,6 +230,7 @@ pub(crate) async fn run(
         let routes = routes.clone();
         let plugin_app_data = plugin_app_data.clone();
         let aggregate_runtimes = aggregate_runtimes.clone();
+        let ui_registry = ui_registry.clone();
 
         App::new()
             .wrap(tracing_actix_web::TracingLogger::default())
@@ -245,6 +247,9 @@ pub(crate) async fn run(
             .app_data(session_store_data.clone())
             .app_data(web::Data::new(ws_server.clone()))
             .configure(move |cfg| {
+                if let Some(registry) = &ui_registry {
+                    cfg.app_data(web::Data::from(registry.clone()));
+                }
                 for runtime in aggregate_runtimes.iter() {
                     runtime.configure(cfg);
                 }

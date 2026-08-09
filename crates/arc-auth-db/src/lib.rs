@@ -181,6 +181,9 @@ impl IdentityStore for DbIdentityStore {
     }
     async fn set_roles(&self, id: &str, assigned: &[String]) -> Result<Identity, AuthError> {
         let mut c = self.connect()?;
+        if !assigned.iter().any(|role| role == "admin") {
+            ensure_not_final_admin(&mut c, id)?;
+        }
         c.transaction::<_, diesel::result::Error, _>(|c| {
             sql_query("DELETE FROM user_roles WHERE user_id=?")
                 .bind::<diesel::sql_types::Text, _>(id)
@@ -197,6 +200,44 @@ impl IdentityStore for DbIdentityStore {
         })
         .map_err(|e| AuthError::Store(e.to_string()))?;
         self.get(id).await?.ok_or(AuthError::NotFound)
+    }
+    async fn set_active(&self, id: &str, active: bool) -> Result<Identity, AuthError> {
+        let mut c = self.connect()?;
+        if !active {
+            ensure_not_final_admin(&mut c, id)?;
+        }
+        let changed = sql_query("UPDATE users SET active=?,updated_at=? WHERE id=?")
+            .bind::<diesel::sql_types::Integer, _>(i32::from(active))
+            .bind::<diesel::sql_types::BigInt, _>(now_us())
+            .bind::<diesel::sql_types::Text, _>(id)
+            .execute(&mut c)
+            .map_err(|e| AuthError::Store(e.to_string()))?;
+        if changed == 0 {
+            return Err(AuthError::NotFound);
+        }
+        self.get(id).await?.ok_or(AuthError::NotFound)
+    }
+}
+
+fn ensure_not_final_admin(c: &mut SqliteConnection, id: &str) -> Result<(), AuthError> {
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type=diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let target = sql_query("SELECT COUNT(*) AS count FROM users JOIN user_roles ON users.id=user_roles.user_id JOIN roles ON roles.id=user_roles.role_id WHERE users.id=? AND users.active=1 AND roles.name='admin'")
+        .bind::<diesel::sql_types::Text,_>(id).get_result::<Count>(c).map_err(|e|AuthError::Store(e.to_string()))?.count;
+    if target == 0 {
+        return Ok(());
+    }
+    let admins = sql_query("SELECT COUNT(DISTINCT users.id) AS count FROM users JOIN user_roles ON users.id=user_roles.user_id JOIN roles ON roles.id=user_roles.role_id WHERE users.active=1 AND roles.name='admin'")
+        .get_result::<Count>(c).map_err(|e|AuthError::Store(e.to_string()))?.count;
+    if admins <= 1 {
+        Err(AuthError::InvalidInput(
+            "the final active administrator cannot be deactivated or lose the admin role".into(),
+        ))
+    } else {
+        Ok(())
     }
 }
 

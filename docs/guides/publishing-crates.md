@@ -7,7 +7,10 @@ Arc's reusable crates are published in dependency order:
 3. `arc-es-postgres`
 4. `arc-es-nats`
 5. `arc-web`
-6. `arc-web-cli`
+6. `arc-auth-core`
+7. `arc-auth-db`, `arc-auth-session`, `arc-auth-jwt`, and `arc-auth-rbac`
+8. `arc-auth-admin`
+9. `arc-web-cli`
 
 The storage and NATS crates depend on `arc-core` by version, with a local `path` retained for
 workspace development. Publish or make `arc-core` available in the registry before running
@@ -41,6 +44,14 @@ cargo publish -p arc-es-nats
 
 make publish-check PUBLISH_CRATES=arc-web
 cargo publish -p arc-web
+
+make publish-check PUBLISH_CRATES="arc-auth-core arc-auth-db arc-auth-session arc-auth-admin arc-auth-jwt arc-auth-rbac"
+cargo publish -p arc-auth-core
+cargo publish -p arc-auth-db
+cargo publish -p arc-auth-session
+cargo publish -p arc-auth-admin
+cargo publish -p arc-auth-jwt
+cargo publish -p arc-auth-rbac
 
 make publish-check PUBLISH_CRATES=arc-web-cli
 cargo publish -p arc-web-cli

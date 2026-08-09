@@ -7,11 +7,47 @@ use std::{
 const IMPORT: &str = "// arc:plugin-imports";
 const REGISTER: &str = "        // arc:plugin-registrations";
 
+/// Migrate an untouched pre-registry generated UI. Customized shells are
+/// deliberately rejected with precise manual instructions.
+pub fn migrate_auth_ui(root: PathBuf) -> Result<(), String> {
+    let main_path = root.join("src/main.rs");
+    let ui_path = root.join("src/ui.rs");
+    let layout_path = root.join("resources/views/layouts/admin.html");
+    let mut main = fs::read_to_string(&main_path).map_err(|e| e.to_string())?;
+    let ui = fs::read_to_string(&ui_path).map_err(|_| {
+        "auth UI migration requires an application created with `arc new --ui`".to_string()
+    })?;
+    let layout = fs::read_to_string(&layout_path).map_err(|e| e.to_string())?;
+    if main.contains(".register_ui_host(ui::host())") {
+        return Ok(());
+    }
+    if !ui.contains("fn templates() -> Tera")
+        || !layout.contains("<!-- arc:capability-navigation -->")
+    {
+        return Err(format!("customized UI detected; no files changed. Manually register ui::host() and ui::contribution() in {}, convert {} to UiRegistry handlers, and render admin_navigation/admin_actions in {}",main_path.display(),ui_path.display(),layout_path.display()));
+    }
+    if !main.contains("        // arc:resource-registrations") {
+        return Err(
+            "generated application lacks the resource registration marker; no files changed".into(),
+        );
+    }
+    main = main.replace("        .register_aggregate::<AppAggregate>()", "        .register_aggregate::<AppAggregate>()\n        // arc:ui-host-registration\n        .register_ui_host(ui::host())\n        .register_ui(ui::contribution())");
+    fs::write(&main_path, main).map_err(|e| e.to_string())?;
+    fs::write(&ui_path, include_str!("../templates/src/ui.rs")).map_err(|e| e.to_string())?;
+    fs::write(
+        &layout_path,
+        include_str!("../templates/resources/views/layouts/admin.html"),
+    )
+    .map_err(|e| e.to_string())?;
+    protect_admin_dashboard(&root)?;
+    Ok(())
+}
+
 pub fn add_plugin(root: PathBuf, requested: &str) -> Result<(), String> {
     let capabilities: &[&str] = match requested {
-        "auth-db-session" => &["auth-db", "auth-session", "auth-rbac"],
+        "auth-db-session" => &["auth-db", "auth-session", "auth-admin", "auth-rbac"],
         "auth-db-jwt" => &["auth-db", "auth-jwt", "auth-rbac"],
-        "auth-db" | "auth-session" | "auth-jwt" | "auth-rbac" => &[requested],
+        "auth-db" | "auth-session" | "auth-admin" | "auth-jwt" | "auth-rbac" => &[requested],
         _ => return Err(format!("unknown plugin `{requested}`")),
     };
     let manifest_path = root.join("Cargo.toml");
@@ -39,6 +75,7 @@ pub fn add_plugin(root: PathBuf, requested: &str) -> Result<(), String> {
         let (import, registration, registration_marker) = match *capability {
             "auth-db" => ("use arc_auth_db::DbIdentityPlugin;", ".register_plugin(DbIdentityPlugin::new(std::env::var(\"DATABASE_URL\").unwrap_or_else(|_| \"database/database.sqlite\".into())))", ".register_plugin(DbIdentityPlugin::new("),
             "auth-session" => ("use arc_auth_session::SessionAuthPlugin;", ".register_plugin(SessionAuthPlugin)", ".register_plugin(SessionAuthPlugin)"),
+            "auth-admin" => ("use arc_auth_admin::AuthAdminPlugin;", ".register_plugin(AuthAdminPlugin)", ".register_plugin(AuthAdminPlugin)"),
             "auth-jwt" => ("use arc_auth_jwt::JwtAuthPlugin;", ".register_plugin(JwtAuthPlugin)", ".register_plugin(JwtAuthPlugin)"),
             "auth-rbac" => ("use arc_auth_rbac::RbacPlugin;", ".register_plugin(RbacPlugin)", ".register_plugin(RbacPlugin)"),
             _ => unreachable!(),
@@ -54,6 +91,7 @@ pub fn add_plugin(root: PathBuf, requested: &str) -> Result<(), String> {
     for marker in [
         ".register_plugin(DbIdentityPlugin::new(",
         ".register_plugin(SessionAuthPlugin)",
+        ".register_plugin(AuthAdminPlugin)",
         ".register_plugin(JwtAuthPlugin)",
         ".register_plugin(RbacPlugin)",
     ] {
@@ -117,10 +155,7 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
         "browser session auth requires an application created with `arc new --ui`".to_string()
     })?;
     if !source.contains("use arc_auth_session::RequireSession;") {
-        source = source.replace(
-            "use actix_web::{get, web, HttpResponse, Responder};",
-            "use actix_web::{get, web, HttpResponse, Responder};\nuse arc_auth_session::RequireSession;",
-        );
+        source = format!("use arc_auth_session::RequireSession;\n{source}");
     }
     if !source.contains("IdleTimeoutMiddleware") {
         source = source.replace(
@@ -128,6 +163,10 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
             "use arc_auth_session::RequireSession;\nuse arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware;",
         );
     }
+    source = source.replace(
+        "/* arc:admin-scope-middleware */",
+        "/* arc:admin-scope-middleware */.wrap(RequireSession).wrap(IdleTimeoutMiddleware::from_env())",
+    );
     source = source.replace("#[get(\"/admin\")]\n", "");
     source = source.replace(
         "web::scope(\"\").wrap(RequireSession).service(dashboard)",
@@ -147,16 +186,7 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
     );
     fs::write(path, source).map_err(|e| e.to_string())?;
 
-    let layout_path = root.join("resources/views/layouts/admin.html");
-    let mut layout = fs::read_to_string(&layout_path)
-        .map_err(|_| "browser session auth requires the generated admin layout".to_string())?;
-    if !layout.contains("href=\"/admin/profile\"") {
-        layout = layout.replace(
-            "<!-- arc:capability-navigation -->",
-            "<a href=\"/admin/profile\">Profile</a><a href=\"/admin/users\">Users</a><!-- arc:capability-navigation -->",
-        );
-    }
-    fs::write(layout_path, layout).map_err(|e| e.to_string())
+    Ok(())
 }
 
 fn dependency(package: &str) -> String {
@@ -194,7 +224,7 @@ mod tests {
         assert!(ui.contains("use arc_auth_session::RequireSession;"));
         let admin_layout =
             fs::read_to_string(root.join("resources/views/layouts/admin.html")).unwrap();
-        assert!(admin_layout.contains("href=\"/admin/profile\""));
+        assert!(admin_layout.contains("admin_navigation"));
         let main = fs::read_to_string(root.join("src/main.rs")).unwrap();
         assert_eq!(
             main.matches(".register_plugin(DbIdentityPlugin::new(")
@@ -205,6 +235,7 @@ mod tests {
             main.matches(".register_plugin(SessionAuthPlugin)").count(),
             1
         );
+        assert_eq!(main.matches(".register_plugin(AuthAdminPlugin)").count(), 1);
         assert_eq!(main.matches(".register_plugin(RbacPlugin)").count(), 1);
         fs::remove_dir_all(destination).unwrap();
     }

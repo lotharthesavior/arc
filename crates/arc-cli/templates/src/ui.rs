@@ -1,38 +1,23 @@
-use actix_web::{get, web, HttpResponse, Responder};
+use actix_session::Session;
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
+use arc_web::ui::{AdminNavItem, Audience, TemplateBundle, TemplateDef, TemplateName, UiContribution, UiHost, UiPage};
+use arc_web::UiRegistry;
 use std::collections::HashMap;
-use tera::{Context, Tera};
+use tera::Context;
 
-fn templates() -> Tera {
-    let mut tera = Tera::default();
-    tera.add_raw_templates([
-        ("home.html", include_str!("../resources/views/home.html")),
-        ("layouts/public.html", include_str!("../resources/views/layouts/public.html")),
-        ("layouts/admin.html", include_str!("../resources/views/layouts/admin.html")),
-        ("components/ui.html", include_str!("../resources/views/components/ui.html")),
-        ("admin/dashboard.html", include_str!("../resources/views/admin/dashboard.html")),
-    ]).expect("valid bundled templates");
-    tera
-}
+const HOST_TEMPLATES: &[TemplateDef] = &[
+    TemplateDef{name:TemplateName("home.html"),source:include_str!("../resources/views/home.html")},
+    TemplateDef{name:TemplateName("layouts/public.html"),source:include_str!("../resources/views/layouts/public.html")},
+    TemplateDef{name:TemplateName("layouts/admin.html"),source:include_str!("../resources/views/layouts/admin.html")},
+    TemplateDef{name:TemplateName("components/ui.html"),source:include_str!("../resources/views/components/ui.html")},
+    TemplateDef{name:TemplateName("admin/dashboard.html"),source:include_str!("../resources/views/admin/dashboard.html")},
+];
 
-pub fn render(name: &str, mut context: Context, status: actix_web::http::StatusCode) -> HttpResponse {
-    context.insert("app_name", env!("CARGO_PKG_NAME"));
-    match templates().render(name, &context) {
-        Ok(body) => HttpResponse::build(status).content_type("text/html; charset=utf-8").body(body),
-        Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
-    }
-}
+pub fn host()->UiHost { UiHost{owner:env!("CARGO_PKG_NAME"),templates:TemplateBundle{templates:HOST_TEMPLATES},admin_layout:TemplateName("layouts/admin.html"),public_layout:TemplateName("layouts/public.html")} }
+pub fn contribution()->UiContribution { UiContribution{owner:env!("CARGO_PKG_NAME"),templates:TemplateBundle::default(),navigation:vec![AdminNavItem{id:"app-overview",label:"Overview",href:"/admin",order:0,audience:Audience::Authenticated}],actions:vec![],duplicate_host:false} }
+fn render(registry:&UiRegistry,req:&HttpRequest,session:&Session,name:&'static str,title:&str,mut context:Context)->HttpResponse{context.insert("title",title);registry.render(UiPage{template:TemplateName(name),title:title.into(),context,status:actix_web::http::StatusCode::OK},req,session)}
 
 #[get("/")]
-async fn home() -> impl Responder { render("home.html", Context::new(), actix_web::http::StatusCode::OK) }
-
-async fn dashboard() -> impl Responder {
-    let mut context = Context::new();
-    context.insert("stats", &HashMap::from([("events", 0), ("projections", 0)]));
-    render("admin/dashboard.html", context, actix_web::http::StatusCode::OK)
-}
-
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(home).service(
-        web::scope("/admin").route("", web::get().to(dashboard)), // arc:admin-dashboard-service
-    );
-}
+async fn home(req:HttpRequest,session:Session,registry:web::Data<UiRegistry>)->impl Responder { render(&registry,&req,&session,"home.html","Home",Context::new()) }
+async fn dashboard(req:HttpRequest,session:Session,registry:web::Data<UiRegistry>)->impl Responder { let mut context=Context::new();context.insert("stats",&HashMap::from([("events",0),("projections",0)]));render(&registry,&req,&session,"admin/dashboard.html","Workbench",context) }
+pub fn config(cfg:&mut web::ServiceConfig){cfg.service(home).service(web::scope("/admin")/* arc:admin-scope-middleware */.route("",web::get().to(dashboard)));}
