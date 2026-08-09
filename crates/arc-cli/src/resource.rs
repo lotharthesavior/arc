@@ -50,13 +50,20 @@ pub fn create_resource(resource: &NewResource) -> Result<CreatedResource, String
     if resource.ui && !resource.root.join("src/ui.rs").is_file() {
         return Err("resource UI requires an application created with `arc new --ui`".to_string());
     }
+    let manifest = fs::read_to_string(resource.root.join("Cargo.toml"))
+        .map_err(|error| format!("could not read application manifest: {error}"))?;
+    let effective_ui_auth = if resource.ui && manifest.contains("arc-auth-session") {
+        Some("session")
+    } else {
+        resource.ui_auth.as_deref()
+    };
     let files = generated_files(
         &names,
         migration_version,
         resource.api,
         resource.ui,
         resource.api_auth.as_deref(),
-        resource.ui_auth.as_deref(),
+        effective_ui_auth,
         &resource.roles,
     );
     let collisions = files
@@ -795,6 +802,33 @@ mod tests {
         let ui = fs::read_to_string(root.join("src/domain/product/ui.rs")).unwrap();
         assert!(ui.contains("CommandBus<ProductAggregate>"));
         assert!(!ui.contains("RequireSession"));
+        fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn session_capability_automatically_protects_browser_resources() {
+        let destination = temp_root();
+        let root = create_project(&NewProject {
+            api: false,
+            name: "secure-ui".into(),
+            destination: destination.clone(),
+            ui: true,
+            git: false,
+        })
+        .unwrap();
+        crate::plugin::add_plugin(root.clone(), "auth-session").unwrap();
+        create_resource(&NewResource {
+            api_auth: None,
+            ui_auth: None,
+            roles: vec![],
+            name: "Secret".into(),
+            root: root.clone(),
+            api: false,
+            ui: true,
+        })
+        .unwrap();
+        let ui = fs::read_to_string(root.join("src/domain/secret/ui.rs")).unwrap();
+        assert!(ui.contains("wrap(RequireSession)"));
         fs::remove_dir_all(destination).unwrap();
     }
 }

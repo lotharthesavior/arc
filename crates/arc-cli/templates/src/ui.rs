@@ -32,4 +32,6 @@ async fn dashboard() -> impl Responder {
     render("admin/dashboard.html", context, actix_web::http::StatusCode::OK)
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) { cfg.service(home).service(dashboard); }
+pub fn config(cfg: &mut web::ServiceConfig) {
+    cfg.service(home).service(dashboard); // arc:admin-dashboard-service
+}

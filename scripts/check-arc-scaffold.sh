@@ -41,7 +41,7 @@ generate_and_check() {
         if [[ " $* " == *" --ui "* ]]; then
             ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- plugin add auth-db-session
             ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- plugin add auth-jwt
-            ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- generate resource Product "${resource_args[@]}" --api-auth jwt --ui-auth session --roles admin
+            ARC_CLI_TEST_LOCAL_ROOT="$repo_root" cargo run --quiet --manifest-path "$repo_root/crates/arc-cli/Cargo.toml" -- generate resource Product "${resource_args[@]}" --api-auth jwt --roles admin
             export ARC_SETUP_ADMIN_NAME="Scaffold Administrator"
             export ARC_SETUP_ADMIN_EMAIL="admin@example.com"
             export ARC_SETUP_ADMIN_PASSWORD="change-me-now"
@@ -127,7 +127,10 @@ for _ in {1..40}; do
 done
 
 cookie_jar="$consumer_root/ui-cookies.txt"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    http://127.0.0.1:39082/admin)" = "302"
 signin_html="$(curl --silent --fail --cookie-jar "$cookie_jar" http://127.0.0.1:39082/signin)"
+grep -q '/public/styles.css' <<<"$signin_html"
 csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$signin_html")"
 test -n "$csrf_token"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \

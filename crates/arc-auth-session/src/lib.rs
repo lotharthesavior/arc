@@ -58,7 +58,7 @@ async fn signin_page(session: Session) -> HttpResponse {
 }
 fn signin_html(csrf: &str, error: Option<&str>) -> String {
     format!(
-        r#"<!doctype html><html><body><main><h1>Sign in</h1>{}<form method="post" action="/signin"><input type="hidden" name="csrf_token" value="{}"><label>Email<input type="email" name="email"></label><label>Password<input type="password" name="password"></label><button>Sign in</button></form></main></body></html>"#,
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in</title><link rel="stylesheet" href="/public/styles.css"></head><body><main class="focused-shell"><a class="brand" href="/"><span class="brand__mark">A</span><span>Arc</span></a><section class="focused-panel"><p class="eyebrow">Authorized operators</p><h1>Sign in</h1>{}<form method="post" action="/signin"><input type="hidden" name="csrf_token" value="{}"><label>Email<input type="email" name="email" autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button class="button button--primary button--wide">Sign in</button></form></section><p class="build-mark">ARC / INSTRUMENT PANEL</p></main></body></html>"#,
         error
             .map(|e| format!("<p role=alert>{e}</p>"))
             .unwrap_or_default(),
@@ -84,7 +84,7 @@ fn csrf_ok(session: &Session, token: &str) -> bool {
     arc_web::helpers::csrf::validate_and_regenerate_csrf_token(session, token)
 }
 fn page(title: &str, body: String) -> HttpResponse {
-    HttpResponse::Ok().content_type("text/html").body(format!("<!doctype html><html><body><nav><a href=/profile>Profile</a> <a href=/admin/users>Users</a></nav><main><h1>{title}</h1>{body}</main></body></html>"))
+    HttpResponse::Ok().content_type("text/html").body(format!("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title><link rel=stylesheet href=/public/styles.css></head><body><main class=focused-shell><nav><a href=/admin>Admin</a> <a href=/profile>Profile</a> <a href=/admin/users>Users</a></nav><section class=focused-panel><h1>{title}</h1>{body}</section></main></body></html>"))
 }
 
 #[get("/profile")]
@@ -289,5 +289,16 @@ where
         }
         let fut = self.service.call(req);
         Box::pin(async move { fut.await.map(ServiceResponse::map_into_left_body) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn signin_uses_scaffold_styles() {
+        let html = signin_html("csrf", None);
+        assert!(html.contains("/public/styles.css"));
+        assert!(html.contains("focused-shell"));
     }
 }
