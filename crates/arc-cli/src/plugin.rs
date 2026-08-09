@@ -36,20 +36,28 @@ pub fn add_plugin(root: PathBuf, requested: &str) -> Result<(), String> {
                 &format!("[dependencies]\n{dependency}\n"),
             );
         }
-        let (import, registration) = match *capability {
-            "auth-db" => ("use arc_auth_db::DbIdentityPlugin;", ".register_plugin(DbIdentityPlugin::new(std::env::var(\"DATABASE_URL\").unwrap_or_else(|_| \"database/database.sqlite\".into())))"),
-            "auth-session" => ("use arc_auth_session::SessionAuthPlugin;", ".register_plugin(SessionAuthPlugin)"),
-            "auth-jwt" => ("use arc_auth_jwt::JwtAuthPlugin;", ".register_plugin(JwtAuthPlugin)"),
-            "auth-rbac" => ("use arc_auth_rbac::RbacPlugin;", ".register_plugin(RbacPlugin)"),
+        let (import, registration, registration_marker) = match *capability {
+            "auth-db" => ("use arc_auth_db::DbIdentityPlugin;", ".register_plugin(DbIdentityPlugin::new(std::env::var(\"DATABASE_URL\").unwrap_or_else(|_| \"database/database.sqlite\".into())))", ".register_plugin(DbIdentityPlugin::new("),
+            "auth-session" => ("use arc_auth_session::SessionAuthPlugin;", ".register_plugin(SessionAuthPlugin)", ".register_plugin(SessionAuthPlugin)"),
+            "auth-jwt" => ("use arc_auth_jwt::JwtAuthPlugin;", ".register_plugin(JwtAuthPlugin)", ".register_plugin(JwtAuthPlugin)"),
+            "auth-rbac" => ("use arc_auth_rbac::RbacPlugin;", ".register_plugin(RbacPlugin)", ".register_plugin(RbacPlugin)"),
             _ => unreachable!(),
         };
         if !main.contains(import) {
             main = main.replace(IMPORT, &format!("{IMPORT}\n{import}"));
         }
-        if !main.contains(registration) {
+        if !main.contains(registration_marker) {
             main = main.replace(REGISTER, &format!("        {registration}\n{REGISTER}"));
         }
         let _ = crate_name;
+    }
+    for marker in [
+        ".register_plugin(DbIdentityPlugin::new(",
+        ".register_plugin(SessionAuthPlugin)",
+        ".register_plugin(JwtAuthPlugin)",
+        ".register_plugin(RbacPlugin)",
+    ] {
+        main = remove_duplicate_registration(main, marker);
     }
     fs::write(manifest_path, manifest).map_err(|e| e.to_string())?;
     fs::write(main_path, main).map_err(|e| e.to_string())?;
@@ -66,6 +74,41 @@ pub fn add_plugin(root: PathBuf, requested: &str) -> Result<(), String> {
     } else {
         Err("cargo fmt failed after plugin installation".into())
     }
+}
+
+fn remove_duplicate_registration(mut source: String, marker: &str) -> String {
+    let Some(first) = source.find(marker) else {
+        return source;
+    };
+    let mut search_from = first + marker.len();
+    while let Some(relative) = source[search_from..].find(marker) {
+        let start = search_from + relative;
+        let Some(open_relative) = source[start..].find('(') else {
+            break;
+        };
+        let open = start + open_relative;
+        let mut depth = 0_usize;
+        let mut end = None;
+        for (offset, character) in source[open..].char_indices() {
+            match character {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open + offset + character.len_utf8());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else {
+            break;
+        };
+        source.replace_range(start..end, "");
+        search_from = first + marker.len();
+    }
+    source
 }
 
 fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
@@ -141,7 +184,8 @@ mod tests {
             git: false,
         })
         .unwrap();
-        add_plugin(root.clone(), "auth-session").unwrap();
+        add_plugin(root.clone(), "auth-db-session").unwrap();
+        add_plugin(root.clone(), "auth-db-session").unwrap();
         let ui = fs::read_to_string(root.join("src/ui.rs")).unwrap();
         assert!(ui.contains("wrap(RequireSession)"));
         assert!(ui.contains("IdleTimeoutMiddleware::from_env()"));
@@ -151,6 +195,17 @@ mod tests {
         let admin_layout =
             fs::read_to_string(root.join("resources/views/layouts/admin.html")).unwrap();
         assert!(admin_layout.contains("href=\"/admin/profile\""));
+        let main = fs::read_to_string(root.join("src/main.rs")).unwrap();
+        assert_eq!(
+            main.matches(".register_plugin(DbIdentityPlugin::new(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            main.matches(".register_plugin(SessionAuthPlugin)").count(),
+            1
+        );
+        assert_eq!(main.matches(".register_plugin(RbacPlugin)").count(), 1);
         fs::remove_dir_all(destination).unwrap();
     }
 }
