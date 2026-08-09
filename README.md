@@ -114,6 +114,7 @@ Benthos is the only durable distributed event router. It consumes `events.>` and
 ## Documentation
 
 - [Getting started](docs/guides/getting-started.md)
+- [Authentication plugins](docs/reference/auth-plugins.md)
 - [Architecture](docs/02-architecture.md)
 - [Database](docs/05-database.md)
 - [Testing](docs/06-testing.md)

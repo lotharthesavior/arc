@@ -18,6 +18,13 @@
 
 * Reference
   * [API Reference](07-api-reference.md)
+  * [Authentication Plugins](reference/auth-plugins.md)
+    * [arc-auth-core](reference/arc-auth-core.md)
+    * [arc-auth-db](reference/arc-auth-db.md)
+    * [arc-auth-session](reference/arc-auth-session.md)
+    * [arc-auth-admin](reference/arc-auth-admin.md)
+    * [arc-auth-jwt](reference/arc-auth-jwt.md)
+    * [arc-auth-rbac](reference/arc-auth-rbac.md)
   * [Problems & Improvements](08-problems-and-improvements.md)
 
 * Architecture & Planning

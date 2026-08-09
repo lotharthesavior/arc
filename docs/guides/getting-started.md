@@ -50,20 +50,23 @@ make dev
 
 Open <http://127.0.0.1:8080/health>. A `--ui` application redirects `/` to its Focused home at
 <http://127.0.0.1:8080/home>; sign in at `/signin` and use the Dense Workbench at `/admin`.
-Development credentials come from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Set
-`ADMIN_PASSWORD_HASH` to an Argon2 PHC string in production; plaintext bootstrap passwords are
-rejected there.
+On an empty identity database, `make setup` prompts for the first administrator's name, email, and
+password. Noninteractive setup uses `ARC_SETUP_ADMIN_NAME`, `ARC_SETUP_ADMIN_EMAIL`, and
+`ARC_SETUP_ADMIN_PASSWORD`; these one-shot inputs are not written to `.env`.
 
 Generate browser resource pages and a JWT-protected API together:
 
 ```sh
-arc generate resource Product --api --ui
+arc generate resource Product --api --ui --api-auth jwt
 make migrate
 ```
 
 `--ui` on a resource requires an application created with `arc new --ui`. The generated browser
 collection supports filtering, name sorting, pagination, empty states, and optimistic-conflict
 feedback. Its writes use the resource `CommandBus`; its reads use the projection.
+
+See the [authentication plugin reference](../reference/auth-plugins.md) for plugin bundles,
+configuration, routes, and role-guard behavior.
 
 The server stays attached to the terminal while running. Stop it with `Ctrl+C`.
 
