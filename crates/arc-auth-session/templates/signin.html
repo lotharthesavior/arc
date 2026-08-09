@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}Sign in · Arc{% endblock title %}
+{% block content %}
+<p class="eyebrow">Authorized operators</p>
+<h1>Sign in</h1>
+{% if error %}<div class="alert alert--error" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="/signin">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="field"><label for="signin-email">Email</label><input id="signin-email" type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus></div>
+  <div class="field"><label for="signin-password">Password</label><input id="signin-password" type="password" name="password" autocomplete="current-password" required></div>
+  <button class="button button--primary button--wide" type="submit">Sign in</button>
+</form>
+{% endblock content %}

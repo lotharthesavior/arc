@@ -513,7 +513,7 @@ fn generated_files(
             .replace(
                 "{{ui-auth-import}}",
                 if ui_auth == Some("session") {
-                    "use arc_auth_session::RequireSession;\n"
+                    "use arc_auth_session::RequireSession;\nuse arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware;\n"
                 } else {
                     ""
                 },
@@ -521,7 +521,7 @@ fn generated_files(
             .replace(
                 "{{ui-auth-wrap}}",
                 if ui_auth == Some("session") {
-                    ".wrap(RequireSession)"
+                    ".wrap(RequireSession).wrap(IdleTimeoutMiddleware::from_env())"
                 } else {
                     ""
                 },
@@ -829,6 +829,7 @@ mod tests {
         .unwrap();
         let ui = fs::read_to_string(root.join("src/domain/secret/ui.rs")).unwrap();
         assert!(ui.contains("wrap(RequireSession)"));
+        assert!(ui.contains("IdleTimeoutMiddleware::from_env()"));
         fs::remove_dir_all(destination).unwrap();
     }
 }

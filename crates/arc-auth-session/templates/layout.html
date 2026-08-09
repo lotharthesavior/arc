@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Arc{% endblock title %}</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body>
+  <main class="focused-shell">
+    <a class="brand" href="/"><span class="brand__mark">A</span><span>Arc</span></a>
+    <section class="focused-panel">{% block content %}{% endblock content %}</section>
+    <p class="build-mark">ARC / INSTRUMENT PANEL</p>
+  </main>
+</body>
+</html>

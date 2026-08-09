@@ -10,8 +10,46 @@ use futures_util::future::LocalBoxFuture;
 use serde::Deserialize;
 use std::{
     future::{ready, Ready},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
+use tera::{Context, Tera};
+
+static TEMPLATES: LazyLock<Tera> = LazyLock::new(|| {
+    let mut tera = Tera::default();
+    tera.add_raw_templates([
+        ("layout.html", include_str!("../templates/layout.html")),
+        ("signin.html", include_str!("../templates/signin.html")),
+        ("profile.html", include_str!("../templates/profile.html")),
+        ("users.html", include_str!("../templates/users.html")),
+    ])
+    .expect("arc-auth-session templates must be valid");
+    tera
+});
+
+fn render(name: &str, context: &Context, status: actix_web::http::StatusCode) -> HttpResponse {
+    match TEMPLATES.render(name, context) {
+        Ok(body) => HttpResponse::build(status)
+            .content_type("text/html; charset=utf-8")
+            .body(body),
+        Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
+    }
+}
+
+fn signin_response(
+    session: &Session,
+    email: &str,
+    error: Option<&str>,
+    status: actix_web::http::StatusCode,
+) -> HttpResponse {
+    let mut context = Context::new();
+    context.insert(
+        "csrf_token",
+        &arc_web::helpers::csrf::get_csrf_token(session),
+    );
+    context.insert("email", email);
+    context.insert("error", &error);
+    render("signin.html", &context, status)
+}
 
 pub const IDENTITY_SESSION_KEY: &str = "arc_auth_identity";
 pub fn identity(session: &Session) -> Option<Identity> {
@@ -35,35 +73,21 @@ async fn signin(
     }
     match store.authenticate(&form.email, &form.password).await {
         Ok(user) => {
-            let _ = session.insert(IDENTITY_SESSION_KEY, user);
+            cache_identity(&session, &user);
             HttpResponse::SeeOther()
                 .insert_header(("Location", "/admin"))
                 .finish()
         }
-        Err(_) => HttpResponse::Unauthorized()
-            .content_type("text/html")
-            .body(signin_html(
-                &arc_web::helpers::csrf::get_csrf_token(&session),
-                Some("Email or password was not recognized."),
-            )),
+        Err(_) => signin_response(
+            &session,
+            &form.email,
+            Some("Email or password was not recognized."),
+            actix_web::http::StatusCode::UNAUTHORIZED,
+        ),
     }
 }
 async fn signin_page(session: Session) -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(signin_html(
-            &arc_web::helpers::csrf::get_csrf_token(&session),
-            None,
-        ))
-}
-fn signin_html(csrf: &str, error: Option<&str>) -> String {
-    format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in</title><link rel="stylesheet" href="/public/styles.css"></head><body><main class="focused-shell"><a class="brand" href="/"><span class="brand__mark">A</span><span>Arc</span></a><section class="focused-panel"><p class="eyebrow">Authorized operators</p><h1>Sign in</h1>{}<form method="post" action="/signin"><input type="hidden" name="csrf_token" value="{}"><label>Email<input type="email" name="email" autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button class="button button--primary button--wide">Sign in</button></form></section><p class="build-mark">ARC / INSTRUMENT PANEL</p></main></body></html>"#,
-        error
-            .map(|e| format!("<p role=alert>{e}</p>"))
-            .unwrap_or_default(),
-        csrf
-    )
+    signin_response(&session, "", None, actix_web::http::StatusCode::OK)
 }
 #[derive(Deserialize)]
 struct SignOut {
@@ -75,6 +99,7 @@ async fn signout(form: web::Form<SignOut>, session: Session) -> HttpResponse {
         return HttpResponse::Forbidden().finish();
     }
     session.remove(IDENTITY_SESSION_KEY);
+    arc_web::helpers::session::clear_session_user(&session);
     HttpResponse::SeeOther()
         .insert_header(("Location", "/"))
         .finish()
@@ -83,10 +108,18 @@ async fn signout(form: web::Form<SignOut>, session: Session) -> HttpResponse {
 fn csrf_ok(session: &Session, token: &str) -> bool {
     arc_web::helpers::csrf::validate_and_regenerate_csrf_token(session, token)
 }
-fn page(title: &str, body: String) -> HttpResponse {
-    HttpResponse::Ok().content_type("text/html").body(format!("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title><link rel=stylesheet href=/public/styles.css></head><body><main class=focused-shell><nav><a href=/admin>Admin</a> <a href=/profile>Profile</a> <a href=/admin/users>Users</a></nav><section class=focused-panel><h1>{title}</h1>{body}</section></main></body></html>"))
-}
 
+fn cache_identity(session: &Session, identity: &Identity) {
+    let _ = session.insert(IDENTITY_SESSION_KEY, identity);
+    arc_web::helpers::session::set_session_user(
+        session,
+        &arc_web::helpers::session::SessionUser {
+            id: identity.id.clone(),
+            name: identity.name.clone(),
+            email: identity.email.clone(),
+        },
+    );
+}
 #[get("/profile")]
 async fn profile(session: Session) -> HttpResponse {
     let Some(user) = identity(&session) else {
@@ -94,14 +127,23 @@ async fn profile(session: Session) -> HttpResponse {
             .insert_header(("Location", "/signin"))
             .finish();
     };
-    let token = arc_web::helpers::csrf::get_csrf_token(&session);
-    page(
-        "Profile",
-        format!(
-            r#"<form method=post><input type=hidden name=csrf_token value="{token}"><label>Name<input name=name value="{}"></label><label>Email<input type=email name=email value="{}"></label><button>Save</button></form><form method=post action=/profile/password><input type=hidden name=csrf_token value="{token}"><label>Current password<input type=password name=current_password></label><label>New password<input type=password name=new_password></label><button>Change password</button></form>"#,
-            user.name, user.email
-        ),
-    )
+    profile_response(&session, &user, None, actix_web::http::StatusCode::OK)
+}
+
+fn profile_response(
+    session: &Session,
+    user: &Identity,
+    error: Option<&str>,
+    status: actix_web::http::StatusCode,
+) -> HttpResponse {
+    let mut context = Context::new();
+    context.insert(
+        "csrf_token",
+        &arc_web::helpers::csrf::get_csrf_token(session),
+    );
+    context.insert("user", user);
+    context.insert("error", &error);
+    render("profile.html", &context, status)
 }
 #[derive(Deserialize)]
 struct ProfileForm {
@@ -126,7 +168,7 @@ async fn profile_save(
         .await
     {
         Ok(updated) => {
-            let _ = session.insert(IDENTITY_SESSION_KEY, updated);
+            cache_identity(&session, &updated);
             HttpResponse::SeeOther()
                 .insert_header(("Location", "/profile"))
                 .finish()
@@ -177,8 +219,81 @@ async fn users(session: Session, store: web::Data<dyn IdentityStore>) -> HttpRes
     if !actor.has_role("admin") {
         return HttpResponse::Forbidden().finish();
     }
-    let token = arc_web::helpers::csrf::get_csrf_token(&session);
-    match store.list().await {Ok(users)=>page("Users",users.into_iter().map(|u|format!(r#"<section><strong>{}</strong> &lt;{}&gt; roles: {}<form method=post action="/admin/users/{}/roles"><input type=hidden name=csrf_token value="{}"><input name=roles value="{}"><button>Set roles</button></form></section>"#,u.name,u.email,u.roles.join(", "),u.id,token,u.roles.join(","))).collect()),Err(e)=>HttpResponse::InternalServerError().body(e.to_string())}
+    match store.list().await {
+        Ok(identities) => {
+            users_response(&session, &identities, None, actix_web::http::StatusCode::OK)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+fn users_response(
+    session: &Session,
+    identities: &[Identity],
+    error: Option<&str>,
+    status: actix_web::http::StatusCode,
+) -> HttpResponse {
+    let mut context = Context::new();
+    context.insert("users", identities);
+    context.insert(
+        "csrf_token",
+        &arc_web::helpers::csrf::get_csrf_token(session),
+    );
+    context.insert("error", &error);
+    render("users.html", &context, status)
+}
+
+#[derive(Deserialize)]
+struct CreateUserForm {
+    name: String,
+    email: String,
+    password: String,
+    roles: String,
+    csrf_token: String,
+}
+
+#[post("/admin/users")]
+async fn user_create(
+    form: web::Form<CreateUserForm>,
+    session: Session,
+    store: web::Data<dyn IdentityStore>,
+) -> HttpResponse {
+    if !csrf_ok(&session, &form.csrf_token) {
+        return HttpResponse::Forbidden().finish();
+    }
+    let Some(actor) = identity(&session) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if !actor.has_role("admin") {
+        return HttpResponse::Forbidden().finish();
+    }
+    let roles = form
+        .roles
+        .split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    match store
+        .create_user(&form.name, &form.email, &form.password, &roles)
+        .await
+    {
+        Ok(_) => HttpResponse::SeeOther()
+            .insert_header(("Location", "/admin/users"))
+            .finish(),
+        Err(error) => match store.list().await {
+            Ok(identities) => {
+                let message = error.to_string();
+                users_response(
+                    &session,
+                    &identities,
+                    Some(&message),
+                    actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+                )
+            }
+            Err(_) => HttpResponse::InternalServerError().finish(),
+        },
+    }
 }
 #[derive(Deserialize)]
 struct RolesForm {
@@ -224,6 +339,7 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .service(profile_save)
         .service(password_save)
         .service(users)
+        .service(user_create)
         .service(roles_save);
 }
 
@@ -296,9 +412,17 @@ where
 mod tests {
     use super::*;
     #[test]
-    fn signin_uses_scaffold_styles() {
-        let html = signin_html("csrf", None);
+    fn signin_uses_accessible_scaffold_fields_and_escapes_values() {
+        let mut context = Context::new();
+        context.insert("csrf_token", "csrf");
+        context.insert("email", "<script>alert(1)</script>");
+        context.insert("error", &Option::<String>::None);
+        let html = TEMPLATES.render("signin.html", &context).unwrap();
         assert!(html.contains("/public/styles.css"));
         assert!(html.contains("focused-shell"));
+        assert!(html.contains("class=\"field\""));
+        assert!(html.contains("for=\"signin-email\""));
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("&lt;script&gt;"));
     }
 }

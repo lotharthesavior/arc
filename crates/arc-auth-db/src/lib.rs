@@ -219,6 +219,13 @@ impl ArcPlugin for DbIdentityPlugin {
         builder.register_data(self.store.clone())
     }
     async fn setup(&self, context: &PluginSetupContext<'_>) -> io::Result<()> {
+        let driver = std::env::var("DATABASE_DRIVER").unwrap_or_else(|_| "sqlite".into());
+        if driver != "sqlite" {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("arc-auth-db currently supports DATABASE_DRIVER=sqlite, not `{driver}`"),
+            ));
+        }
         let mut c = SqliteConnection::establish(context.database_url).map_err(io::Error::other)?;
         c.batch_execute(IDENTITY_ROLES_MIGRATION)
             .map_err(io::Error::other)?;

@@ -131,8 +131,23 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     http://127.0.0.1:39082/admin)" = "302"
 signin_html="$(curl --silent --fail --cookie-jar "$cookie_jar" http://127.0.0.1:39082/signin)"
 grep -q '/public/styles.css' <<<"$signin_html"
+grep -q 'class="field"' <<<"$signin_html"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     http://127.0.0.1:39082/public/styles.css)" = "200"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cookie "$cookie_jar" --request POST --data-urlencode 'csrf_token=invalid' \
+    --data-urlencode 'email=admin@example.com' --data-urlencode 'password=wrong' \
+    http://127.0.0.1:39082/signin)" = "403"
+invalid_cookie_jar="$consumer_root/ui-invalid-cookies.txt"
+invalid_html="$(curl --silent --cookie-jar "$invalid_cookie_jar" http://127.0.0.1:39082/signin)"
+invalid_csrf="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$invalid_html")"
+invalid_response="$(curl --silent --cookie "$invalid_cookie_jar" --cookie-jar "$invalid_cookie_jar" \
+    --request POST --data-urlencode "csrf_token=$invalid_csrf" \
+    --data-urlencode 'email=<script>alert(1)</script>@example.com' --data-urlencode 'password=wrong' \
+    http://127.0.0.1:39082/signin)"
+grep -q '&lt;script&gt;' <<<"$invalid_response"
+if grep -q '<script>alert(1)</script>' <<<"$invalid_response"; then exit 1; fi
+node "$repo_root/scripts/check-generated-auth-ui.mjs" http://127.0.0.1:39082
 csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$signin_html")"
 test -n "$csrf_token"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \

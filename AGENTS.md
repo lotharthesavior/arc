@@ -77,6 +77,9 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 ### Event Sourcing
 
 - Writes should go through `CommandBus` and aggregate commands.
+- Exception: opt-in `arc-auth-db` identity and role infrastructure uses conventional `users`,
+  `roles`, and `user_roles` tables owned by that plugin. This does not change event-sourcing rules
+  for application domain resources or the built-in `arc-app` User aggregate.
 - Read models are projection outputs, not authoritative write state.
 - `users_view` is maintained by `UserProjector`.
 - Event log remains the source of truth.
@@ -98,11 +101,15 @@ Important: older planning docs can lag behind code. If docs conflict, prefer cur
 - Do not weaken one auth flow while changing the other.
 - `set_session_user()` stores a projection-backed `SessionUser` under the `"user"` session key; avoid adding unnecessary DB reads to authenticated HTML flows.
 - Idle timeout must read `SessionUser`, not the retired `"user_id"` key.
+- `arc-auth-session` caches both its role-bearing identity and the standard `SessionUser`; admin
+  middleware must include idle-timeout enforcement.
 
 ### Database Rules
 
 - SQLite implementations live in `arc-es-sqlite`; Postgres implementations live in `arc-es-postgres`.
 - Schema changes require a Diesel migration and affected seeder/test updates (Postgres self-initializes its schema in `build_stores`).
+- Auth capability schema is plugin-owned; each supported database driver must have an explicit
+  migration path, and unsupported drivers must fail clearly during setup.
 - New storage backends go behind the existing `EventStore` and `ReadModelStore` traits instead of changing domain code.
 
 ### Frontend Rules

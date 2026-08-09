@@ -6,8 +6,9 @@
 ## Decision
 
 Arc authentication is optional and composable. Cargo capability packages implement the common
-`ArcPlugin` interface and register through `ArcAppBuilder`. Generated resources are public unless
-their generator invocation explicitly opts into authentication.
+`ArcPlugin` interface and register through `ArcAppBuilder`. Installing browser-session auth creates
+one authenticated admin boundary: every browser resource under `/admin` inherits it and cannot opt
+out. API resources remain public unless their generator invocation explicitly opts into JWT auth.
 
 Keep only these packages:
 
@@ -26,12 +27,14 @@ resources retain normal event-sourced writes.
 ~~~text
 arc plugin add auth-db-session
 arc plugin add auth-db-jwt
-arc generate resource Product --ui --ui-auth session --roles admin
+arc generate resource Product --ui --roles admin
 arc generate resource Product --api --api-auth jwt --roles admin,user
 ~~~
 
-`--ui` and `--api` alone create public surfaces. Auth flags fail clearly when their capability is
-not installed. Roles require an authenticated resource and `arc-auth-rbac`.
+Without the session capability, `--ui` creates a public browser surface. With it installed, `--ui`
+inherits the protected admin boundary. `--api` remains public unless `--api-auth jwt` is supplied.
+Auth flags fail clearly when their capability is not installed. Roles require an authenticated
+surface and `arc-auth-rbac`.
 
 First setup uses `ARC_SETUP_ADMIN_NAME`, `ARC_SETUP_ADMIN_EMAIL`, and
 `ARC_SETUP_ADMIN_PASSWORD`; reruns do not reset an existing user.
@@ -40,5 +43,6 @@ First setup uses `ARC_SETUP_ADMIN_NAME`, `ARC_SETUP_ADMIN_EMAIL`, and
 
 - Plugins share one registration/setup/migration lifecycle.
 - No auth routes, middleware, user code, or user migration exists without an installed capability.
+- Session-enabled admin pages and browser resources share session and idle-timeout enforcement.
 - DB identity, browser session, API JWT, RBAC, profile editing, and role assignment work together.
 - Public and protected generated resources compile and focused tests pass.

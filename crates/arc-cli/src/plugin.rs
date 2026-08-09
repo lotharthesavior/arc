@@ -79,6 +79,12 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
             "use actix_web::{get, web, HttpResponse, Responder};\nuse arc_auth_session::RequireSession;",
         );
     }
+    if !source.contains("IdleTimeoutMiddleware") {
+        source = source.replace(
+            "use arc_auth_session::RequireSession;",
+            "use arc_auth_session::RequireSession;\nuse arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware;",
+        );
+    }
     source = source.replace("#[get(\"/admin\")]\n", "");
     source = source.replace(
         "web::scope(\"\").wrap(RequireSession).service(dashboard)",
@@ -91,6 +97,10 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
     source = source.replace(
         "cfg.service(home).service(dashboard);",
         "cfg.service(home).service(web::scope(\"/admin\").wrap(RequireSession).route(\"\", web::get().to(dashboard)));",
+    );
+    source = source.replace(
+        ".wrap(RequireSession).route(\"\", web::get().to(dashboard))",
+        ".wrap(RequireSession).wrap(IdleTimeoutMiddleware::from_env()).route(\"\", web::get().to(dashboard))",
     );
     fs::write(path, source).map_err(|e| e.to_string())
 }
@@ -123,6 +133,7 @@ mod tests {
         add_plugin(root.clone(), "auth-session").unwrap();
         let ui = fs::read_to_string(root.join("src/ui.rs")).unwrap();
         assert!(ui.contains("wrap(RequireSession)"));
+        assert!(ui.contains("IdleTimeoutMiddleware::from_env()"));
         assert!(ui.contains("scope(\"/admin\")"));
         assert!(!ui.contains("scope(\"\")"));
         assert!(ui.contains("use arc_auth_session::RequireSession;"));
