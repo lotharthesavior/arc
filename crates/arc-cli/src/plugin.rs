@@ -102,7 +102,18 @@ fn protect_admin_dashboard(root: &Path) -> Result<(), String> {
         ".wrap(RequireSession).route(\"\", web::get().to(dashboard))",
         ".wrap(RequireSession).wrap(IdleTimeoutMiddleware::from_env()).route(\"\", web::get().to(dashboard))",
     );
-    fs::write(path, source).map_err(|e| e.to_string())
+    fs::write(path, source).map_err(|e| e.to_string())?;
+
+    let layout_path = root.join("resources/views/layouts/admin.html");
+    let mut layout = fs::read_to_string(&layout_path)
+        .map_err(|_| "browser session auth requires the generated admin layout".to_string())?;
+    if !layout.contains("href=\"/admin/profile\"") {
+        layout = layout.replace(
+            "<!-- arc:capability-navigation -->",
+            "<a href=\"/admin/profile\">Profile</a><a href=\"/admin/users\">Users</a><!-- arc:capability-navigation -->",
+        );
+    }
+    fs::write(layout_path, layout).map_err(|e| e.to_string())
 }
 
 fn dependency(package: &str) -> String {
@@ -137,6 +148,9 @@ mod tests {
         assert!(ui.contains("scope(\"/admin\")"));
         assert!(!ui.contains("scope(\"\")"));
         assert!(ui.contains("use arc_auth_session::RequireSession;"));
+        let admin_layout =
+            fs::read_to_string(root.join("resources/views/layouts/admin.html")).unwrap();
+        assert!(admin_layout.contains("href=\"/admin/profile\""));
         fs::remove_dir_all(destination).unwrap();
     }
 }

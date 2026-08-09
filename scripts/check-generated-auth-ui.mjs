@@ -13,7 +13,7 @@ try {
   });
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto(`${baseUrl}/admin`);
+  await page.goto(`${baseUrl}/admin/profile`);
   await page.waitForURL(`${baseUrl}/signin`);
   const email = page.getByLabel("Email");
   const password = page.getByLabel("Password");
@@ -32,10 +32,13 @@ try {
   await password.fill("change-me-now");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(`${baseUrl}/admin`);
-  await page.goto(`${baseUrl}/profile`);
+  const legacyProfile = await page.request.get(`${baseUrl}/profile`);
+  assert.equal(legacyProfile.status(), 404, "legacy /profile route must not remain exposed");
+  await page.getByRole("link", { name: "Profile" }).click();
+  await page.waitForURL(`${baseUrl}/admin/profile`);
   await page.getByLabel("Name").fill("Scaffold Administrator Updated");
   await page.getByRole("button", { name: "Save profile" }).click();
-  await page.waitForURL(`${baseUrl}/profile`);
+  await page.waitForURL(`${baseUrl}/admin/profile`);
   assert.equal(await page.getByLabel("Name").inputValue(), "Scaffold Administrator Updated");
   await page.goto(`${baseUrl}/admin/users`);
   await page.getByRole("heading", { name: "Users" }).waitFor();

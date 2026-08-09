@@ -1,10 +1,10 @@
 {% extends "layout.html" %}
 {% block title %}Profile · Arc{% endblock title %}
 {% block content %}
-<nav class="text-links"><a href="/admin">Admin</a><a href="/admin/users">Users</a></nav>
+<nav class="text-links"><a href="/admin">Admin</a><a href="/admin/profile">Profile</a><a href="/admin/users">Users</a></nav>
 <p class="eyebrow">Identity</p><h1>Profile</h1>
 {% if error %}<div class="alert alert--error" role="alert">{{ error }}</div>{% endif %}
-<form method="post" action="/profile">
+<form method="post" action="/admin/profile">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="field"><label for="profile-name">Name</label><input id="profile-name" name="name" value="{{ user.name }}" required></div>
   <div class="field"><label for="profile-email">Email</label><input id="profile-email" type="email" name="email" value="{{ user.email }}" required></div>
@@ -12,7 +12,7 @@
 </form>
 <hr>
 <h2>Change password</h2>
-<form method="post" action="/profile/password">
+<form method="post" action="/admin/profile/password">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="field"><label for="current-password">Current password</label><input id="current-password" type="password" name="current_password" autocomplete="current-password" required></div>
   <div class="field"><label for="new-password">New password</label><input id="new-password" type="password" name="new_password" autocomplete="new-password" minlength="12" required></div>

@@ -120,7 +120,7 @@ fn cache_identity(session: &Session, identity: &Identity) {
         },
     );
 }
-#[get("/profile")]
+#[get("")]
 async fn profile(session: Session) -> HttpResponse {
     let Some(user) = identity(&session) else {
         return HttpResponse::Found()
@@ -151,7 +151,7 @@ struct ProfileForm {
     email: String,
     csrf_token: String,
 }
-#[post("/profile")]
+#[post("")]
 async fn profile_save(
     form: web::Form<ProfileForm>,
     session: Session,
@@ -170,10 +170,18 @@ async fn profile_save(
         Ok(updated) => {
             cache_identity(&session, &updated);
             HttpResponse::SeeOther()
-                .insert_header(("Location", "/profile"))
+                .insert_header(("Location", "/admin/profile"))
                 .finish()
         }
-        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+        Err(error) => {
+            let message = error.to_string();
+            profile_response(
+                &session,
+                &user,
+                Some(&message),
+                actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            )
+        }
     }
 }
 #[derive(Deserialize)]
@@ -182,7 +190,7 @@ struct PasswordForm {
     new_password: String,
     csrf_token: String,
 }
-#[post("/profile/password")]
+#[post("/password")]
 async fn password_save(
     form: web::Form<PasswordForm>,
     session: Session,
@@ -199,17 +207,30 @@ async fn password_save(
         .await
         .is_err()
     {
-        return HttpResponse::Unauthorized().body("current password is incorrect");
+        return profile_response(
+            &session,
+            &user,
+            Some("Current password is incorrect."),
+            actix_web::http::StatusCode::UNAUTHORIZED,
+        );
     }
     match store.change_password(&user.id, &form.new_password).await {
         Ok(()) => HttpResponse::SeeOther()
-            .insert_header(("Location", "/profile"))
+            .insert_header(("Location", "/admin/profile"))
             .finish(),
-        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+        Err(error) => {
+            let message = error.to_string();
+            profile_response(
+                &session,
+                &user,
+                Some(&message),
+                actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            )
+        }
     }
 }
 
-#[get("/admin/users")]
+#[get("")]
 async fn users(session: Session, store: web::Data<dyn IdentityStore>) -> HttpResponse {
     let Some(actor) = identity(&session) else {
         return HttpResponse::Found()
@@ -252,7 +273,7 @@ struct CreateUserForm {
     csrf_token: String,
 }
 
-#[post("/admin/users")]
+#[post("")]
 async fn user_create(
     form: web::Form<CreateUserForm>,
     session: Session,
@@ -300,7 +321,7 @@ struct RolesForm {
     roles: String,
     csrf_token: String,
 }
-#[post("/admin/users/{id}/roles")]
+#[post("/{id}/roles")]
 async fn roles_save(
     id: web::Path<String>,
     form: web::Form<RolesForm>,
@@ -335,12 +356,26 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/signin", web::get().to(signin_page))
         .service(signin)
         .service(signout)
-        .service(profile)
-        .service(profile_save)
-        .service(password_save)
-        .service(users)
-        .service(user_create)
-        .service(roles_save);
+        .service(
+            web::scope("/admin/profile")
+                .wrap(RequireSession)
+                .wrap(
+                    arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware::from_env(),
+                )
+                .service(profile)
+                .service(profile_save)
+                .service(password_save),
+        )
+        .service(
+            web::scope("/admin/users")
+                .wrap(RequireSession)
+                .wrap(
+                    arc_web::http::middlewares::idle_timeout_middleware::IdleTimeoutMiddleware::from_env(),
+                )
+                .service(users)
+                .service(user_create)
+                .service(roles_save),
+        );
 }
 
 pub struct SessionAuthPlugin;
@@ -424,5 +459,27 @@ mod tests {
         assert!(html.contains("for=\"signin-email\""));
         assert!(!html.contains("<script>"));
         assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn profile_is_an_admin_route_with_admin_navigation() {
+        let user = Identity {
+            id: "1".into(),
+            name: "Admin".into(),
+            email: "admin@example.com".into(),
+            active: true,
+            roles: vec!["admin".into()],
+        };
+        let mut context = Context::new();
+        context.insert("csrf_token", "csrf");
+        context.insert("user", &user);
+        context.insert("users", &vec![user]);
+        context.insert("error", &Option::<String>::None);
+        let profile_html = TEMPLATES.render("profile.html", &context).unwrap();
+        let users_html = TEMPLATES.render("users.html", &context).unwrap();
+        assert!(profile_html.contains("href=\"/admin/profile\""));
+        assert!(profile_html.contains("action=\"/admin/profile\""));
+        assert!(profile_html.contains("action=\"/admin/profile/password\""));
+        assert!(users_html.contains("href=\"/admin/profile\""));
     }
 }
