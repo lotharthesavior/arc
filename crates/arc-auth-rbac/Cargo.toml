@@ -8,8 +8,8 @@ repository.workspace = true
 description = "Simple role-based authorization policy for Arc"
 
 [dependencies]
-arc-auth-core = { path = "../arc-auth-core", version = "0.7.2" }
-arc-web = { path = "../arc-web", version = "0.7.2" }
+arc-auth-core = { path = "../arc-auth-core", version = "0.7.3" }
+arc-web = { path = "../arc-web", version = "0.7.3" }
 async-trait.workspace = true
 actix-session.workspace = true
 actix-web.workspace = true

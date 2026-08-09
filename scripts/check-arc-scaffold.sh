@@ -131,6 +131,8 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     http://127.0.0.1:39082/admin)" = "302"
 signin_html="$(curl --silent --fail --cookie-jar "$cookie_jar" http://127.0.0.1:39082/signin)"
 grep -q '/public/styles.css' <<<"$signin_html"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    http://127.0.0.1:39082/public/styles.css)" = "200"
 csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$signin_html")"
 test -n "$csrf_token"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \

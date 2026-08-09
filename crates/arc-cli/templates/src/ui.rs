@@ -25,7 +25,6 @@ pub fn render(name: &str, mut context: Context, status: actix_web::http::StatusC
 #[get("/")]
 async fn home() -> impl Responder { render("home.html", Context::new(), actix_web::http::StatusCode::OK) }
 
-#[get("/admin")]
 async fn dashboard() -> impl Responder {
     let mut context = Context::new();
     context.insert("stats", &HashMap::from([("events", 0), ("projections", 0)]));
@@ -33,5 +32,7 @@ async fn dashboard() -> impl Responder {
 }
 
 pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(home).service(dashboard); // arc:admin-dashboard-service
+    cfg.service(home).service(
+        web::scope("/admin").route("", web::get().to(dashboard)), // arc:admin-dashboard-service
+    );
 }
