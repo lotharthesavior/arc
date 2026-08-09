@@ -4,7 +4,7 @@
 - Date: 2026-06-18
 - Deciders: Arc framework architecture (benthos-architect, phase 1)
 - Supersedes: the custom `arc-worker` durable-consumer approach (refactor-plan Step 4, original form)
-- Related: `docs/ark/refactor-plan.md` (Step 3 publishing, evolved Step 4), `progress.md`, `docs/guides/event-handlers.md`
+- Related: `progress.md` and [Event Handlers](../event-handlers.md)
 
 ## Context
 
@@ -71,7 +71,7 @@ Concretely:
    path.** See "Rejected" below for the precise status.
 
 The full extension contract — envelope schema, manifest shape, delivery targets, idempotency,
-dead-letter behavior, and local workflow — is specified in `docs/guides/event-handlers.md`.
+dead-letter behavior, and local workflow — is specified in [Event Handlers](../event-handlers.md).
 
 **Non-negotiable boundary:** handler manifests support HTTP and NATS delivery only. SQL/database
 outputs are intentionally rejected by the generator.

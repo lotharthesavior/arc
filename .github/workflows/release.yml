@@ -273,16 +273,16 @@ jobs:
       - name: Build Rust documentation
         run: cargo doc --no-deps --all-features
 
-      - name: Copy Rust docs to docs folder
+      - name: Copy Rust API docs into the canonical Docsify site
         run: |
-          mkdir -p docs/api
-          cp -r target/doc/* docs/api/
+          mkdir -p docsify-docs/api
+          cp -r target/doc/* docsify-docs/api/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
+          publish_dir: ./docsify-docs
           cname: arc.dev  # Optional: your custom domain
 
   # Notify on release completion

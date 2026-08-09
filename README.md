@@ -1,6 +1,6 @@
 <h1 align="center">
   Arc
-  <img src="docs/imgs/arc-logo.png" alt="Arc logo" width="44" height="44">
+  <img src="docsify-docs/imgs/arc-logo.png" alt="Arc logo" width="44" height="44">
 </h1>
 
 Arc is a beta Rust framework for event-sourced web applications.
@@ -113,11 +113,11 @@ Benthos is the only durable distributed event router. It consumes `events.>` and
 
 ## Documentation
 
-- [Getting started](docs/guides/getting-started.md)
-- [Authentication plugins](docs/reference/auth-plugins.md)
-- [Architecture](docs/02-architecture.md)
-- [Database](docs/05-database.md)
-- [Testing](docs/06-testing.md)
-- [Event handlers](docs/guides/event-handlers.md)
-- [Upgrading](docs/guides/upgrading.md)
-- [Publishing crates](docs/guides/publishing-crates.md)
+- [Canonical Docsify documentation](docsify-docs/README.md)
+- [Getting started](docsify-docs/getting-started.md)
+- [Authentication plugins](docsify-docs/auth-plugins.md)
+- [Project structure](docsify-docs/project-structure.md)
+- [Testing](docsify-docs/testing.md)
+- [Event handlers](docsify-docs/event-handlers.md)
+- [Upgrading](docsify-docs/upgrading.md)
+- [Publishing crates](docsify-docs/publishing-crates.md)

@@ -28,13 +28,17 @@ make setup
 The generated `AppAggregate` is a placeholder. Generate a complete Product resource beside it:
 
 ```bash
-arc generate resource Product --api
+arc plugin add auth-db-session
+arc plugin add auth-db-jwt
+arc generate resource Product --api --ui --api-auth jwt
 make migrate
 ```
 
 The command creates the aggregate, commands, event payloads, projector, read-model migration,
 focused tests, and JSON CRUD API, then registers them with the application. It refuses to overwrite
-an existing resource. `arc generate aggregate Product --api` is an alias.
+an existing resource. `arc generate aggregate Product --api` is an alias. Installing the session
+plugin before generation protects browser routes automatically; API routes require the explicit
+`--api-auth jwt` option. See [Authentication Plugins](auth-plugins.md).
 
 ## 2. Understand the generated Product aggregate
 

@@ -13,8 +13,6 @@ mechanism, just with different routing rules in the sink.
 
 ## 1. Read-path lifecycle
 
-![Sequence Diagram - Access log read path - JWT middleware resolves actor, controller loads aggregate via EventStore, calls AccessLogger before returning sensitive fields, sink persists entry while non-found responses log nothing](../diagrams/flow-17-access-log-read-path.svg)
-
 Step by step:
 
 1. JWT middleware resolves `actor_id` (aggregate UUID) from the bearer token.
@@ -33,8 +31,6 @@ Step by step:
 ---
 
 ## 2. Architecture
-
-![Architecture Diagram - AccessLogger architecture - Read controllers funnel through helpers::access_log into the AccessLogger trait, which has multiple implementations including no-op, recording, JetStream, and DB-backed sinks; entries carry a Sensitivity tag spanning PHI, PCI, PII, Confidential, Internal, and Public](../diagrams/architecture-22-access-log-architecture.svg)
 
 The trait sits between read controllers and a pluggable sink. Default
 deployments use `NoOpAccessLogger` (validates and discards). Tests use
@@ -222,7 +218,6 @@ layer (out of HIPAA-2 scope).
 
 ## See also
 
-- `docs/guides/audit-metadata.md` — write-side audit (HIPAA-1)
+- [Audit Metadata](audit-metadata.md) — write-side audit (HIPAA-1)
 - `crates/arc-core/src/access_log.rs` — source of truth for the
   trait and types
-- `docs/ark/refactor-plan.md` HIPAA appendix — broader compliance context

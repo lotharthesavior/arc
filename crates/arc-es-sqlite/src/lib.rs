@@ -3,7 +3,7 @@
 //! SQLite implementation of the [`EventStore`] trait from `arc-core`.
 //!
 //! Persists [`AuditMetadata`] inline alongside each event (see HIPAA-1 in
-//! `docs/ark/refactor-plan.md`). `append` calls
+//! the historical production-risk audit). `append` calls
 //! [`validate_audit_batch`](arc_core::event_store::validate_audit_batch)
 //! before any write — defense-in-depth against an upstream that forgot to
 //! stamp.

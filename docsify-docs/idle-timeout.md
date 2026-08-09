@@ -6,8 +6,6 @@ and the user is redirected to `/signin?reason=idle`.
 
 ## Lifecycle
 
-![Sequence Diagram - Idle timeout middleware behavior on each request - Three branches handling unauthenticated, recently-active, and idle-too-long sessions](../diagrams/flow-18-idle-timeout.svg)
-
 On every request through a route wrapped with `IdleTimeoutMiddleware`:
 
 1. If the session has no post-cutover `SessionUser` under the `"user"` key,

@@ -7,8 +7,6 @@ on breach response — this trait is the hook.
 
 ## Flow
 
-![Sequence Diagram - Login records jti to SessionStore, JwtMiddleware checks is_valid on every request, logout revokes, store-down fails closed with 503](../diagrams/flow-19-session-revocation.svg)
-
 Three integration points:
 
 1. **Login** (`POST /api/v1/login`) — `create_token` returns `(token,

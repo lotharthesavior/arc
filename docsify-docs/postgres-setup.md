@@ -67,8 +67,8 @@ For app startup checks, build with the `postgres` feature and set
 `initialize_schema()` during `build_stores`. Durable event consumption and
 routing in distributed mode run in Benthos (Redpanda Connect), not a Rust
 process — see
-`docs/adr/0001-benthos-only-event-routing.md` and
-`docs/guides/event-handlers.md`. Benthos must never write directly to the
+`architecture-decisions/0001-benthos-only-event-routing.md` and
+`event-handlers.md`. Benthos must never write directly to the
 database; projection writes should go through an Arc-owned handler/service that
 uses the configured read-model store. Run the app (or `migrate`) once against
 the database before starting the routing layer so the Arc-owned projection path

@@ -45,23 +45,36 @@ make dev
 Open:
 
 - Minimal and UI health check: <http://127.0.0.1:8080/health>
-- UI home page: <http://127.0.0.1:8080/>
+- UI home page: <http://127.0.0.1:8080/home>
 
 Stop the server with `Ctrl+C`.
 
-## 4. Generate your first resource
+## 4. Add authentication
+
+For browser sessions, administration pages, JWT API tokens, and RBAC:
+
+```bash
+arc plugin add auth-db-session
+arc plugin add auth-db-jwt
+make setup
+```
+
+The first setup prompts for administrator credentials. See
+[Authentication Plugins](auth-plugins.md) for noninteractive variables and capability details.
+
+## 5. Generate your first resource
 
 From the generated application root:
 
 ```bash
-arc generate resource Product --api
+arc generate resource Product --api --ui --api-auth jwt
 make migrate
 make test
 ```
 
 Arc creates and registers a Product aggregate, commands, events, projector, read-model migration,
-focused tests, and JSON CRUD API. It refuses to overwrite an existing resource. Continue with
-[Build an Event-Sourced Resource](resources.md) to add HTTP routes.
+focused tests, JWT-protected JSON CRUD API, and session-protected browser pages. It refuses to
+overwrite an existing resource. Continue with [Build an Event-Sourced Resource](resources.md).
 
 ## Port 8080 is busy
 

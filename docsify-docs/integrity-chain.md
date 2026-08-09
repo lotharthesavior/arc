@@ -8,8 +8,6 @@ invalidates every downstream signature — the chain is tamper-evident.
 
 ## Algorithm
 
-![Architecture Diagram - HMAC chain takes previous signature plus canonical event bytes, hashes with SHA-256 keyed by application secret, hex-encodes the 32 bytes; verify_chain re-runs the computation and compares against claimed signatures](../diagrams/architecture-23-integrity-chain.svg)
-
 ```
 sig(0)   = ""                                                  -- genesis
 sig(n)   = hex( HMAC-SHA256(key, sig(n-1) || canonical(event_n)) )

@@ -16,9 +16,8 @@
     "benthos:config:check": "node scripts/generate-benthos-config.mjs --check",
     "benthos:config:test": "node --test scripts/generate-benthos-config.test.mjs",
     "dev": "vite dev",
-    "docs:serve": "docsify serve docs --port 3000",
+    "docs:serve": "docsify serve docsify-docs --port 3001",
     "docsify:serve": "docsify serve docsify-docs --port 3001",
-    "docs:init": "docsify init docs",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:report": "playwright show-report"

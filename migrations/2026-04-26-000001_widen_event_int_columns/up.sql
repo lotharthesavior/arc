@@ -1,7 +1,7 @@
 -- Widen events.sequence and events.timestamp from INTEGER (i32, treated by
 -- Diesel as 4-byte) to BIGINT (i64). The previous schema silently truncated
 -- timestamps after 2038 and sequences past 2.1B (production blocker per
--- docs/ark/refactor-plan.md production risks).
+-- historical production-risk audit).
 --
 -- SQLite's INTEGER type stores up to 8 bytes when the value requires it, so
 -- existing rows do not lose data. The change is purely at the Diesel/Rust

@@ -929,8 +929,8 @@ crates/arc-core/docs/
 **Your Job**: Create user-facing documentation for the main docs.
 
 **Priority Order**:
-1. Update `docs/02-architecture.md` to reflect ES architecture
-2. Create `docs/11-event-sourcing-guide.md` (user-facing guide)
+1. Update `docsify-docs/` to reflect ES architecture
+2. Keep the user-facing event-sourcing guidance in the canonical Docsify set
 3. Update `progress.md` with ES implementation progress
 4. Create diagrams (architecture, flows, sequences)
 

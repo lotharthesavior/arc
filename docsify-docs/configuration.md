@@ -13,10 +13,26 @@ DATABASE_DRIVER=sqlite
 DATABASE_URL=database/database.sqlite
 EVENT_BUS=inprocess
 SECRET_KEY=generate-me
+JWT_SECRET=generate-me
+JWT_EXPIRY_HOURS=24
 RUST_LOG=my_app=info,arc_web=info,actix_web=info
 ```
 
-`SECRET_KEY=generate-me` appears only in `.env.example`; `make setup` replaces it in `.env`.
+The `generate-me` placeholders appear only in `.env.example`; `make setup` replaces them in `.env`.
+
+## Authentication configuration
+
+Authentication plugins add these optional settings:
+
+```dotenv
+SESSION_IDLE_TIMEOUT_SECS=900
+SESSION_SAME_SITE=Lax
+JWT_EXPIRY_HOURS=24
+```
+
+Fresh interactive setup prompts for the first administrator. Noninteractive setup must provide
+`ARC_SETUP_ADMIN_NAME`, `ARC_SETUP_ADMIN_EMAIL`, and `ARC_SETUP_ADMIN_PASSWORD`; these one-shot
+values are not persisted to `.env`. See [Authentication Plugins](auth-plugins.md).
 
 ## Change the port
 

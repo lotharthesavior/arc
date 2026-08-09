@@ -5,7 +5,7 @@ lives in versioned crates you depend on; your application is a thin crate you
 own. Upgrades are dependency bumps, not manual re-application of edits.
 
 The normative contract for what Arc owns vs. what you own is
-[ADR 0002](../adr/0002-framework-upgrade-contract.md). This guide is the
+[ADR 0002](architecture-decisions/0002-framework-upgrade-contract.md). This guide is the
 practical procedure.
 
 ## Ownership in one paragraph

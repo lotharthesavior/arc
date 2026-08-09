@@ -6,7 +6,7 @@ Arc-owned projection service). You will do this **without editing any Arc intern
 write a small handler service and a **handler manifest**; Arc's Benthos routing layer delivers
 matching events to it.
 
-> Why Benthos and not a Rust worker? See `docs/adr/0001-benthos-only-event-routing.md`. Short
+> Why Benthos and not a Rust worker? See [ADR 0001](architecture-decisions/0001-benthos-only-event-routing.md). Short
 > version: the durable routing plane is **Benthos (Redpanda Connect) only**. The retired
 > `arc-worker` is not the path — do not extend it.
 
@@ -224,7 +224,7 @@ A delivery **fails** when the target returns non-2xx (HTTP), errors (NATS), or t
    blocking the stream.
 4. **Operate the DLQ.** DLQ subjects are monitored; you redrive after fixing the handler by
    replaying the DLQ stream back onto the handler's input. Nothing is silently dropped. See
-   [Benthos DLQ and Redrive](guides/benthos-dlq-redrive.md) for the operator workflow.
+   [Benthos DLQ and Redrive](benthos-dlq-redrive.md) for the operator workflow.
 
 Guarantee: **no event is lost and no poison event blocks the stream.** Either the handler succeeds,
 or the event lands in a DLQ you can inspect and redrive.

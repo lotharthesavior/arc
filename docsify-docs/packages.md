@@ -10,6 +10,12 @@ Generated applications use published crates; they do not depend on an Arc reposi
 | `arc-es-sqlite` | SQLite event, read-model, snapshot, and session stores |
 | `arc-es-postgres` | Optional Postgres stores |
 | `arc-es-nats` | **Work in progress:** optional NATS JetStream event publishing; the complete NATS + Benthos distributed workflow is not ready for general use |
+| `arc-auth-core` | Identity and authorization contracts |
+| `arc-auth-db` | SQLite identity and role provider |
+| `arc-auth-session` | Browser session authentication protocol and guard |
+| `arc-auth-admin` | Sign-in, profile, password, and user-management UI |
+| `arc-auth-jwt` | API token issuance and JWT guard |
+| `arc-auth-rbac` | Role-based authorization policy and middleware |
 
 > **Work in progress:** NATS publishing and Benthos (Redpanda Connect) event routing are still being completed and documented. Use Arc's default in-process event bus for normal applications unless you are actively developing or testing the distributed event path.
 
@@ -19,8 +25,8 @@ The CLI writes normal Cargo dependencies:
 
 ```toml
 [dependencies]
-arc-core = "0.4.0"
-arc-web = "0.4.0"
+arc-core = "0.8.2"
+arc-web = "0.8.2"
 ```
 
 You may create the same application manually, but then you must also supply the environment bootstrap, migrations, aggregate, routes, and runtime entry point that the CLI normally generates.
@@ -35,20 +41,5 @@ make check
 make test
 ```
 
-## Upgrading from 0.3 to 0.4
-
-Arc 0.4 replaces positional event constructor arguments with the named-field `NewEvent` parameter struct:
-
-```rust
-use arc_core::event::{Event, NewEvent};
-
-let event = Event::new(NewEvent {
-    aggregate_type: "Product",
-    aggregate_id: product_id,
-    sequence: next_sequence,
-    event_type: "ProductCreated",
-    payload,
-});
-```
-
-Update every `Event::new(...)` call when moving an application from 0.3 to 0.4.
+Authentication packages and their installation bundles are documented in
+[Authentication Plugins](auth-plugins.md).

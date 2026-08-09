@@ -23,17 +23,11 @@ This documentation covers the application you receive from `arc new`: what is in
 - Cookie-session, rate-limit, compression, tracing, and path middleware
 - Application-owned migrations and environment configuration
 - Optional Tera page and static assets with `--ui`
+- Optional database, session, JWT, admin UI, and RBAC authentication plugins
+- Resource generation for event-sourced APIs and browser pages
 
-## What Arc does not currently generate
-
-- Authentication or user accounts
-- CRUD/resource generators
-- Multiple aggregate types in one generated runtime
-- Postgres setup
-- NATS and Benthos distributed event routing (**work in progress**)
-- Admin pages or deployment configuration
-
-Those are not implied by `--ui`.
+Authentication is installed explicitly with `arc plugin add`; it is not implied by `--ui` alone.
+See [Authentication Plugins](auth-plugins.md).
 
 ## Build something
 
@@ -42,6 +36,7 @@ Those are not implied by `--ui`.
 - [Follow request, domain, view, and form lifecycles](workflows.md)
 - [Add an endpoint](endpoints.md)
 - [Build an event-sourced resource](resources.md)
+- [Install and configure authentication plugins](auth-plugins.md)
 - [Add a server-rendered page](ui.md)
 - [Test the application](testing.md)
 - [Fix common startup problems](troubleshooting.md)

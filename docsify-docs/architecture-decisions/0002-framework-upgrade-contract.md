@@ -3,8 +3,8 @@
 - Status: **Accepted**
 - Date: 2026-07-01
 - Deciders: Arc framework architecture
-- Related: `docs/adr/0001-benthos-only-event-routing.md`, `docs/guides/event-handlers.md`,
-  `docs/guides/publishing-crates.md`, `progress.md` ("Framework readiness")
+- Related: [ADR 0001](0001-benthos-only-event-routing.md), [Event Handlers](../event-handlers.md),
+  [Publishing Crates](../publishing-crates.md), and `progress.md` ("Framework readiness")
 
 ## Context
 
@@ -118,7 +118,7 @@ Independent versioning is deferred until `1.0`.
    (incl. `to_snapshot`/`from_snapshot`), `Projection`/`Projector`/`ProjectionEngine`,
    `CommandBus`/`SnapshotPolicy`, `ReadModelStore`, `AuditMetadata`/`audit_context`,
    `AccessLogger`/`Sensitivity`/`FailurePolicy`, `SessionStore`, `IntegrityChain`.
-2. **The event envelope** delivered by Benthos to handlers (`docs/guides/event-handlers.md` §1).
+2. **The event envelope** delivered by Benthos to handlers ([Event Handlers](../event-handlers.md) §1).
    It self-versions via `envelope_version`: new **optional** fields are additive and do **not**
    bump it; breaking envelope changes bump `envelope_version` **and** the crate minor version.
    Handlers must tolerate unknown fields.
@@ -168,7 +168,7 @@ Per-surface compatibility rules:
   may be rebuilt from the log at any time (projection replay), which is the standard recovery
   path when a projection changes shape.
 
-The user-facing walkthrough of this procedure is `docs/guides/upgrading.md`; this ADR is the
+The user-facing walkthrough of this procedure is [Upgrading](../upgrading.md); this ADR is the
 normative contract it implements.
 
 ## Consequences
@@ -196,7 +196,7 @@ normative contract it implements.
 
 ### Neutral
 
-- `docs/guides/publishing-crates.md` keeps the operational publish procedure; its policy section
+- [Publishing Crates](../publishing-crates.md) keeps the operational publish procedure; its policy section
   now defers to this ADR.
 
 ## Follow-ups

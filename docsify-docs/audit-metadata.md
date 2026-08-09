@@ -20,8 +20,6 @@ This page covers:
 
 ## 1. Lifecycle
 
-![Sequence Diagram - Audit stamping flow - HTTP request flows through audit middleware, controller, command bus stamps audit on every event, store validates as defense in depth, persists to SQLite](../diagrams/flow-16-audit-stamping-sequence.svg)
-
 The flow:
 
 1. The HTTP request arrives. `audit_context::for_actor(req, actor_id)` (or
@@ -46,8 +44,6 @@ The flow:
    columns. `actor_id` and `correlation_id` are indexed.
 
 ### Defense in depth
-
-![Architecture Diagram - Audit defense in depth - Two validation layers, command bus boundary and storage boundary, with failure paths to HTTP 400 and the unreachable storage error](../diagrams/architecture-21-audit-defense-in-depth.svg)
 
 Two boundaries validate the audit. The bus boundary should catch every real
 problem. The storage boundary should never fire — but it does, because
@@ -97,8 +93,6 @@ and policy code, not the audit boundary.
 ---
 
 ## 3. Storage schema
-
-![ER Diagram - Events table with audit columns - Shows event_id, aggregate identity, sequence, payload, and the seven HIPAA audit columns including indexed actor_id and correlation_id](../diagrams/data-01-events-audit-schema.svg)
 
 The `events` table gained seven columns in migration
 `2026-04-21-000002_add_hipaa_audit`:
@@ -266,7 +260,6 @@ SELECT * FROM events WHERE causation_id = 'event-uuid-123';
 
 ## See also
 
-- `docs/ark/refactor-plan.md` — broader HIPAA appendix and remaining tasks
   (HIPAA-2 through HIPAA-5)
 - `crates/arc-core/src/audit.rs` — the source of truth for the type
   and validation rules
