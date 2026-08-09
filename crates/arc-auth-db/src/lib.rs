@@ -7,7 +7,10 @@ use argon2::{
 use async_trait::async_trait;
 use diesel::{connection::SimpleConnection, prelude::*, sql_query};
 use rand::rngs::OsRng;
-use std::{io, sync::Arc};
+use std::{
+    io::{self, IsTerminal, Write},
+    sync::Arc,
+};
 use uuid::Uuid;
 
 const IDENTITY_ROLES_MIGRATION: &str =
@@ -271,18 +274,42 @@ impl ArcPlugin for DbIdentityPlugin {
         c.batch_execute(IDENTITY_ROLES_MIGRATION)
             .map_err(io::Error::other)?;
         if !self.store.has_users().await.map_err(io::Error::other)? {
-            let name = std::env::var("ARC_SETUP_ADMIN_NAME").map_err(|_| io::Error::other("no users exist; set ARC_SETUP_ADMIN_NAME, ARC_SETUP_ADMIN_EMAIL, and ARC_SETUP_ADMIN_PASSWORD for setup"))?;
-            let email = std::env::var("ARC_SETUP_ADMIN_EMAIL").map_err(|_| {
-                io::Error::other("ARC_SETUP_ADMIN_EMAIL is required for first-admin setup")
-            })?;
-            let password = std::env::var("ARC_SETUP_ADMIN_PASSWORD").map_err(|_| {
-                io::Error::other("ARC_SETUP_ADMIN_PASSWORD is required for first-admin setup")
-            })?;
+            let name = bootstrap_value("ARC_SETUP_ADMIN_NAME", "Administrator name", false)?;
+            let email = bootstrap_value("ARC_SETUP_ADMIN_EMAIL", "Administrator email", false)?;
+            let password =
+                bootstrap_value("ARC_SETUP_ADMIN_PASSWORD", "Administrator password", true)?;
             self.store
                 .create_user(&name, &email, &password, &["admin".into()])
                 .await
                 .map_err(io::Error::other)?;
         }
         Ok(())
+    }
+}
+
+fn bootstrap_value(key: &str, label: &str, secret: bool) -> io::Result<String> {
+    if let Ok(value) = std::env::var(key) {
+        if !value.trim().is_empty() {
+            return Ok(value);
+        }
+    }
+    if !io::stdin().is_terminal() {
+        return Err(io::Error::other(format!(
+            "{key} is required for noninteractive first-administrator setup"
+        )));
+    }
+    let value = if secret {
+        rpassword::prompt_password(format!("{label}: "))?
+    } else {
+        print!("{label}: ");
+        io::stdout().flush()?;
+        let mut value = String::new();
+        io::stdin().read_line(&mut value)?;
+        value.trim().to_owned()
+    };
+    if value.trim().is_empty() {
+        Err(io::Error::other(format!("{label} cannot be empty")))
+    } else {
+        Ok(value)
     }
 }

@@ -17,7 +17,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 authors = ["Savio Resende <savio@savioresende.com>"]
 license = "MIT"
@@ -71,6 +71,7 @@ sha2 = "0.10"
 dotenv = "0.15.0"
 fs_extra = "1.3.0"
 rand = "0.8"
+rpassword = "7"
 once_cell = "1.19"
 md5 = "0.7"
 chrono = "0.4"

@@ -478,7 +478,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "arc"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix",
  "actix-files",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-admin"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix-session 0.10.1",
  "actix-web",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-db"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arc-auth-core",
  "arc-web",
@@ -553,12 +553,13 @@ dependencies = [
  "async-trait",
  "diesel",
  "rand",
+ "rpassword",
  "uuid",
 ]
 
 [[package]]
 name = "arc-auth-jwt"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix-web",
  "arc-auth-core",
@@ -571,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-rbac"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix-session 0.10.1",
  "actix-web",
@@ -583,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "arc-auth-session"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix-session 0.10.1",
  "actix-web",
@@ -596,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "arc-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "hmac",
@@ -611,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-nats"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arc-core",
  "async-nats",
@@ -624,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-postgres"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -640,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "arc-es-sqlite"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arc-core",
  "async-trait",
@@ -664,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix",
  "actix-files",
@@ -707,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "arc-web-cli"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "tera",
 ]
@@ -2853,6 +2854,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2870,6 +2882,16 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50a0e551c1e27e1731aba276dbeaeac73f53c7cd34d1bda485d02bd1e0f36844"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
