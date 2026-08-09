@@ -4,6 +4,18 @@ import { chromium } from "@playwright/test";
 const baseUrl = process.argv[2];
 assert(baseUrl, "usage: node scripts/check-generated-auth-ui.mjs <base-url>");
 
+async function assertInset(page, outerSelector, innerSelector, label) {
+  const inset = await page.locator(innerSelector).first().evaluate((inner, outerSelector) => {
+    const paddingLeft = Number.parseFloat(getComputedStyle(inner).paddingLeft);
+    if (paddingLeft >= 16) return paddingLeft;
+
+    const outer = document.querySelector(outerSelector);
+    if (!outer) throw new Error(`missing ${outerSelector}`);
+    return inner.getBoundingClientRect().left - outer.getBoundingClientRect().left;
+  }, outerSelector);
+  assert(inset >= 16, `${label} content inset must be at least 16px; received ${inset}px`);
+}
+
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -19,6 +31,9 @@ try {
   const password = page.getByLabel("Password");
   await assert.doesNotReject(() => email.waitFor());
   await assert.doesNotReject(() => password.waitFor());
+  assert.equal(await page.locator(".focused-panel > .focused-shell").count(), 0);
+  assert.equal(await page.locator(".focused-panel > .panel").count(), 0);
+  await assertInset(page, ".focused-panel", ".focused-panel > form", "sign-in form");
 
   const fieldLayout = await email.evaluate((input) => ({
     width: input.getBoundingClientRect().width,
@@ -38,6 +53,7 @@ try {
   await page.waitForURL(`${baseUrl}/admin/profile`);
   await page.locator(".workbench .rail").waitFor();
   await page.locator(".workbench .workspace").waitFor();
+  await assertInset(page, ".panel", ".panel > form.panel__body", "profile form");
   await page.getByLabel("Name").fill("Scaffold Administrator Updated");
   await page.getByRole("button", { name: "Save profile" }).click();
   await page.waitForURL(`${baseUrl}/admin/profile`);
@@ -46,6 +62,7 @@ try {
   await page.getByRole("heading", { name: "Users" }).waitFor();
   await page.getByRole("link", { name: "Create user" }).click();
   await page.waitForURL(`${baseUrl}/admin/users/new`);
+  await assertInset(page, ".panel", ".panel > form.panel__body", "user form");
   await page.getByLabel("Name").fill("Second Operator");
   await page.getByLabel("Email").fill("second@example.com");
   await page.getByLabel("Password").fill("second-password");
@@ -53,6 +70,7 @@ try {
   await page.getByRole("button", { name: "Save user" }).click();
   await page.waitForURL(/\/admin\/users\/[^/]+$/);
   await page.getByText("second@example.com").waitFor();
+  await assertInset(page, ".panel", ".panel > .panel__body", "user detail");
   await page.goto(`${baseUrl}/admin/users?filter=second@example.com`);
   await page.getByRole("link", { name: "Clear" }).click();
   await page.waitForURL(`${baseUrl}/admin/users`);
