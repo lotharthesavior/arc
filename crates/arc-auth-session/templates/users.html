@@ -1,7 +1,6 @@
-{% extends "layout.html" %}
+{% extends "admin_layout.html" %}
 {% block title %}Users · Arc{% endblock title %}
 {% block content %}
-<nav class="text-links"><a href="/admin">Admin</a><a href="/admin/profile">Profile</a></nav>
 <p class="eyebrow">Authorization</p><h1>Users</h1>
 {% if error %}<div class="alert alert--error" role="alert">{{ error }}</div>{% endif %}
 <h2>Create user</h2>

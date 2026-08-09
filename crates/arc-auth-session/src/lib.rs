@@ -18,6 +18,10 @@ static TEMPLATES: LazyLock<Tera> = LazyLock::new(|| {
     let mut tera = Tera::default();
     tera.add_raw_templates([
         ("layout.html", include_str!("../templates/layout.html")),
+        (
+            "admin_layout.html",
+            include_str!("../templates/admin_layout.html"),
+        ),
         ("signin.html", include_str!("../templates/signin.html")),
         ("profile.html", include_str!("../templates/profile.html")),
         ("users.html", include_str!("../templates/users.html")),
@@ -478,6 +482,8 @@ mod tests {
         let profile_html = TEMPLATES.render("profile.html", &context).unwrap();
         let users_html = TEMPLATES.render("users.html", &context).unwrap();
         assert!(profile_html.contains("href=\"/admin/profile\""));
+        assert!(profile_html.contains("class=\"workbench\""));
+        assert!(profile_html.contains("class=\"rail\""));
         assert!(profile_html.contains("action=\"/admin/profile\""));
         assert!(profile_html.contains("action=\"/admin/profile/password\""));
         assert!(users_html.contains("href=\"/admin/profile\""));

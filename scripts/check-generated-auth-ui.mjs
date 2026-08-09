@@ -36,6 +36,8 @@ try {
   assert.equal(legacyProfile.status(), 404, "legacy /profile route must not remain exposed");
   await page.getByRole("link", { name: "Profile" }).click();
   await page.waitForURL(`${baseUrl}/admin/profile`);
+  await page.locator(".workbench .rail").waitFor();
+  await page.locator(".workbench .workspace").waitFor();
   await page.getByLabel("Name").fill("Scaffold Administrator Updated");
   await page.getByRole("button", { name: "Save profile" }).click();
   await page.waitForURL(`${baseUrl}/admin/profile`);
@@ -49,6 +51,24 @@ try {
   await page.getByRole("button", { name: "Create user" }).click();
   await page.waitForURL(`${baseUrl}/admin/users`);
   await page.getByText("second@example.com").waitFor();
+  await page.goto(`${baseUrl}/admin/products`);
+  const filter = page.getByLabel("Filter");
+  const apply = page.getByRole("button", { name: "Apply" });
+  const controlHeights = await Promise.all([
+    filter.evaluate((element) => element.getBoundingClientRect().height),
+    apply.evaluate((element) => element.getBoundingClientRect().height),
+  ]);
+  assert.equal(
+    controlHeights[0],
+    controlHeights[1],
+    `filter input (${controlHeights[0]}px) and Apply button (${controlHeights[1]}px) must match`,
+  );
+  await page.getByRole("link", { name: "New Product" }).click();
+  await page.getByLabel("Identifier").fill("browser-created-product");
+  await page.getByLabel("Name").fill("Browser Created Product");
+  await page.getByRole("button", { name: "Save Product" }).click();
+  await page.waitForURL(`${baseUrl}/admin/products/browser-created-product`);
+  await page.getByRole("heading", { name: "Browser Created Product" }).waitFor();
   assert.equal(errors.length, 0, errors.join("\n"));
 } finally {
   await browser.close();

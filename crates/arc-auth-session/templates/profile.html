@@ -1,7 +1,6 @@
-{% extends "layout.html" %}
+{% extends "admin_layout.html" %}
 {% block title %}Profile · Arc{% endblock title %}
 {% block content %}
-<nav class="text-links"><a href="/admin">Admin</a><a href="/admin/profile">Profile</a><a href="/admin/users">Users</a></nav>
 <p class="eyebrow">Identity</p><h1>Profile</h1>
 {% if error %}<div class="alert alert--error" role="alert">{{ error }}</div>{% endif %}
 <form method="post" action="/admin/profile">
