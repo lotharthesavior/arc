@@ -281,6 +281,32 @@ mod tests {
         assert!(routes.contains("crate::ui::config"));
         assert!(routes.contains("fn api_config(_cfg: &mut web::ServiceConfig)"));
         assert!(!routes.contains("JwtMiddleware"));
+        let ui_source = fs::read_to_string(root.join("src/ui.rs")).unwrap();
+        assert!(ui_source.contains("add_raw_templates"));
+        let mut tera = tera::Tera::default();
+        tera.add_raw_templates([
+            (
+                "home.html",
+                fs::read_to_string(root.join("resources/views/home.html")).unwrap(),
+            ),
+            (
+                "layouts/public.html",
+                fs::read_to_string(root.join("resources/views/layouts/public.html")).unwrap(),
+            ),
+            (
+                "layouts/admin.html",
+                fs::read_to_string(root.join("resources/views/layouts/admin.html")).unwrap(),
+            ),
+            (
+                "components/ui.html",
+                fs::read_to_string(root.join("resources/views/components/ui.html")).unwrap(),
+            ),
+            (
+                "admin/dashboard.html",
+                fs::read_to_string(root.join("resources/views/admin/dashboard.html")).unwrap(),
+            ),
+        ])
+        .expect("generated templates must resolve inheritance regardless of declaration order");
         assert!(
             !fs::read_to_string(root.join("resources/views/layouts/admin.html"))
                 .unwrap()

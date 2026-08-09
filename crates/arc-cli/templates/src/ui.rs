@@ -4,13 +4,13 @@ use tera::{Context, Tera};
 
 fn templates() -> Tera {
     let mut tera = Tera::default();
-    for (name, source) in [
+    tera.add_raw_templates([
         ("home.html", include_str!("../resources/views/home.html")),
         ("layouts/public.html", include_str!("../resources/views/layouts/public.html")),
         ("layouts/admin.html", include_str!("../resources/views/layouts/admin.html")),
         ("components/ui.html", include_str!("../resources/views/components/ui.html")),
         ("admin/dashboard.html", include_str!("../resources/views/admin/dashboard.html")),
-    ] { tera.add_raw_template(name, source).expect("valid bundled template"); }
+    ]).expect("valid bundled templates");
     tera
 }
 
