@@ -56,7 +56,7 @@ fn now_us() -> i64 {
         .unwrap_or_default()
         .as_micros() as i64
 }
-fn validate(name: &str, email: &str, password: Option<&str>) -> Result<String, AuthError> {
+fn validate(name: &str, email: &str) -> Result<String, AuthError> {
     if name.trim().is_empty() {
         return Err(AuthError::InvalidInput("name is required".into()));
     }
@@ -66,11 +66,6 @@ fn validate(name: &str, email: &str, password: Option<&str>) -> Result<String, A
         .is_some_and(|(l, r)| !l.is_empty() && r.contains('.'))
     {
         return Err(AuthError::InvalidInput("valid email is required".into()));
-    }
-    if password.is_some_and(|p| p.len() < 12) {
-        return Err(AuthError::InvalidInput(
-            "password must contain at least 12 characters".into(),
-        ));
     }
     Ok(email)
 }
@@ -146,7 +141,7 @@ impl IdentityStore for DbIdentityStore {
         password: &str,
         assigned: &[String],
     ) -> Result<Identity, AuthError> {
-        let email = validate(name, email, Some(password))?;
+        let email = validate(name, email)?;
         let mut c = self.connect()?;
         let id = Uuid::new_v4().to_string();
         let password_hash = hash(password)?;
@@ -160,7 +155,7 @@ impl IdentityStore for DbIdentityStore {
         name: &str,
         email: &str,
     ) -> Result<Identity, AuthError> {
-        let email = validate(name, email, None)?;
+        let email = validate(name, email)?;
         let mut c = self.connect()?;
         sql_query("UPDATE users SET name=?,email=?,updated_at=? WHERE id=?")
             .bind::<diesel::sql_types::Text, _>(name.trim())
@@ -172,7 +167,6 @@ impl IdentityStore for DbIdentityStore {
         self.get(id).await?.ok_or(AuthError::NotFound)
     }
     async fn change_password(&self, id: &str, password: &str) -> Result<(), AuthError> {
-        validate("valid", "v@e.co", Some(password))?;
         let mut c = self.connect()?;
         sql_query("UPDATE users SET password_hash=?,updated_at=? WHERE id=?")
             .bind::<diesel::sql_types::Text, _>(hash(password)?)
@@ -311,5 +305,19 @@ fn bootstrap_value(key: &str, label: &str, secret: bool) -> io::Result<String> {
         Err(io::Error::other(format!("{label} cannot be empty")))
     } else {
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hash, validate};
+
+    #[test]
+    fn permits_short_passwords_for_local_bootstrap() {
+        assert_eq!(
+            validate("Admin", "admin@example.test").unwrap(),
+            "admin@example.test"
+        );
+        assert!(hash("password").is_ok());
     }
 }

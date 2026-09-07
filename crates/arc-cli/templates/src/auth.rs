@@ -38,9 +38,6 @@ pub async fn authenticate(
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
-    if password.len() < 12 {
-        anyhow::bail!("password must contain at least 12 characters");
-    }
     Argon2::default()
         .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
         .map(|hash| hash.to_string())

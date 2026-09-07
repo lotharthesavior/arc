@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Feedback Log
+
+- **Release framework fixes fully for beta verification: commit, tag, push, publish, update the CLI, then recreate the test app from scratch.** (2026-09-07) Do not rely on a local-path workaround when validating a framework fix intended for generated applications.
+- **Arc development bootstrapping and CLI registration must accept user-chosen passwords without a production-length minimum.** (2026-09-07) Keep production-strength guidance, but do not block manual local/admin setup for a short development password.
+- **Arc is still beta; do not prioritize generated-app upgrade assistance or legacy compatibility.** (2026-09-07) Prefer forward product work unless compatibility work is explicitly requested.
+
 ## Purpose
 
 Operational guide for agents working in this repository. Keep changes aligned with the current Rust workspace, event-sourced architecture, and roadmap.

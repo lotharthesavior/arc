@@ -69,9 +69,11 @@ plugin-owned schema is separate from event-sourced application aggregates.
 | `DATABASE_URL` | SQLite identity database path. |
 | `ARC_SETUP_ADMIN_NAME` | Noninteractive first-admin name. |
 | `ARC_SETUP_ADMIN_EMAIL` | Noninteractive first-admin email. |
-| `ARC_SETUP_ADMIN_PASSWORD` | Noninteractive password, at least 12 characters. |
+| `ARC_SETUP_ADMIN_PASSWORD` | Noninteractive password. |
 
-Passwords use Argon2. Emails are normalized and unique. The final active administrator cannot be
+Passwords use Argon2. Arc does not impose a length rule, so local development bootstrap and CLI
+registration can use a deliberately simple password; choose a strong unique password for any
+deployed application. Emails are normalized and unique. The final active administrator cannot be
 deactivated or stripped of the `admin` role.
 
 ## `arc-auth-session`
