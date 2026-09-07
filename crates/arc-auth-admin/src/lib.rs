@@ -34,6 +34,17 @@ const TEMPLATES: &[TemplateDef] = &[
         source: include_str!("../templates/users/detail.html"),
     },
 ];
+const FLASH_NOTICE_KEY: &str = "arc_auth_admin_notice";
+
+fn set_notice(session: &Session, message: &str) {
+    let _ = session.insert(FLASH_NOTICE_KEY, message);
+}
+
+fn take_notice(session: &Session) -> Option<String> {
+    let notice = session.get(FLASH_NOTICE_KEY).ok().flatten();
+    session.remove(FLASH_NOTICE_KEY);
+    notice
+}
 
 pub struct AuthAdminPlugin;
 #[async_trait::async_trait]
@@ -204,6 +215,7 @@ fn profile_response(
     let mut c = Context::new();
     c.insert("user", user);
     c.insert("error", &error);
+    c.insert("notice", &take_notice(session));
     render(
         registry,
         req,
@@ -239,6 +251,7 @@ async fn profile_save(
     {
         Ok(updated) => {
             arc_auth_session::cache_identity(&session, &updated);
+            set_notice(&session, "Profile saved.");
             HttpResponse::SeeOther()
                 .insert_header(("Location", "/admin/profile"))
                 .finish()
@@ -287,9 +300,12 @@ async fn password_save(
         );
     }
     match store.change_password(&user.id, &form.new_password).await {
-        Ok(()) => HttpResponse::SeeOther()
-            .insert_header(("Location", "/admin/profile"))
-            .finish(),
+        Ok(()) => {
+            set_notice(&session, "Password changed.");
+            HttpResponse::SeeOther()
+                .insert_header(("Location", "/admin/profile"))
+                .finish()
+        }
         Err(e) => profile_response(
             &req,
             &session,
@@ -343,6 +359,7 @@ async fn users(
             c.insert("filter", &filter);
             c.insert("page", &page);
             c.insert("total_pages", &total_pages);
+            c.insert("notice", &take_notice(&session));
             render(
                 &registry,
                 &req,
@@ -378,6 +395,7 @@ fn user_form(
     c.insert("user", &user);
     c.insert("error", &error);
     c.insert("creating", &user.is_none());
+    c.insert("notice", &take_notice(session));
     render(
         registry,
         req,
@@ -425,9 +443,12 @@ async fn user_create(
         .create_user(&form.name, &form.email, &form.password, &roles(&form.roles))
         .await
     {
-        Ok(user) => HttpResponse::SeeOther()
-            .insert_header(("Location", format!("/admin/users/{}", user.id)))
-            .finish(),
+        Ok(user) => {
+            set_notice(&session, "User created.");
+            HttpResponse::SeeOther()
+                .insert_header(("Location", format!("/admin/users/{}", user.id)))
+                .finish()
+        }
         Err(e) => user_form(
             &req,
             &session,
@@ -452,6 +473,7 @@ async fn user_detail(
         Ok(Some(user)) => {
             let mut c = Context::new();
             c.insert("user", &user);
+            c.insert("notice", &take_notice(&session));
             render(
                 &registry,
                 &req,
@@ -503,9 +525,12 @@ async fn user_update(
         return r;
     }
     match store.update_profile(&id, &form.name, &form.email).await {
-        Ok(_) => HttpResponse::SeeOther()
-            .insert_header(("Location", format!("/admin/users/{id}")))
-            .finish(),
+        Ok(_) => {
+            set_notice(&session, "User saved.");
+            HttpResponse::SeeOther()
+                .insert_header(("Location", format!("/admin/users/{id}")))
+                .finish()
+        }
         Err(e) => {
             let user = store.get(&id).await.ok().flatten();
             user_form(
@@ -537,9 +562,12 @@ async fn roles_save(
         return r;
     }
     match store.set_roles(&id, &roles(&form.roles)).await {
-        Ok(_) => HttpResponse::SeeOther()
-            .insert_header(("Location", format!("/admin/users/{id}")))
-            .finish(),
+        Ok(_) => {
+            set_notice(&session, "Roles updated.");
+            HttpResponse::SeeOther()
+                .insert_header(("Location", format!("/admin/users/{id}")))
+                .finish()
+        }
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
@@ -561,9 +589,12 @@ async fn activation(
         return r;
     }
     match store.set_active(&id, form.active).await {
-        Ok(_) => HttpResponse::SeeOther()
-            .insert_header(("Location", format!("/admin/users/{id}")))
-            .finish(),
+        Ok(_) => {
+            set_notice(&session, "User status updated.");
+            HttpResponse::SeeOther()
+                .insert_header(("Location", format!("/admin/users/{id}")))
+                .finish()
+        }
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
@@ -595,4 +626,25 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
                 .route("/{id}/roles", web::post().to(roles_save))
                 .route("/{id}/activation", web::post().to(activation)),
         );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TEMPLATES;
+
+    #[test]
+    fn success_notice_regions_are_available_on_mutation_destinations() {
+        for template in TEMPLATES {
+            if matches!(
+                template.name.0,
+                "capabilities/auth-admin/profile.html"
+                    | "capabilities/auth-admin/users/index.html"
+                    | "capabilities/auth-admin/users/detail.html"
+            ) {
+                assert!(template.source.contains("alert--success"));
+                assert!(template.source.contains("role=\"status\""));
+                assert!(template.source.contains("notice"));
+            }
+        }
+    }
 }

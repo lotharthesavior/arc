@@ -99,7 +99,9 @@ UI host.
 | `/admin/users/*` | Session, idle timeout, and `admin` role. |
 
 It also contributes Profile and Users navigation and the Sign out action. The generated application
-owns the surrounding layout and assets.
+owns the surrounding layout and assets. Successful profile, password, and user-management changes
+redirect to their destination with a one-time accessible success notice; invalid submissions render
+an inline error instead.
 
 ## `arc-auth-jwt`
 

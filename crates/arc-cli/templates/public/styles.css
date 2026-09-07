@@ -33,7 +33,7 @@ h1, h2, p { margin-top: 0; } h1 { font-size: clamp(2.2rem, 6vw, 4.4rem); line-he
 .field input { width: 100%; border: 2px solid var(--border); border-radius: 0; background: var(--raised); padding: .8rem; color: var(--ink); }
 .field input:disabled { background: var(--canvas); color: var(--ink-muted); cursor: not-allowed; }
 .field--invalid input { border-color: var(--error); } .field__error { margin: .4rem 0 0; color: var(--error); font-size: .8rem; }
-.alert { border: 2px solid var(--border); padding: .8rem; margin: 1rem 0; } .alert--error { border-color: var(--error); background: #f4d4ca; } .alert--warning { border-color: var(--warning); background: #f5e4bc; }
+.alert { border: 2px solid var(--border); padding: .8rem; margin: 1rem 0; } .alert--success { border-color: var(--success); background: #d8f1dc; } .alert--error { border-color: var(--error); background: #f4d4ca; } .alert--warning { border-color: var(--warning); background: #f5e4bc; }
 .text-links { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.2rem; font-size: .85rem; }
 .error-code { color: var(--error); font-weight: 900; }
 .workbench { display: grid; grid-template: 3.5rem 1fr / 15rem minmax(0, 1fr); min-height: 100vh; }

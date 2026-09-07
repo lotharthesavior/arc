@@ -58,6 +58,23 @@ try {
   await page.getByRole("button", { name: "Save profile" }).click();
   await page.waitForURL(`${baseUrl}/admin/profile`);
   assert.equal(await page.getByLabel("Name").inputValue(), "Scaffold Administrator Updated");
+  const profileSavedNotice = page.getByRole("status");
+  await profileSavedNotice.getByText("Profile saved.").waitFor();
+  const noticeStyle = await profileSavedNotice.evaluate((notice) => {
+    const style = getComputedStyle(notice);
+    return {
+      display: style.display,
+      visibility: style.visibility,
+      borderColor: style.borderColor,
+      backgroundColor: style.backgroundColor,
+    };
+  });
+  assert.notEqual(noticeStyle.display, "none", "success notice must be visible");
+  assert.notEqual(noticeStyle.visibility, "hidden", "success notice must not be hidden");
+  assert.notEqual(noticeStyle.borderColor, "rgba(0, 0, 0, 0)", "success notice needs a visible border");
+  assert.notEqual(noticeStyle.backgroundColor, "rgba(0, 0, 0, 0)", "success notice needs a visible background");
+  await page.reload();
+  assert.equal(await page.getByRole("status").count(), 0, "success notice must be shown only once");
   await page.goto(`${baseUrl}/admin/users`);
   await page.getByRole("heading", { name: "Users" }).waitFor();
   await page.getByRole("link", { name: "Create user" }).click();
@@ -70,6 +87,7 @@ try {
   await page.getByRole("button", { name: "Save user" }).click();
   await page.waitForURL(/\/admin\/users\/[^/]+$/);
   await page.getByText("second@example.com").waitFor();
+  await page.getByRole("status").getByText("User created.").waitFor();
   await assertInset(page, ".panel", ".panel > .panel__body", "user detail");
   await page.goto(`${baseUrl}/admin/users?filter=second@example.com`);
   await page.getByRole("link", { name: "Clear" }).click();
