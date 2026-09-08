@@ -2,6 +2,8 @@
 
 ## Feedback Log
 
+- **Manually trigger GitHub CI and Security to confirm repaired workflows; treat Release separately because dispatching it creates a real release.** (2026-09-08) Run non-publishing checks safely on master, and require a deliberate version/tag decision before a release dispatch.
+- **Historical failed GitHub workflow runs should be clearly distinguished from the repaired current pipeline.** (2026-09-08) Verify whether any active workflow still fails; old runs retain their original conclusion and cannot be rewritten by a later workflow fix.
 - **Repair the GitHub CI/CD pipeline after releasing the admin breadcrumb work.** (2026-09-07) Diagnose current GitHub failures from their logs and validate the fix before publishing it.
 - **The generated admin needs accessible breadcrumbs across its nested pages.** (2026-09-07) Confirm the page hierarchy before implementation; the root crumb is Home.
 - **Admin breadcrumbs must name the `/admin` root “Home,” not “Overview.”** (2026-09-07) The dashboard is the hierarchy root; nested admin trails begin with Home.
