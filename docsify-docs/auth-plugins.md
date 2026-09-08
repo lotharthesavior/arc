@@ -101,7 +101,9 @@ UI host.
 It also contributes Profile and Users navigation and the Sign out action. The generated application
 owns the surrounding layout and assets. Successful profile, password, and user-management changes
 redirect to their destination with a one-time accessible success notice; invalid submissions render
-an inline error instead.
+an inline error instead. Admin pages supply a breadcrumb trail to the application-owned layout:
+the dashboard is the root, while Profile begins `Home → Profile` and user pages begin `Home → Users`.
+Each trail has linked ancestors and one `aria-current="page"` item.
 
 ## `arc-auth-jwt`
 

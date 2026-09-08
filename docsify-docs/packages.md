@@ -25,8 +25,8 @@ The CLI writes normal Cargo dependencies:
 
 ```toml
 [dependencies]
-arc-core = "0.8.4"
-arc-web = "0.8.4"
+arc-core = "0.8.5"
+arc-web = "0.8.5"
 ```
 
 You may create the same application manually, but then you must also supply the environment bootstrap, migrations, aggregate, routes, and runtime entry point that the CLI normally generates.

@@ -70,6 +70,32 @@ pub struct AdminAction {
     pub audience: Audience,
 }
 
+/// An item in an application-owned breadcrumb trail.
+///
+/// Use [`Breadcrumb::link`] for ancestors and [`Breadcrumb::current`] for the
+/// current page. The UI host is responsible for rendering the trail.
+#[derive(Clone, Debug, Serialize)]
+pub struct Breadcrumb {
+    pub label: String,
+    pub href: Option<String>,
+}
+
+impl Breadcrumb {
+    pub fn link(label: impl Into<String>, href: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            href: Some(href.into()),
+        }
+    }
+
+    pub fn current(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            href: None,
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct UiContribution {
     pub owner: &'static str,
@@ -225,6 +251,7 @@ impl UiRegistry {
             "current_identity",
             "admin_navigation",
             "admin_actions",
+            "breadcrumbs",
             "csrf_token",
             "admin_layout",
             "public_layout",
@@ -262,6 +289,7 @@ impl UiRegistry {
         context.insert("current_identity", &identity);
         context.insert("admin_navigation", &navigation);
         context.insert("admin_actions", &actions);
+        context.insert("breadcrumbs", &page.breadcrumbs);
         context.insert("csrf_token", &crate::helpers::csrf::get_csrf_token(session));
         context.insert("admin_layout", &self.admin_layout.0);
         context.insert("public_layout", &self.public_layout.0);
@@ -296,6 +324,7 @@ pub struct UiPage {
     pub title: String,
     pub context: Context,
     pub status: StatusCode,
+    pub breadcrumbs: Vec<Breadcrumb>,
 }
 impl UiPage {
     pub fn new(template: TemplateName, title: impl Into<String>) -> Self {
@@ -307,6 +336,7 @@ impl UiPage {
             title,
             context,
             status: StatusCode::OK,
+            breadcrumbs: vec![],
         }
     }
 }
@@ -537,6 +567,14 @@ mod tests {
             registry.navigation.iter().map(|i| i.id).collect::<Vec<_>>(),
             vec!["a", "z"]
         )
+    }
+
+    #[test]
+    fn breadcrumbs_distinguish_linked_ancestors_from_current_page() {
+        let ancestor = Breadcrumb::link("Home", "/admin");
+        let current = Breadcrumb::current("Profile");
+        assert_eq!(ancestor.href.as_deref(), Some("/admin"));
+        assert!(current.href.is_none());
     }
     #[test]
     fn password_values_are_suppressed() {

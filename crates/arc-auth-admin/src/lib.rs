@@ -5,8 +5,8 @@ use actix_web::{http::StatusCode, web, HttpRequest, HttpResponse};
 use arc_auth_core::{Identity, IdentityStore};
 use arc_auth_session::{identity, RequireSession};
 use arc_web::ui::{
-    ActionMethod, AdminAction, AdminNavItem, Audience, TemplateBundle, TemplateDef, TemplateName,
-    UiContribution, UiPage,
+    ActionMethod, AdminAction, AdminNavItem, Audience, Breadcrumb, TemplateBundle, TemplateDef,
+    TemplateName, UiContribution, UiPage,
 };
 use arc_web::{ArcAppBuilder, ArcPlugin, UiRegistry};
 use serde::Deserialize;
@@ -44,6 +44,30 @@ fn take_notice(session: &Session) -> Option<String> {
     let notice = session.get(FLASH_NOTICE_KEY).ok().flatten();
     session.remove(FLASH_NOTICE_KEY);
     notice
+}
+
+fn home_breadcrumb(current: impl Into<String>) -> Vec<Breadcrumb> {
+    vec![
+        Breadcrumb::link("Home", "/admin"),
+        Breadcrumb::current(current),
+    ]
+}
+
+fn users_breadcrumb(current: impl Into<String>) -> Vec<Breadcrumb> {
+    vec![
+        Breadcrumb::link("Home", "/admin"),
+        Breadcrumb::link("Users", "/admin/users"),
+        Breadcrumb::current(current),
+    ]
+}
+
+fn user_breadcrumb(user: &Identity, current: impl Into<String>) -> Vec<Breadcrumb> {
+    vec![
+        Breadcrumb::link("Home", "/admin"),
+        Breadcrumb::link("Users", "/admin/users"),
+        Breadcrumb::link(&user.name, format!("/admin/users/{}", user.id)),
+        Breadcrumb::current(current),
+    ]
 }
 
 pub struct AuthAdminPlugin;
@@ -88,22 +112,28 @@ impl ArcPlugin for AuthAdminPlugin {
     }
 }
 
+struct PageRender {
+    title: &'static str,
+    context: Context,
+    status: StatusCode,
+    breadcrumbs: Vec<Breadcrumb>,
+}
+
 fn render(
     registry: &UiRegistry,
     request: &HttpRequest,
     session: &Session,
     name: &'static str,
-    title: &str,
-    mut context: Context,
-    status: StatusCode,
+    mut page: PageRender,
 ) -> HttpResponse {
-    context.insert("title", title);
+    page.context.insert("title", page.title);
     registry.render(
         UiPage {
             template: TemplateName(name),
-            title: title.into(),
-            context,
-            status,
+            title: page.title.into(),
+            context: page.context,
+            status: page.status,
+            breadcrumbs: page.breadcrumbs,
         },
         request,
         session,
@@ -149,9 +179,12 @@ fn signin_response(
         req,
         session,
         "capabilities/auth-admin/signin.html",
-        "Sign in",
-        c,
-        status,
+        PageRender {
+            title: "Sign in",
+            context: c,
+            status,
+            breadcrumbs: vec![],
+        },
     )
 }
 async fn signin(
@@ -221,9 +254,12 @@ fn profile_response(
         req,
         session,
         "capabilities/auth-admin/profile.html",
-        "Profile",
-        c,
-        status,
+        PageRender {
+            title: "Profile",
+            context: c,
+            status,
+            breadcrumbs: home_breadcrumb("Profile"),
+        },
     )
 }
 #[derive(Deserialize)]
@@ -365,9 +401,12 @@ async fn users(
                 &req,
                 &session,
                 "capabilities/auth-admin/users/index.html",
-                "Users",
-                c,
-                StatusCode::OK,
+                PageRender {
+                    title: "Users",
+                    context: c,
+                    status: StatusCode::OK,
+                    breadcrumbs: home_breadcrumb("Users"),
+                },
             )
         }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
@@ -401,13 +440,19 @@ fn user_form(
         req,
         session,
         "capabilities/auth-admin/users/form.html",
-        if user.is_some() {
-            "Edit user"
-        } else {
-            "Create user"
+        PageRender {
+            title: if user.is_some() {
+                "Edit user"
+            } else {
+                "Create user"
+            },
+            context: c,
+            status,
+            breadcrumbs: match user {
+                Some(user) => user_breadcrumb(user, "Edit"),
+                None => users_breadcrumb("Create user"),
+            },
         },
-        c,
-        status,
     )
 }
 #[derive(Deserialize)]
@@ -479,9 +524,12 @@ async fn user_detail(
                 &req,
                 &session,
                 "capabilities/auth-admin/users/detail.html",
-                "User detail",
-                c,
-                StatusCode::OK,
+                PageRender {
+                    title: "User detail",
+                    context: c,
+                    status: StatusCode::OK,
+                    breadcrumbs: users_breadcrumb(&user.name),
+                },
             )
         }
         Ok(None) => HttpResponse::NotFound().finish(),
@@ -630,7 +678,8 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
 
 #[cfg(test)]
 mod tests {
-    use super::TEMPLATES;
+    use super::{home_breadcrumb, user_breadcrumb, TEMPLATES};
+    use arc_auth_core::Identity;
 
     #[test]
     fn success_notice_regions_are_available_on_mutation_destinations() {
@@ -646,5 +695,26 @@ mod tests {
                 assert!(template.source.contains("notice"));
             }
         }
+    }
+
+    #[test]
+    fn breadcrumb_trails_start_at_home_and_mark_the_current_page() {
+        let profile = home_breadcrumb("Profile");
+        assert_eq!(profile[0].label, "Home");
+        assert_eq!(profile[0].href.as_deref(), Some("/admin"));
+        assert_eq!(profile[1].label, "Profile");
+        assert!(profile[1].href.is_none());
+
+        let user = Identity {
+            id: "user-1".into(),
+            name: "Ada Lovelace".into(),
+            email: "ada@example.com".into(),
+            active: true,
+            roles: vec!["admin".into()],
+        };
+        let edit = user_breadcrumb(&user, "Edit");
+        assert_eq!(edit[2].href.as_deref(), Some("/admin/users/user-1"));
+        assert_eq!(edit[3].label, "Edit");
+        assert!(edit[3].href.is_none());
     }
 }

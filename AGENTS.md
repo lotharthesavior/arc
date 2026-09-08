@@ -2,6 +2,9 @@
 
 ## Feedback Log
 
+- **The generated admin needs accessible breadcrumbs across its nested pages.** (2026-09-07) Confirm the page hierarchy before implementation; the root crumb is Home.
+- **Admin breadcrumbs must name the `/admin` root “Home,” not “Overview.”** (2026-09-07) The dashboard is the hierarchy root; nested admin trails begin with Home.
+- **Do not call a refreshed sample environment ready until the intended process, not a stale server on the same port, has been identified and browser-verified.** (2026-09-07) A health check alone can hit an old process and falsely validate a release.
 - **Arc’s generated admin UI must visibly confirm successful actions, beginning with profile save; establish layered visual feedback tests and release the complete fix.** (2026-09-07) Use persistent, accessible success/error feedback and verify it in the generated sample app.
 - **Arc’s generated UI is missing feedback and needs a deliberate solution.** (2026-09-07) Treat visible user feedback as a product gap; determine whether it concerns validation, success/error notices, loading state, or design-review input before implementing.
 - **Release framework fixes fully for beta verification: commit, tag, push, publish, update the CLI, then recreate the test app from scratch.** (2026-09-07) Do not rely on a local-path workaround when validating a framework fix intended for generated applications.

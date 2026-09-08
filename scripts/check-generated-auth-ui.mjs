@@ -51,6 +51,9 @@ try {
   assert.equal(legacyProfile.status(), 404, "legacy /profile route must not remain exposed");
   await page.getByRole("link", { name: "Profile" }).click();
   await page.waitForURL(`${baseUrl}/admin/profile`);
+  const profileBreadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+  assert.equal(await profileBreadcrumb.getByRole("link", { name: "Home" }).getAttribute("href"), "/admin");
+  assert.equal(await profileBreadcrumb.getByText("Profile").getAttribute("aria-current"), "page");
   await page.locator(".workbench .rail").waitFor();
   await page.locator(".workbench .workspace").waitFor();
   await assertInset(page, ".panel", ".panel > form.panel__body", "profile form");
@@ -79,6 +82,9 @@ try {
   await page.getByRole("heading", { name: "Users" }).waitFor();
   await page.getByRole("link", { name: "Create user" }).click();
   await page.waitForURL(`${baseUrl}/admin/users/new`);
+  const newUserBreadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+  assert.equal(await newUserBreadcrumb.getByRole("link", { name: "Users" }).getAttribute("href"), "/admin/users");
+  assert.equal(await newUserBreadcrumb.getByText("Create user").getAttribute("aria-current"), "page");
   await assertInset(page, ".panel", ".panel > form.panel__body", "user form");
   await page.getByLabel("Name").fill("Second Operator");
   await page.getByLabel("Email").fill("second@example.com");

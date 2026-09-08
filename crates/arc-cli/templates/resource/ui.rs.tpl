@@ -8,7 +8,7 @@ use arc_core::read_model_store::ReadModelStore;
 use arc_web::helpers::csrf;
 use serde::{Deserialize, Serialize};
 use tera::Context;
-use arc_web::ui::{AdminNavItem, Audience, TemplateBundle, TemplateDef, TemplateName, UiContribution, UiPage};
+use arc_web::ui::{AdminNavItem, Audience, Breadcrumb, TemplateBundle, TemplateDef, TemplateName, UiContribution, UiPage};
 use arc_web::UiRegistry;
 
 const TEMPLATES:&[TemplateDef]=&[
@@ -25,8 +25,17 @@ struct ResourceFormState {
     version: String,
 }
 
-fn render(registry:&UiRegistry, req:&HttpRequest, session:&Session, name: &'static str, context: Context, status: actix_web::http::StatusCode) -> HttpResponse {
-    registry.render(UiPage{template:TemplateName(name),title:"{{Type}}".into(),context,status},req,session)
+fn collection_breadcrumb() -> Vec<Breadcrumb> {
+    vec![Breadcrumb::link("Home", "/admin"), Breadcrumb::current("{{Type}}")]
+}
+fn resource_breadcrumb(current: impl Into<String>) -> Vec<Breadcrumb> {
+    vec![Breadcrumb::link("Home", "/admin"), Breadcrumb::link("{{Type}}", "/admin/{{view}}"), Breadcrumb::current(current)]
+}
+fn record_breadcrumb(name: &str, id: &str, current: impl Into<String>) -> Vec<Breadcrumb> {
+    vec![Breadcrumb::link("Home", "/admin"), Breadcrumb::link("{{Type}}", "/admin/{{view}}"), Breadcrumb::link(name, format!("/admin/{{view}}/{id}")), Breadcrumb::current(current)]
+}
+fn render(registry:&UiRegistry, req:&HttpRequest, session:&Session, name: &'static str, context: Context, status: actix_web::http::StatusCode, breadcrumbs: Vec<Breadcrumb>) -> HttpResponse {
+    registry.render(UiPage{template:TemplateName(name),title:"{{Type}}".into(),context,status,breadcrumbs},req,session)
 }
 
 #[derive(Deserialize)]
@@ -87,12 +96,14 @@ async fn collection(
                 &registry, &req, &session, "capabilities/app-{{module}}/collection.html",
                 context,
                 actix_web::http::StatusCode::OK,
+                collection_breadcrumb(),
             )
         }
         Err(_) => render(
             &registry, &req, &session, "capabilities/app-{{module}}/collection.html",
             Context::new(),
             actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+            collection_breadcrumb(),
         ),
     }
 }
@@ -112,6 +123,7 @@ async fn detail(
                 &registry, &req, &session, "capabilities/app-{{module}}/detail.html",
                 context,
                 actix_web::http::StatusCode::OK,
+                resource_breadcrumb(row["name"].as_str().unwrap_or_default()),
             )
         }
         Ok(None) => HttpResponse::NotFound().finish(),
@@ -134,6 +146,7 @@ async fn new_form(req: HttpRequest, session: Session, registry:web::Data<UiRegis
         &registry, &req, &session, "capabilities/app-{{module}}/form.html",
         context,
         actix_web::http::StatusCode::OK,
+        resource_breadcrumb("New {{Type}}"),
     )
 }
 
@@ -203,6 +216,7 @@ async fn edit_form(
                 &registry, &req, &session, "capabilities/app-{{module}}/form.html",
                 context,
                 actix_web::http::StatusCode::OK,
+                record_breadcrumb(row["name"].as_str().unwrap_or_default(), row["id"].as_str().unwrap_or_default(), "Edit"),
             )
         }
         _ => HttpResponse::NotFound().finish(),
@@ -274,6 +288,7 @@ fn invalid_form(registry:&UiRegistry, req:&HttpRequest, session: &Session, form:
         registry, req, session, "capabilities/app-{{module}}/form.html",
         context,
         actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+        if mode == "create" { resource_breadcrumb("New {{Type}}") } else { record_breadcrumb(&form.name, form.id.as_deref().unwrap_or_default(), "Edit") },
     )
 }
 
