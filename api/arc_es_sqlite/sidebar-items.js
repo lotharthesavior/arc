@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"derive":["Deserialize","Serialize"],"mod":["read_model_store","session"],"struct":["SqliteEventStore"],"trait":["Deserialize","Serialize"]};

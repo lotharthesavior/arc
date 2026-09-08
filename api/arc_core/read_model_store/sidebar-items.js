@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ReadModelError"],"struct":["InMemoryReadModelStore","Upsert"],"trait":["ReadModelStore"],"type":["ReadModelResult","Row"]};
