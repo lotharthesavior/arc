@@ -13,7 +13,7 @@ arc-web = "{{arc-version}}"
 async-trait = "0.1"
 diesel = { version = "2.2", features = ["sqlite", "r2d2"] }
 diesel_migrations = "2.2"
-dotenv = "0.15"
+dotenvy = "0.15"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -18,16 +18,20 @@ fn bearer_token(req: &HttpRequest) -> Option<&str> {
         .and_then(|value| value.strip_prefix("Bearer "))
 }
 
-fn authorized(req: &HttpRequest) -> Result<(), HttpResponse> {
+fn authorized(req: &HttpRequest) -> Result<(), Box<HttpResponse>> {
     let Some(expected) = configured_token() else {
         tracing::error!("INTERNAL_PROJECTION_TOKEN is not configured");
-        return Err(HttpResponse::ServiceUnavailable()
-            .json(json!({"error": "Projection handler is not configured"})));
+        return Err(Box::new(
+            HttpResponse::ServiceUnavailable()
+                .json(json!({"error": "Projection handler is not configured"})),
+        ));
     };
 
     match bearer_token(req) {
         Some(actual) if actual == expected => Ok(()),
-        _ => Err(HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}))),
+        _ => Err(Box::new(
+            HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"})),
+        )),
     }
 }
 
@@ -38,7 +42,7 @@ pub async fn handle_user_projection(
     projection_engine: web::Data<ProjectionEngine>,
 ) -> impl Responder {
     if let Err(response) = authorized(&req) {
-        return response;
+        return *response;
     }
 
     if event.aggregate_type != "User" {

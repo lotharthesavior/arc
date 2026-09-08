@@ -19,8 +19,9 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
       - name: Checkout code
@@ -109,22 +110,23 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: Release ${{ steps.get_version.outputs.version }}
-          body_path: RELEASE_NOTES.md
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" --title "Release $VERSION" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$VERSION" --title "Release $VERSION" --notes-file RELEASE_NOTES.md
+          fi
 
   # Build binaries for multiple platforms
   build-binaries:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     needs: create-release
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -178,21 +180,19 @@ jobs:
         shell: bash
 
       - name: Upload binary to release
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.name }}${{ matrix.os == 'windows-latest' && '.zip' || '.tar.gz' }}
-          asset_name: ${{ matrix.name }}${{ matrix.os == 'windows-latest' && '.zip' || '.tar.gz' }}
-          asset_content_type: application/octet-stream
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ needs.create-release.outputs.version }}"
+          "./${{ matrix.name }}${{ matrix.os == 'windows-latest' && '.zip' || '.tar.gz' }}"
+          --clobber
 
   # Publish to crates.io (if applicable)
   publish-crate:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     needs: create-release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_CRATES == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -211,6 +211,7 @@ jobs:
     name: Publish Docker Image
     runs-on: ubuntu-latest
     needs: create-release
+    if: vars.DOCKER_IMAGE != ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -228,7 +229,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/arc
+          images: ${{ vars.DOCKER_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -305,7 +306,7 @@ jobs:
             echo "⚠️ Crates.io publish had issues"
           fi
 
-          if [[ "${{ needs.publish-docker.result }}" != "success" ]]; then
+          if [[ "${{ needs.publish-docker.result }}" != "success" ]] && [[ "${{ needs.publish-docker.result }}" != "skipped" ]]; then
             echo "⚠️ Docker publish had issues"
           fi
 

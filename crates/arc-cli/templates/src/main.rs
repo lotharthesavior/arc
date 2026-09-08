@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
     if command == "setup" {
         prepare_env()?;
     }
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     init_logging();
     match command.as_str() {
         "setup" => {

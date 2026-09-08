@@ -64,7 +64,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 # Utilities
-dotenv.workspace = true
+dotenvy.workspace = true
 fs_extra.workspace = true
 rand.workspace = true
 once_cell.workspace = true
@@ -73,7 +73,7 @@ chrono.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
-sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 arc-core = { path = "../arc-core", version = "0.8.5", features = ["test-utils"] }

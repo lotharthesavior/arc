@@ -142,11 +142,11 @@ fn render(
 fn csrf(session: &Session, token: &str) -> bool {
     arc_web::helpers::csrf::validate_and_regenerate_csrf_token(session, token)
 }
-fn admin(session: &Session) -> Result<Identity, HttpResponse> {
+fn admin(session: &Session) -> Result<Identity, Box<HttpResponse>> {
     match identity(session) {
         Some(v) if v.has_role("admin") => Ok(v),
-        Some(_) => Err(HttpResponse::Forbidden().finish()),
-        None => Err(HttpResponse::Unauthorized().finish()),
+        Some(_) => Err(Box::new(HttpResponse::Forbidden().finish())),
+        None => Err(Box::new(HttpResponse::Unauthorized().finish())),
     }
 }
 
@@ -366,7 +366,7 @@ async fn users(
     registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.list().await {
         Ok(mut users) => {
@@ -418,7 +418,7 @@ async fn user_new(
     registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     user_form(&req, &session, &registry, None, None, StatusCode::OK)
 }
@@ -482,7 +482,7 @@ async fn user_create(
         return HttpResponse::Forbidden().finish();
     }
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store
         .create_user(&form.name, &form.email, &form.password, &roles(&form.roles))
@@ -512,7 +512,7 @@ async fn user_detail(
     registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.get(&id).await {
         Ok(Some(user)) => {
@@ -544,7 +544,7 @@ async fn user_edit(
     registry: web::Data<UiRegistry>,
 ) -> HttpResponse {
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.get(&id).await {
         Ok(Some(user)) => user_form(&req, &session, &registry, Some(&user), None, StatusCode::OK),
@@ -570,7 +570,7 @@ async fn user_update(
         return HttpResponse::Forbidden().finish();
     }
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.update_profile(&id, &form.name, &form.email).await {
         Ok(_) => {
@@ -607,7 +607,7 @@ async fn roles_save(
         return HttpResponse::Forbidden().finish();
     }
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.set_roles(&id, &roles(&form.roles)).await {
         Ok(_) => {
@@ -634,7 +634,7 @@ async fn activation(
         return HttpResponse::Forbidden().finish();
     }
     if let Err(r) = admin(&session) {
-        return r;
+        return *r;
     }
     match store.set_active(&id, form.active).await {
         Ok(_) => {

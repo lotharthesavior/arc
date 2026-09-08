@@ -383,7 +383,7 @@ mod tests {
     }
 
     fn setup_test_env() {
-        dotenv::from_filename(".env.test").ok();
+        dotenvy::from_filename(".env.test").ok();
         env::set_var("DATABASE_URL", "file::memory:?cache=shared");
         env::set_var("JWT_SECRET", "test-secret-key-for-integration-tests");
         env::set_var("JWT_EXPIRY_HOURS", "24");

@@ -2,6 +2,7 @@
 
 ## Feedback Log
 
+- **Repair the GitHub CI/CD pipeline after releasing the admin breadcrumb work.** (2026-09-07) Diagnose current GitHub failures from their logs and validate the fix before publishing it.
 - **The generated admin needs accessible breadcrumbs across its nested pages.** (2026-09-07) Confirm the page hierarchy before implementation; the root crumb is Home.
 - **Admin breadcrumbs must name the `/admin` root “Home,” not “Overview.”** (2026-09-07) The dashboard is the hierarchy root; nested admin trails begin with Home.
 - **Do not call a refreshed sample environment ready until the intended process, not a stale server on the same port, has been identified and browser-verified.** (2026-09-07) A health check alone can hit an old process and falsely validate a release.
