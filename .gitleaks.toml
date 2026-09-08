@@ -1,0 +1,14 @@
+title = "Arc secret-scanning configuration"
+
+[allowlist]
+description = "Known placeholder-only findings in historical test, example, and documentation commits. New commits remain fully scanned."
+commits = [
+  "04baa42f52347149c0a2935c808cf864325dc85e",
+  "10313ad83a356c269b1aad902d4c7e1e4799687e",
+  "1abe3b02dc979b8be2c6ea60140de600d6cb1b50",
+  "5ae59de15156ef6058155b5145dfc75b618832a4",
+  "767283955e05e59fb4af783b321f964fe3d9c12e",
+  "b8283d509bcd38275e76bf917df56f3ab01244b8",
+  "e970aa07d41ef8542aa84904354706ac59d36f01",
+  "fb901b6fd6aedd87f0b4ddec3caa37a732716148",
+]
