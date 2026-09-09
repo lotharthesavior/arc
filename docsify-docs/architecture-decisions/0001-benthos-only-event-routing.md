@@ -8,14 +8,14 @@
 
 ## Context
 
-Arc persists every write as an immutable `Event` (`crates/arc-core/src/event.rs`) and
+At the time of this decision, Arc persisted every write as an immutable `Event` (`crates/arc-core/src/event.rs`) and
 publishes persisted events to NATS JetStream through `arc-es-nats` on the subject
 `events.<aggregate_type>.<event_type>` (lowercase). Two delivery topologies exist today:
 
 1. **In-process** (`EVENT_BUS=inprocess`): `serve.rs` subscribes a `ProjectionEngineHandler`
    to the synchronous `InProcessEventBus` and rebuilds projections in the writer process.
    This is read-after-write consistent and correct for single-process development.
-2. **Distributed** (`EVENT_BUS=nats`): the writer only publishes. A separate process,
+2. **Distributed (historical implementation)** (`EVENT_BUS=nats`): the writer only publishes. A separate process,
    `arc-worker` (`crates/arc-worker/src/lib.rs`), creates a durable JetStream pull consumer,
    deserializes each `Event`, and drives `ProjectionEngine::process` to update read models,
    ACK-ing on success and NAK-ing on failure.
@@ -137,13 +137,15 @@ The whole point is to *stop* owning the routing runtime.
 - The wire `Event` shape is unchanged; the versioned envelope (guide §1) wraps it additively so
   existing consumers keep working.
 
-## Follow-ups (phase 2+)
+## Implementation status (updated 2026-09-08)
 
-- Land `config/benthos/` pipelines: JetStream input on `events.>`, dedupe on `event_id`, a
+All original implementation follow-ups are complete:
+
+- [x] `config/benthos/` pipelines: JetStream input on `events.>`, dedupe on `event_id`, a
   `switch` output keyed by `aggregate_type`/`event_type`, HTTP/NATS handler delivery, and a DLQ
   output.
-- Add the handler-manifest → Benthos-config generator and a `benthos lint` CI gate.
-- Add an Arc-owned projection endpoint/service and integration coverage for publish → Benthos →
+- [x] Handler-manifest → Benthos-config generator and a `benthos lint` CI gate.
+- [x] Arc-owned projection endpoint/service and integration coverage for publish → Benthos →
   projection HTTP call → read-model update.
-- Update `docker-compose.yml` to run Benthos as the routing service; demote the `arc-worker` stub.
-- Keep `progress.md` explicit that `arc-worker` is historical and Benthos is primary.
+- [x] `docker-compose.yml` runs Benthos as the routing service; `arc-worker` is removed.
+- [x] The roadmap records `arc-worker` as historical and Benthos as the active durable router.

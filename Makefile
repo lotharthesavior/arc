@@ -1,4 +1,4 @@
-.PHONY: help install build dev serve migrate seed test clean format check lint doctor arc-check publish-check scaffold-check benthos-config benthos-config-check benthos-lint docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report docsify docsify-docs
+.PHONY: help install build dev serve migrate seed test clean format check lint doctor arc-check publish-check scaffold-check benthos-config benthos-config-check benthos-lint docs-check docker-build docker-up docker-down e2e e2e-install e2e-build e2e-headed e2e-report docsify docsify-docs
 
 # Default target
 .DEFAULT_GOAL := help
@@ -177,6 +177,11 @@ benthos-lint: benthos-config-check ## Lint Benthos pipeline config
 		echo "$(YELLOW)Install redpanda-connect, benthos, or Docker to lint Benthos configs$(NC)"; \
 		exit 1; \
 	fi
+
+docs-check: ## Verify canonical documentation matches the current release and routing implementation
+
+	@echo "$(GREEN)Checking documentation freshness...$(NC)"
+	bash scripts/check-documentation-freshness.sh
 
 # Scan dependencies for known security vulnerabilities (auto-installs cargo-audit)
 audit: ## Audit dependencies for security vulnerabilities

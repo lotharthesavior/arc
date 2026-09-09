@@ -2,6 +2,7 @@
 
 ## Feedback Log
 
+- **Documentation and roadmap must identify v0.8.6 as released, and describe Benthos routing/generation as implemented and tested; CI must prevent this documentation drift.** (2026-09-08)
 - **Tag and push the validated CI/CD repair as the next patch release.** (2026-09-08) Use a versioned release tag after the manual CI, Security, and Release dry-run validations have passed.
 - **Manually trigger GitHub CI and Security to confirm repaired workflows; treat Release separately because dispatching it creates a real release.** (2026-09-08) Run non-publishing checks safely on master, and require a deliberate version/tag decision before a release dispatch.
 - **Historical failed GitHub workflow runs should be clearly distinguished from the repaired current pipeline.** (2026-09-08) Verify whether any active workflow still fails; old runs retain their original conclusion and cannot be rewritten by a later workflow fix.

@@ -242,6 +242,9 @@ jobs:
           test -f docsify-docs/auth-plugins.md || { echo "Missing docsify-docs/auth-plugins.md"; exit 1; }
           echo "✓ Documentation structure is valid"
 
+      - name: Check documentation freshness
+        run: make docs-check
+
   # Job 8: Integration Test
   integration:
     name: Integration Tests
