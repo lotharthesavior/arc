@@ -14,15 +14,17 @@ pub async fn home(data: web::Data<AppState>, session: Session) -> impl Responder
     };
     let app_name = &data.app_name.lock().unwrap();
 
-    HttpResponse::Ok().body(load_template(
-        "home.html",
-        vec![
-            ("name", app_name),
-            ("user_authenticated", user_authenticated),
-            ("session_message", &get_session_message(&session, false).1),
-        ],
-        None,
-    ))
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(load_template(
+            "home.html",
+            vec![
+                ("name", app_name),
+                ("user_authenticated", user_authenticated),
+                ("session_message", &get_session_message(&session, false).1),
+            ],
+            None,
+        ))
 }
 
 #[cfg(test)]
@@ -52,5 +54,9 @@ mod tests {
         let req = test::TestRequest::get().uri("/").to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
     }
 }

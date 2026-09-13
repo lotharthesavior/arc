@@ -16,12 +16,16 @@ async function assertInset(page, outerSelector, innerSelector, label) {
   assert(inset >= 16, `${label} content inset must be at least 16px; received ${inset}px`);
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // This fixture has no favicon; Chromium versions differ in whether they
+  // automatically request one. Stub only that optional icon, keeping asset
+  // failures and CSP violations visible to the assertions below.
+  await page.route(`${baseUrl}/favicon.ico`, route => route.fulfill({ status: 204 }));
   const errors = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() === "error") errors.push(`${message.text()} (${message.location().url})`);
   });
   page.on("pageerror", (error) => errors.push(error.message));
 

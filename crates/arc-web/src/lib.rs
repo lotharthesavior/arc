@@ -40,6 +40,7 @@ pub mod http {
         pub mod idle_timeout_middleware;
         pub mod jwt_middleware;
         pub mod rate_limit_middleware;
+        pub mod security_headers;
     }
     pub mod errors;
 }

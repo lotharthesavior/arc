@@ -22,6 +22,7 @@
   * [arc-auth-rbac](auth-plugins.md#arc-auth-rbac)
 
 * Security
+  * [Security Headers and CSP](security-headers.md)
   * [Audit Metadata](audit-metadata.md)
   * [Access Logging](access-logging.md)
   * [Idle Timeout](idle-timeout.md)

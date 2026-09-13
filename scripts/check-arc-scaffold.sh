@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 consumer_root="$(mktemp -d)"
-consumer_target="$repo_root/target/scaffold-check"
+consumer_target="${CARGO_TARGET_DIR:-$repo_root/target/scaffold-check}"
 server_pid=""
 
 cleanup() {
@@ -147,6 +147,7 @@ invalid_response="$(curl --silent --cookie "$invalid_cookie_jar" --cookie-jar "$
     http://127.0.0.1:39082/signin)"
 grep -q '&lt;script&gt;' <<<"$invalid_response"
 if grep -q '<script>alert(1)</script>' <<<"$invalid_response"; then exit 1; fi
+node "$repo_root/scripts/check-security-headers.mjs" http://127.0.0.1:39082
 node "$repo_root/scripts/check-generated-auth-ui.mjs" http://127.0.0.1:39082
 csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' <<<"$signin_html")"
 test -n "$csrf_token"
