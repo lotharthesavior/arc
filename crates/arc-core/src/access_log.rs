@@ -2,8 +2,8 @@
 //!
 //! Generic read-side audit logger. Where `EventStore` records *writes* with
 //! [`AuditMetadata`](crate::audit::AuditMetadata), `AccessLogger` records
-//! *reads* of sensitive data — the other half of HIPAA §164.312(b) and the
-//! equivalent obligations under GDPR, PCI-DSS, and SOC 2.
+//! *reads* of sensitive data. These primitives do not establish compliance or
+//! provide durable storage by themselves.
 //!
 //! Reads do not go through the event store. Controllers must explicitly
 //! invoke [`AccessLogger::log_access`] before returning data classified as
@@ -12,8 +12,8 @@
 //! ## Why generic, not PHI-specific
 //!
 //! The mechanism is the same regardless of regime: log who looked at what,
-//! when, and why. [`Sensitivity`] tags the regime so a downstream sink can
-//! route PHI to a HIPAA-compliant store, PCI to a separate one, drop
+//! when, and why. [`Sensitivity`] classifies data so a downstream sink can
+//! apply deployment-specific routing, separate categories, drop
 //! [`Sensitivity::Public`] reads, and so on.
 //!
 //! ## Lifecycle
@@ -25,7 +25,8 @@
 //!
 //! Default implementations in tests and non-regulated apps use
 //! [`NoOpAccessLogger`] which validates inputs but discards them. Real
-//! deployments wire a JetStream- or DB-backed implementation (Step 3+).
+//! deployments requiring persistence must supply a durable implementation;
+//! no JetStream- or DB-backed access logger is shipped.
 
 use crate::audit::now_us;
 use async_trait::async_trait;
@@ -68,18 +69,10 @@ impl Identity {
 
 /// What controllers should do when an [`AccessLogger`] sink fails.
 ///
-/// HIPAA-2a: read auditing is required by §164.312(b), but a failed audit
-/// cannot reflexively block every read or the system collapses when the sink
-/// blips. Two policies cover the spectrum:
-///
-/// - [`FailurePolicy::FailHard`] — the read is refused (HTTP 503). Required
-///   when `Sensitivity::Phi` or `Sensitivity::Pci` data would be exposed
-///   without an audit record.
-/// - [`FailurePolicy::FailOpenWarn`] — the read is allowed; the failure is
-///   logged via `tracing::warn!`. Acceptable for dev / `Public` /
-///   `Internal` / `Confidential` reads.
-///
-/// [`FailurePolicy::for_sensitivity`] picks the right default per regime.
+/// Framework defaults: PHI and PCI refuse the response (HTTP 503); other
+/// classifications, including PII, warn and allow the response. These are
+/// implementation defaults, not a statement of regulatory requirements.
+/// See [`FailurePolicy::for_sensitivity`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailurePolicy {
     FailHard,
@@ -96,7 +89,7 @@ impl FailurePolicy {
     }
 }
 
-/// Sensitivity tag — selects which regulatory regime governs a resource.
+/// Sensitivity tag used for failure policy and sink routing.
 ///
 /// Audit sinks use this to decide retention, routing, and whether to record
 /// at all.
@@ -228,17 +221,20 @@ impl AccessLogEntry {
 /// Implementations:
 /// - [`NoOpAccessLogger`] — validates and discards (default in tests, non-PHI apps)
 /// - `RecordingAccessLogger` — keeps entries in memory for assertions (test-utils)
-/// - JetStream-backed (Step 3+)
-/// - DB-backed (out of scope here)
+///
+/// No durable implementation is shipped.
 #[async_trait]
 pub trait AccessLogger: Send + Sync {
     /// Log a read. Implementations validate the input, record it (or not),
     /// and return.
     ///
-    /// Errors are returned but should NOT block the read response in the
-    /// calling controller — callers typically log the error and continue.
-    /// Reads MUST NOT silently fail closed when the audit sink is down,
-    /// because that would mean audit availability bottlenecks every request.
+    /// Callers must apply [`FailurePolicy`] before releasing sensitive data.
+    /// The web `record_read` helper fails closed for PHI/PCI and warns while
+    /// continuing for other classifications. An `Ok(())` is only as durable
+    /// as the chosen implementation: the no-op implementation discards data.
+    /// Custom sinks must document their acknowledgement boundary, timeout,
+    /// cancellation and retry behavior. Error strings may contain private
+    /// implementation details; callers should log only a safe error category.
     async fn log_access(
         &self,
         actor: Identity,

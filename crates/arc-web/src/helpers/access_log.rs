@@ -3,17 +3,17 @@
 //! policy for the resource's [`Sensitivity`].
 //!
 //! - PHI / PCI reads → [`FailurePolicy::FailHard`] by default. A logger sink
-//!   failure becomes [`RecordReadOutcome::FailHard`] and the controller
-//!   should respond 503; an audit gap on regulated data is unacceptable.
+//!   failure returns an error with HTTP 503 before releasing the response.
 //! - Everything else → [`FailurePolicy::FailOpenWarn`]. Failure is warned and
 //!   the read proceeds.
 
 use crate::http::errors::AppError;
 use actix_web::{http::StatusCode, HttpRequest, HttpResponse, Responder};
 use arc_core::access_log::{
-    AccessLogger, AccessedResource, FailurePolicy, Identity, PurposeOfUse, Sensitivity,
+    AccessLogError, AccessLogger, AccessedResource, FailurePolicy, Identity, PurposeOfUse,
+    Sensitivity,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
 /// A wrapper for sensitive data that has not yet been audit-logged.
@@ -21,8 +21,17 @@ use uuid::Uuid;
 /// `Sensitive<T>` does not implement `Serialize` or `Responder`, preventing it
 /// from being accidentally returned by a controller before an [`AccessLogger`]
 /// call. It can only be "cleansed" into an [`AccessLogged<T>`] through the
-/// appropriate audit helper.
-#[derive(Debug)]
+/// appropriate audit helper. This discipline applies only after data is wrapped.
+///
+/// ```compile_fail
+/// use arc_web::helpers::access_log::Sensitive;
+/// let _ = Sensitive::pii("secret").into_parts();
+/// ```
+///
+/// ```compile_fail
+/// use arc_web::helpers::access_log::Sensitive;
+/// let _ = serde_json::to_string(&Sensitive::pii("secret"));
+/// ```
 pub struct Sensitive<T> {
     data: T,
     sensitivity: Sensitivity,
@@ -65,7 +74,7 @@ impl<T> Sensitive<T> {
 
     /// Deconstruct the sensitive wrapper. This is intentionally internal to
     /// the framework's audit helpers.
-    pub fn into_parts(self) -> (T, Sensitivity) {
+    fn into_parts(self) -> (T, Sensitivity) {
         (self.data, self.sensitivity)
     }
 }
@@ -75,14 +84,24 @@ impl<T> Sensitive<T> {
 ///
 /// `AccessLogged<T>` implements `Serialize` and `Responder` (by delegating to `T`),
 /// making it the standard return type for audited read controllers.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+///
+/// ```compile_fail
+/// use arc_web::helpers::access_log::AccessLogged;
+/// let _ = AccessLogged::new("unaudited");
+/// ```
+///
+/// ```compile_fail
+/// use arc_web::helpers::access_log::AccessLogged;
+/// let _: AccessLogged<String> = serde_json::from_str(r#"{"data":"unaudited"}"#).unwrap();
+/// ```
+#[derive(Serialize, Clone, PartialEq)]
 pub struct AccessLogged<T> {
     data: T,
 }
 
 impl<T> AccessLogged<T> {
     /// Wrap data that has been audited.
-    pub fn new(data: T) -> Self {
+    fn new(data: T) -> Self {
         Self { data }
     }
 
@@ -144,7 +163,7 @@ pub async fn record_read<T>(
         Err(e) => match policy {
             FailurePolicy::FailHard => {
                 tracing::error!(
-                    error = %e,
+                    error_kind = error_kind(&e),
                     "access log sink failed on regulated read — failing closed"
                 );
                 Err(AppError::AuditFailed {
@@ -153,7 +172,7 @@ pub async fn record_read<T>(
                 })
             }
             FailurePolicy::FailOpenWarn => {
-                tracing::warn!(error = %e, "access log sink rejected read");
+                tracing::warn!(error_kind = error_kind(&e), "access log sink rejected read");
                 Ok(AccessLogged::new(data))
             }
         },
@@ -165,5 +184,122 @@ impl<T: Serialize> Responder for AccessLogged<T> {
 
     fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
         HttpResponse::Ok().json(self.into_inner())
+    }
+}
+
+// Sink errors are arbitrary strings and may include queries, credentials or payloads.
+fn error_kind(error: &AccessLogError) -> &'static str {
+    match error {
+        AccessLogError::Validation(_) => "validation",
+        AccessLogError::Sink(_) => "sink",
+    }
+}
+
+impl<T> std::fmt::Debug for Sensitive<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sensitive")
+            .field("sensitivity", &self.sensitivity)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T> std::fmt::Debug for AccessLogged<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessLogged").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{body::to_bytes, test::TestRequest};
+    use arc_core::access_log::RecordingAccessLogger;
+
+    struct FailingLogger;
+
+    #[async_trait::async_trait]
+    impl AccessLogger for FailingLogger {
+        async fn log_access(
+            &self,
+            _: Identity,
+            _: AccessedResource,
+            _: PurposeOfUse,
+            _: Option<Uuid>,
+        ) -> Result<(), AccessLogError> {
+            Err(AccessLogError::Sink("private sink details".into()))
+        }
+    }
+
+    #[actix_web::test]
+    async fn failure_policy_uses_wrapped_classification() {
+        for sensitivity in [
+            Sensitivity::Phi,
+            Sensitivity::Pci,
+            Sensitivity::Pii,
+            Sensitivity::Confidential,
+            Sensitivity::Internal,
+            Sensitivity::Public,
+        ] {
+            let req = TestRequest::default().to_http_request();
+            let result = record_read(
+                &FailingLogger,
+                &req,
+                "actor",
+                AccessedResource::new("Profile", "id", Sensitivity::Public),
+                PurposeOfUse::UserInitiated,
+                Sensitive::new("secret", sensitivity),
+            )
+            .await;
+            if matches!(sensitivity, Sensitivity::Phi | Sensitivity::Pci) {
+                let err = result.unwrap_err();
+                assert_eq!(
+                    actix_web::ResponseError::error_response(&err).status(),
+                    StatusCode::SERVICE_UNAVAILABLE
+                );
+                assert!(!err.to_string().contains("private sink details"));
+            } else {
+                assert_eq!(result.unwrap().into_inner(), "secret");
+            }
+        }
+    }
+
+    #[actix_web::test]
+    async fn records_metadata_before_preserving_response_shape() {
+        let logger = RecordingAccessLogger::new();
+        let correlation = Uuid::new_v4();
+        let req = TestRequest::default()
+            .insert_header(("X-Correlation-Id", correlation.to_string()))
+            .to_http_request();
+        let response = record_read(
+            &logger,
+            &req,
+            "actor",
+            AccessedResource::new("Profile", "id", Sensitivity::Public).with_fields(["email"]),
+            PurposeOfUse::UserInitiated,
+            Sensitive::pii(serde_json::json!({"email":"secret"})),
+        )
+        .await
+        .unwrap();
+        let entries = logger.entries().await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].resource.sensitivity, Sensitivity::Pii);
+        assert_eq!(entries[0].resource.fields, ["email"]);
+        assert_eq!(entries[0].correlation_id, Some(correlation));
+        assert!(!serde_json::to_string(&entries).unwrap().contains("secret"));
+        let body = to_bytes(response.respond_to(&req).into_body())
+            .await
+            .unwrap();
+        assert_eq!(body, r#"{"email":"secret"}"#);
+    }
+
+    #[test]
+    fn diagnostics_exclude_payloads_and_sink_details() {
+        assert!(!format!("{:?}", Sensitive::pii("secret")).contains("secret"));
+        assert!(!format!("{:?}", AccessLogged::new("secret")).contains("secret"));
+        assert_eq!(error_kind(&AccessLogError::Sink("secret".into())), "sink");
+        assert_eq!(
+            error_kind(&AccessLogError::Validation("secret".into())),
+            "validation"
+        );
     }
 }

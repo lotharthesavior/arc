@@ -267,7 +267,11 @@ Core HIPAA-oriented foundations are complete. Remaining work:
 
 - [x] Security headers and a documented CSP posture: shared runtime defaults, explicit HTML MIME types, configurable enforced/report-only CSP and opt-in HSTS. Verified with focused Rust tests, generated auth/API/browser flows, and Vite/Turbo asset checks; see [Security Headers and CSP](docsify-docs/security-headers.md).
 - [ ] Broader input sanitization and adversarial security coverage.
-- [ ] Production review of access-log persistence and operations.
+- [x] Production review of access-log persistence and operations (2026-09-13): see
+  [findings and operator runbook](docsify-docs/access-logging-production-review.md).
+  Wrapper bypasses and diagnostic disclosure fixed; focused Compose tests and
+  all-feature static analysis passed. Durable sink implementation, disclosure
+  coverage, and deployment-specific privacy/retention decisions remain open.
 - [ ] Formal threat modeling and release security checklist.
 
 ### Phase 3 — Plugin and hook system
