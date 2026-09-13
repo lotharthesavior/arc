@@ -26,7 +26,7 @@
 //! ## Identifiers
 //!
 //! sqlx binds values, not identifiers. Table names are spliced into SQL, so
-//! they are validated against `[A-Za-z0-9_]` first ([`check_ident`]). Field
+//! they are validated against `[A-Za-z0-9_]` first (`check_ident`). Field
 //! names are bound as the `->>` operand and so are parameterized, but are still
 //! validated for parity with the SQLite store.
 

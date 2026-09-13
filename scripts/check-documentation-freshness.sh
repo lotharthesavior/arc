@@ -30,9 +30,19 @@ forbid() {
 }
 
 require "**Current development version:** $VERSION" progress.md "roadmap development version"
-require "**Latest published version:** $VERSION" progress.md "roadmap published version"
-require "arc-core = \"$VERSION\"" docsify-docs/packages.md "published dependency example"
-require "arc-web = \"$VERSION\"" docsify-docs/packages.md "published dependency example"
+PUBLISHED_VERSION="$(sed -n 's/^\*\*Latest published version:\*\* \([0-9][0-9.]*\)$/\1/p' progress.md)"
+if [[ ! "$PUBLISHED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Invalid latest published version in progress.md" >&2
+  exit 1
+fi
+if [[ "$(printf '%s\n' "$VERSION" "$PUBLISHED_VERSION" | sort -V | tail -1)" != "$VERSION" ]]; then
+  echo "Published version cannot exceed the workspace version" >&2
+  exit 1
+fi
+require "The latest published package version is **$PUBLISHED_VERSION**" docsify-docs/packages.md "package publication status"
+require "Source version **$VERSION**" docsify-docs/packages.md "package source version"
+require "arc-core = \"$PUBLISHED_VERSION\"" docsify-docs/packages.md "published dependency example"
+require "arc-web = \"$PUBLISHED_VERSION\"" docsify-docs/packages.md "published dependency example"
 require "The routing generator, config" docsify-docs/packages.md "implemented routing overview"
 require "routing integration suite publishes through" docsify-docs/event-handlers.md "routing integration coverage"
 require "[x] NATS → Benthos → Arc-owned projection integration suite." progress.md "completed routing integration roadmap item"

@@ -1,5 +1,9 @@
 # Published Packages
 
+The latest published package version is **0.8.6**. Source version **0.8.7** contains
+the merged security workstreams; a local Git tag does not publish crates. The
+installation examples below continue to target published packages.
+
 Generated applications use published crates; they do not depend on an Arc repository checkout.
 
 | Package | Purpose |

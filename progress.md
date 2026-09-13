@@ -1,9 +1,11 @@
 # Arc Project Progress
 
-**Last updated:** 2026-09-08
-**Current development version:** 0.8.6
+**Last updated:** 2026-09-13
+**Current development version:** 0.8.7
 **Latest published version:** 0.8.6
-**Status:** v0.8.6 is released successfully. The reusable framework, standalone application
+**Status:** v0.8.7 integrates the four security workstreams, validated locally with
+workspace tests, live storage/routing integration, browser E2E and static checks.
+Package publication remains at v0.8.6, which is released successfully. The reusable framework, standalone application
 generator, authentication plugins, Benthos routing/generation, and generated-app UI are
 implemented and validated. Remaining roadmap work focuses on security hardening, extensibility,
 observability, and developer experience.

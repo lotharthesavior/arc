@@ -92,7 +92,7 @@ impl AuditMetadata {
     /// Construct a new validated [`AuditMetadata`] from raw inputs.
     ///
     /// `timestamp_utc_us` is set from the system clock. Use
-    /// [`AuditMetadata::with_timestamp`] to supply an explicit value (testing,
+    /// `AuditMetadata::with_timestamp` to supply an explicit value (testing,
     /// replay, deterministic builds).
     pub fn new(actor_id: impl Into<String>, correlation_id: Uuid) -> Result<Self, AuditError> {
         let s = Self {

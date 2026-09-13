@@ -66,3 +66,31 @@ crate tests do not depend on workspace-relative helper paths.
 
 The checked-in runner was syntax/configuration checked; its component commands were
 executed in the scoped verifier, rather than rerunning the entire runner on a cold image.
+
+## Master integration validation — v0.8.7 (2026-09-13)
+
+The four security workstreams are merged into `master`. Verification runs in a
+project-scoped Docker Compose environment with Rust 1.90, PostgreSQL 16, a real
+NATS server and Redpanda Connect, and Chromium. Workspace artifacts were rebuilt
+before the combined test run.
+
+- `cargo test --locked --workspace --all-features`: 294 passed; 12 existing
+  documentation examples remain ignored. The Postgres test database was configured,
+  and the NATS/Benthos routing prerequisites were present.
+- `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`
+  and `cargo fmt --all -- --check`: passed.
+- Library documentation with `RUSTDOCFLAGS='-D warnings'`, Docsify freshness,
+  the architecture drift guard, Benthos generator tests/freshness/lint, and the
+  Vite production build: passed.
+- Application Playwright suite: 14 passed, including the Vite assets, immutable
+  caching/304 responses, Turbo navigation and Toastify regression.
+- Fresh minimal and UI scaffolds: five generated tests each, formatting, Clippy,
+  setup idempotence, API persistence, auth/CSRF, browser CRUD and header enforcement
+  passed through `scripts/check-arc-scaffold.sh`.
+- Threat-model Chromium suite: five passed in characterization mode. The separate
+  desired-security assertions above continue to expose unresolved controls.
+
+Older API fixtures now register their JWT sessions before asserting authenticated
+profile and audit behavior. The E2E launcher honors `CARGO_TARGET_DIR` and an
+optional system Chromium executable. This is local integration evidence; it does
+not claim remote CI, package publication, or resolution of all threat-model risks.

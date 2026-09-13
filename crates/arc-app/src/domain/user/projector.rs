@@ -8,7 +8,7 @@
 //! second time.
 //!
 //! Wired into [`InProcessEventBus`](arc_core::event_bus::InProcessEventBus)
-//! at startup via a thin [`EventHandler`] adapter that calls
+//! at startup via a thin [`EventHandler`](arc_core::event_bus::EventHandler) adapter that calls
 //! [`ProjectionEngine::process`](arc_core::projection::ProjectionEngine::process).
 
 use arc_core::event::Event;

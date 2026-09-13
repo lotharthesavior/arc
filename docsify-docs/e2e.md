@@ -11,6 +11,7 @@ endpoint (so it keeps working when Step 5 swaps SQLite for Postgres).
 | `tests/e2e/specs/api-register.spec.ts` | `POST /api/v1/register` → audit fields land (anonymous actor, `User-Agent`, `X-Correlation-Id`) |
 | `tests/e2e/specs/api-profile-flow.spec.ts` | Register → login → JWT → PATCH → GET → DELETE → 404, with audit `actor_id` transition |
 | `tests/e2e/specs/ui-signin.spec.ts` | `/signin` HTML form: CSRF token extraction, cookie session, redirect to `/admin`, bad-password rejection, CSRF tampering |
+| `tests/e2e/specs/security-assets.spec.ts` | Security headers preserve Vite assets, caching/304, Turbo and Toastify |
 | `tests/e2e/specs/ui-signout.spec.ts` | `/signout` clears the session and `/admin` bounces to `/signin` |
 
 ## Backend-agnostic audit verification
@@ -42,6 +43,13 @@ make e2e                # build, run, tear down
 make e2e-headed         # same, with a visible browser
 make e2e-report         # open the latest HTML report
 ```
+
+Run backend builds and tests inside the project Docker Compose environment.
+The launcher honors `CARGO_TARGET_DIR` when locating the built `arc` binary.
+Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use a system Chromium installation
+(for example `/usr/bin/chromium` in a verification container); otherwise Playwright
+uses its downloaded browser. Video recording also requires Playwright’s FFmpeg
+(`npx playwright install ffmpeg`).
 
 The `e2e` target shells through to `playwright.config.ts`, which spawns the
 binary via `tests/e2e/global-setup.ts`. That setup script:

@@ -1,4 +1,4 @@
-//! Build [`Identity`](arc_core::access_log::Identity) values from Actix
+//! Build [`Identity`] values from Actix
 //! requests and run an `AccessLogger` call with the appropriate failure
 //! policy for the resource's [`Sensitivity`].
 //!

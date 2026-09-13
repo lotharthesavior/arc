@@ -1,4 +1,4 @@
-import { spawn, ChildProcess, execSync } from 'node:child_process';
+import { spawn, ChildProcess, execSync, execFileSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -74,14 +74,19 @@ export default async function globalSetup(): Promise<void> {
     execSync('npm run build', { cwd: ROOT, stdio: 'inherit', env: childEnv });
   }
 
+  const binary = resolve(
+    ROOT, process.env.CARGO_TARGET_DIR ?? 'target',
+    'debug', process.platform === 'win32' ? 'arc.exe' : 'arc',
+  );
+
   // Migrations + seed (legacy users for /signin form flow).
   process.stdout.write('[e2e] migrate + seed...\n');
-  execSync('./target/debug/arc migrate', { cwd: ROOT, stdio: 'inherit', env: childEnv });
-  execSync('./target/debug/arc seed', { cwd: ROOT, stdio: 'inherit', env: childEnv });
+  execFileSync(binary, ['migrate'], { cwd: ROOT, stdio: 'inherit', env: childEnv });
+  execFileSync(binary, ['seed'], { cwd: ROOT, stdio: 'inherit', env: childEnv });
 
   // Spawn the server.
   process.stdout.write(`[e2e] spawning server on :${port}...\n`);
-  const proc: ChildProcess = spawn('./target/debug/arc', ['serve'], {
+  const proc: ChildProcess = spawn(binary, ['serve'], {
     cwd: ROOT,
     env: childEnv,
     stdio: ['ignore', 'inherit', 'inherit'],

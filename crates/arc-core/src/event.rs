@@ -5,7 +5,7 @@
 //!
 //! ## Audit metadata
 //!
-//! Every event carries an [`AuditMetadata`](crate::audit::AuditMetadata) value.
+//! Every event carries an [`AuditMetadata`] value.
 //! Aggregates produce events with `AuditMetadata::pending()`; the
 //! `CommandBus::dispatch` implementation overwrites that placeholder with a
 //! validated audit struct sourced from the request `CommandContext` before

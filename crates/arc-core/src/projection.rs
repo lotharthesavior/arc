@@ -6,7 +6,7 @@
 //!   logic for transforming events into read model writes.
 //! - **[`Projection`]** — composed read model unit (the "output"). Ties a projector
 //!   to its storage backend.
-//! - **[`ReadModelStore`](crate::read_model_store::ReadModelStore)** — persistence
+//! - **[`ReadModelStore`]** — persistence
 //!   layer for projections. Backend-agnostic storage (defined in `read_model_store` module).
 //!
 //! ## Design Principles
