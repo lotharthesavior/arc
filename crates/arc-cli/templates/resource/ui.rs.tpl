@@ -81,17 +81,18 @@ async fn collection(
             }
             let page = query.page.unwrap_or(1).max(1);
             let per_page = 20;
+            let offset = page_offset(page);
             let total = rows.len();
             let rows = rows
                 .into_iter()
-                .skip((page - 1) * per_page)
+                .skip(offset)
                 .take(per_page)
                 .collect::<Vec<_>>();
             let mut context = Context::new();
             context.insert("rows", &rows);
             context.insert("filter", &query.filter);
             context.insert("page", &page);
-            context.insert("has_next", &(page * per_page < total));
+            context.insert("has_next", &(offset.saturating_add(per_page) < total));
             render(
                 &registry, &req, &session, "capabilities/app-{{module}}/collection.html",
                 context,
@@ -304,4 +305,21 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .route("/{id}/edit", web::get().to(edit_form))
             .route("/{id}/edit", web::post().to(update)),
     );
+}
+
+// Saturation makes out-of-range pages empty instead of panicking or wrapping.
+fn page_offset(page: usize) -> usize {
+    page.max(1).saturating_sub(1).saturating_mul(20)
+}
+
+#[cfg(test)]
+mod input_security_tests {
+    use super::*;
+
+    #[test]
+    fn adversarial_page_numbers_do_not_wrap() {
+        for (page, expected) in [(0, 0), (1, 0), (2, 20), (usize::MAX, usize::MAX), (usize::MAX / 20 + 2, usize::MAX)] {
+            assert_eq!(page_offset(page), expected);
+        }
+    }
 }

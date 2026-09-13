@@ -14,6 +14,8 @@ pub enum {{Type}}Error {
     NotFound,
     #[error("name cannot be empty")]
     EmptyName,
+    #[error("name must not exceed 1024 UTF-8 bytes")]
+    NameTooLong,
     #[error("could not serialize event payload: {0}")]
     Serialization(#[from] serde_json::Error),
 }
@@ -124,7 +126,9 @@ impl Aggregate for {{Type}}Aggregate {
 }
 
 fn validate_name(name: &str) -> Result<(), {{Type}}Error> {
-    if name.trim().is_empty() {
+    if name.len() > 1024 {
+        Err({{Type}}Error::NameTooLong)
+    } else if name.trim().is_empty() {
         Err({{Type}}Error::EmptyName)
     } else {
         Ok(())
@@ -134,6 +138,33 @@ fn validate_name(name: &str) -> Result<(), {{Type}}Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn name_limits_apply_to_create_and_rename_without_sanitizing_text() {
+        for name in ["x".repeat(1025), "é".repeat(513)] {
+            let create = {{Type}}Aggregate::default().handle({{Type}}Command::Create {
+                id: "resource-1".into(), name: name.clone(),
+            }).await;
+            assert!(matches!(create, Err({{Type}}Error::NameTooLong)));
+            let aggregate = {{Type}}Aggregate { exists: true, ..Default::default() };
+            let rename = aggregate.handle({{Type}}Command::Rename {
+                id: "resource-1".into(), name,
+            }).await;
+            assert!(matches!(rename, Err({{Type}}Error::NameTooLong)));
+        }
+        for name in ["x".repeat(1024), "é".repeat(512), "  O'Reilly <script>alert(1)</script> & 東京  ".into()] {
+            let events = {{Type}}Aggregate::default().handle({{Type}}Command::Create {
+                id: "resource-1".into(), name: name.clone(),
+            }).await.unwrap();
+            assert_eq!(events[0].payload["name"], name);
+            let aggregate = {{Type}}Aggregate { exists: true, ..Default::default() };
+            let events = aggregate.handle({{Type}}Command::Rename {
+                id: "resource-1".into(), name: name.clone(),
+            }).await.unwrap();
+            assert_eq!(events[0].payload["name"], name);
+        }
+        assert!(matches!(validate_name(" \t\n"), Err({{Type}}Error::EmptyName)));
+    }
 
     #[tokio::test]
     async fn create_emits_created_event() {
