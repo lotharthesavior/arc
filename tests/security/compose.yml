@@ -1,0 +1,20 @@
+# Explicit test environment. Never deploy the security-fixture example.
+services:
+  verify:
+    image: rust:1.90-slim-bookworm
+    working_dir: /work
+    labels:
+      arc.project: nineties
+      arc.lane: threat-model-coverage
+    mem_limit: 4g
+    cpus: 2
+    environment:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TARGET_DIR: /work/target/security-coverage
+    volumes:
+      - ../..:/work
+    ports:
+      - '127.0.0.1:${ARC_SECURITY_PORT:-18764}:18764'
+    command: ['sh', '-c', 'apt-get update -qq && apt-get install -y -qq pkg-config libssl-dev libsqlite3-dev nodejs && rustup component add clippy && sleep infinity']

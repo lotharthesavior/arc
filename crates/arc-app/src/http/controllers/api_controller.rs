@@ -292,6 +292,7 @@ mod tests {
     use arc_core::event_store::EventStore;
     use arc_core::projection::{ProjectionEngine, ProjectionEngineHandler};
     use arc_core::read_model_store::{InMemoryReadModelStore, ReadModelStore};
+    use arc_core::session::{InMemorySessionStore, SessionRecord, SessionStore};
     use arc_es_sqlite::SqliteEventStore;
     use diesel_migrations::MigrationHarness;
     use serial_test::serial;
@@ -380,6 +381,22 @@ mod tests {
         let rec = arc_core::access_log::RecordingAccessLogger::new();
         let arc: Arc<dyn AccessLogger> = Arc::new(rec.clone());
         (rec, web::Data::from(arc))
+    }
+
+    async fn registered_token(sessions: &dyn SessionStore, actor_id: &str) -> String {
+        let (token, jti) = create_token(actor_id).unwrap();
+        let now = chrono::Utc::now().timestamp_micros();
+        sessions
+            .record_session(SessionRecord {
+                jti,
+                actor_id: actor_id.to_string(),
+                created_at_us: now,
+                expires_at_us: now + 3_600_000_000,
+                revoked_at_us: None,
+            })
+            .await
+            .unwrap();
+        token
     }
 
     fn setup_test_env() {
@@ -528,8 +545,11 @@ mod tests {
         ))
         .await;
 
+        let sessions: web::Data<dyn SessionStore> =
+            web::Data::from(Arc::new(InMemorySessionStore::new()) as Arc<dyn SessionStore>);
         let app = test::init_service(
             App::new()
+                .app_data(sessions.clone())
                 .app_data(command_bus_data.clone())
                 .app_data(rm_data.clone())
                 .app_data(logger_data())
@@ -558,7 +578,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::CREATED);
         let body: serde_json::Value = test::read_body_json(resp).await;
         let agg_id = body["id"].as_str().unwrap().to_string();
-        let (token, _jti) = create_token(&agg_id).unwrap();
+        let token = registered_token(sessions.get_ref(), &agg_id).await;
 
         // Update profile
         let req = test::TestRequest::patch()
@@ -595,8 +615,11 @@ mod tests {
         ))
         .await;
 
+        let sessions: web::Data<dyn SessionStore> =
+            web::Data::from(Arc::new(InMemorySessionStore::new()) as Arc<dyn SessionStore>);
         let app = test::init_service(
             App::new()
+                .app_data(sessions.clone())
                 .app_data(command_bus_data.clone())
                 .app_data(rm_data.clone())
                 .app_data(logger_data())
@@ -624,7 +647,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::CREATED);
         let body: serde_json::Value = test::read_body_json(resp).await;
         let agg_id = body["id"].as_str().unwrap().to_string();
-        let (token, _jti) = create_token(&agg_id).unwrap();
+        let token = registered_token(sessions.get_ref(), &agg_id).await;
 
         // DELETE profile
         let req = test::TestRequest::delete()
@@ -751,8 +774,11 @@ mod tests {
                 .unwrap(),
         ))
         .await;
+        let sessions: web::Data<dyn SessionStore> =
+            web::Data::from(Arc::new(InMemorySessionStore::new()) as Arc<dyn SessionStore>);
         let app = test::init_service(
             App::new()
+                .app_data(sessions.clone())
                 .app_data(command_bus_data.clone())
                 .app_data(rm_data.clone())
                 .service(
@@ -775,7 +801,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         let body: serde_json::Value = test::read_body_json(resp).await;
         let agg_id = body["id"].as_str().unwrap().to_string();
-        let (token, _jti) = create_token(&agg_id).unwrap();
+        let token = registered_token(sessions.get_ref(), &agg_id).await;
 
         // Update profile while authenticated
         let req = test::TestRequest::patch()
@@ -808,8 +834,11 @@ mod tests {
         .await;
         let (rec_logger, logger_data) = recording_logger();
 
+        let sessions: web::Data<dyn SessionStore> =
+            web::Data::from(Arc::new(InMemorySessionStore::new()) as Arc<dyn SessionStore>);
         let app = test::init_service(
             App::new()
+                .app_data(sessions.clone())
                 .app_data(command_bus_data.clone())
                 .app_data(rm_data.clone())
                 .app_data(logger_data)
@@ -833,7 +862,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         let body: serde_json::Value = test::read_body_json(resp).await;
         let agg_id = body["id"].as_str().unwrap().to_string();
-        let (token, _jti) = create_token(&agg_id).unwrap();
+        let token = registered_token(sessions.get_ref(), &agg_id).await;
 
         // GET profile
         let req = test::TestRequest::get()
@@ -978,8 +1007,11 @@ mod tests {
         .await;
         let (rec_logger, logger_data) = recording_logger();
 
+        let sessions: web::Data<dyn SessionStore> =
+            web::Data::from(Arc::new(InMemorySessionStore::new()) as Arc<dyn SessionStore>);
         let app = test::init_service(
             App::new()
+                .app_data(sessions.clone())
                 .app_data(command_bus_data.clone())
                 .app_data(rm_data.clone())
                 .app_data(logger_data)
@@ -994,7 +1026,7 @@ mod tests {
         .await;
 
         // JWT for an aggregate that doesn't exist.
-        let (token, _jti) = create_token("does-not-exist-uuid").unwrap();
+        let token = registered_token(sessions.get_ref(), "does-not-exist-uuid").await;
         let req = test::TestRequest::get()
             .uri("/api/v1/protected/profile")
             .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -1048,3 +1080,7 @@ mod tests {
         assert_eq!(events[0].audit.correlation_id, supplied_corr);
     }
 }
+
+#[cfg(test)]
+#[path = "profile_security_test.rs"]
+mod security_tests;

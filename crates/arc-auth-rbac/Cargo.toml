@@ -14,3 +14,16 @@ async-trait.workspace = true
 actix-session.workspace = true
 actix-web.workspace = true
 futures-util.workspace = true
+
+[dev-dependencies]
+arc-auth-db = { path = "../arc-auth-db", version = "0.8.6" }
+arc-auth-session = { path = "../arc-auth-session", version = "0.8.6" }
+arc-core = { path = "../arc-core", version = "0.8.6", features = ["test-utils"] }
+actix.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[[example]]
+name = "security-fixture"
+path = "tests/support/security_fixture.rs"

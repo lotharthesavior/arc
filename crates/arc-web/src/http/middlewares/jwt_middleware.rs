@@ -17,7 +17,7 @@ use actix_web::{Error, HttpMessage, HttpResponse};
 use arc_core::session::{SessionStore, SessionStoreError};
 use futures_util::future::LocalBoxFuture;
 use std::future::{ready, Ready};
-use std::sync::Arc;
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ pub struct JwtMiddleware;
 
 impl<S, B> Transform<S, ServiceRequest> for JwtMiddleware
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -36,12 +36,14 @@ where
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(JwtCheck { service }))
+        ready(Ok(JwtCheck {
+            service: Rc::new(service),
+        }))
     }
 }
 
 pub struct JwtCheck<S> {
-    service: S,
+    service: Rc<S>,
 }
 
 fn now_us() -> i64 {
@@ -70,7 +72,6 @@ where
     )
 }
 
-#[allow(dead_code)]
 fn service_unavailable<B>(req: ServiceRequest) -> ServiceResponse<EitherBody<B>>
 where
     B: 'static,
@@ -85,7 +86,7 @@ where
 
 impl<S, B> Service<ServiceRequest> for JwtCheck<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -127,72 +128,45 @@ where
             }
         };
 
-        let actor_id = claims.sub.clone();
-        let jti_opt = claims.jti;
-
-        // Pull the session store out of app data; if absent, the deployment
-        // hasn't wired HIPAA-4 yet — fall back to legacy behavior (skip
-        // revocation check). This is the only condition that does not fail
-        // closed: it is impossible to "fail closed against a missing
-        // dependency" without breaking dev environments.
-        let store_opt = req
+        let Some(store) = req
             .app_data::<actix_web::web::Data<dyn SessionStore>>()
-            .cloned();
-
-        let fut = self
-            .service
-            .call(req_with_extensions(req, actor_id.clone(), jti_opt));
-
-        if let Some(store) = store_opt {
-            let jti = match jti_opt {
-                Some(j) => j,
-                None => {
-                    if legacy_grandfather_enabled() {
-                        tracing::warn!(reason = "legacy_jwt_no_jti", "accepting jwt without jti");
-                        return Box::pin(async move {
-                            fut.await.map(ServiceResponse::map_into_left_body)
-                        });
-                    } else {
-                        // Cannot recover the request after consuming it above.
-                        // Re-issue a 401 by failing the call early via inline async.
-                        return Box::pin(async move {
-                            let r = fut.await?;
-                            // We already started the inner future; we cannot rewind.
-                            // The downstream handler will run with no jti in extensions
-                            // — controllers requiring HIPAA-4 must check.
-                            // For full enforcement use the strict path below in
-                            // future refactor.
-                            Ok(r.map_into_left_body())
-                        });
-                    }
-                }
-            };
-
-            return Box::pin(async move {
-                match store.is_valid(jti, now_us()).await {
-                    Ok(true) => fut.await.map(ServiceResponse::map_into_left_body),
-                    Ok(false) => {
-                        // Synthesize an in-band 401 by short-circuiting the future.
-                        Err(actix_web::error::ErrorUnauthorized("Session revoked"))
-                    }
-                    Err(SessionStoreError::Sink(e)) => {
-                        tracing::error!(error = %e, "session store unavailable");
-                        Err(actix_web::error::ErrorServiceUnavailable(
-                            "Authentication backend unavailable",
-                        ))
-                    }
-                    Err(other) => {
-                        tracing::error!(error = ?other, "session store error");
-                        Err(actix_web::error::ErrorServiceUnavailable(
-                            "Authentication backend unavailable",
-                        ))
-                    }
-                }
-            });
+            .cloned()
+        else {
+            tracing::error!("JWT revocation store is not configured");
+            let response = service_unavailable(req);
+            return Box::pin(async move { Ok(response) });
+        };
+        if claims.jti.is_none() && !legacy_grandfather_enabled() {
+            let response = unauthorized(req, "Token has no session identifier");
+            return Box::pin(async move { Ok(response) });
         }
-
-        // No store wired — degrade to pre-HIPAA-4 behavior.
-        Box::pin(async move { fut.await.map(ServiceResponse::map_into_left_body) })
+        let service = self.service.clone();
+        Box::pin(async move {
+            if let Some(jti) = claims.jti {
+                match store.is_valid(jti, now_us()).await {
+                    Ok(true) => {}
+                    Ok(false) => return Ok(unauthorized(req, "Session revoked")),
+                    Err(SessionStoreError::Sink(_)) => {
+                        tracing::error!(category = "sink_unavailable", "session store unavailable");
+                        return Ok(service_unavailable(req));
+                    }
+                    Err(SessionStoreError::NotFound(_)) => {
+                        tracing::error!(category = "record_not_found", "session store error");
+                        return Ok(service_unavailable(req));
+                    }
+                    Err(SessionStoreError::Validation(_)) => {
+                        tracing::error!(category = "validation", "session store error");
+                        return Ok(service_unavailable(req));
+                    }
+                }
+            } else {
+                tracing::warn!(reason = "legacy_jwt_no_jti", "accepting jwt without jti");
+            }
+            service
+                .call(req_with_extensions(req, claims.sub, claims.jti))
+                .await
+                .map(ServiceResponse::map_into_left_body)
+        })
     }
 }
 
@@ -207,8 +181,3 @@ fn req_with_extensions(req: ServiceRequest, actor_id: String, jti: Option<Uuid>)
     }
     req
 }
-
-/// Helper unused outside this module; here to keep the trait `Arc<dyn SessionStore>`
-/// shape consistent across tests.
-#[allow(dead_code)]
-pub(crate) fn _arc_store_marker(_: &Arc<dyn SessionStore>) {}
