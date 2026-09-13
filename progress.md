@@ -11,6 +11,17 @@ observability, and developer experience.
 This is the canonical project-status and roadmap tracker. Current source code and accepted ADRs
 take precedence when a claim here becomes stale.
 
+## Input security lane — verified 2026-09-13
+
+- Generated resource aggregates now reject names over 1024 UTF-8 bytes on create and
+  rename, preserving accepted text verbatim and retaining blank-name validation.
+- Generated browser pagination saturates adversarial page offsets rather than
+  overflowing or wrapping. Collection storage reads remain unbounded.
+- Verified through isolated Docker Compose: 10 CLI tests, 5 generated-app tests,
+  workspace/generated formatting, CLI/generated Clippy with warnings denied, and
+  HTTP checks for oversized writes, unchanged projected state after rejection,
+  escaped HTML-like names, and the maximum page number.
+
 ## Executive Summary
 
 Arc has evolved from a traditional Actix/Diesel MVC starter into a 13-crate, event-sourced Rust

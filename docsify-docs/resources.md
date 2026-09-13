@@ -398,6 +398,25 @@ sqlite3 -json database/database.sqlite \
   "SELECT id, version, json(data) AS data FROM products_view;" | jq
 ```
 
+## Generated input limits
+
+Newly generated resources reject blank names and names exceeding **1024 UTF-8 bytes**
+in the aggregate, for both create and rename commands. This bounds the name stored in
+each event, including commands issued outside HTTP. JSON writes return a bad-request
+response for these validation failures; browser forms redisplay the error. Multibyte
+characters count by their encoded size. Names are preserved verbatim: Unicode, quotes,
+angle brackets, and surrounding whitespace in nonblank names are not stripped. Keep
+Tera autoescaping enabled when displaying names; validation does not replace output
+escaping. Customize the aggregate limit for your domain when needed.
+
+Generated browser collections treat page zero as page one and use saturating offset
+arithmetic. Extremely large page numbers produce an empty page, without integer
+overflow or wrapping to earlier records. Collections still load the read model before
+paginating; this is not a database-level result limit.
+
+These generator changes apply to newly generated code. Existing applications must
+adopt the same validation and pagination changes in their resource modules.
+
 ## Customizing the resource
 
 The generated API already includes rename/update and delete behavior. To add another operation:
