@@ -482,6 +482,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_failure_preserves_event_for_explicit_recovery() {
+        use crate::event_bus::{EventBus, EventBusError, EventBusResult};
+        struct OfflineBus;
+        #[async_trait]
+        impl EventBus for OfflineBus {
+            async fn publish(&self, _: Vec<Event>) -> EventBusResult<()> {
+                Err(EventBusError::other("injected broker outage"))
+            }
+            async fn subscribe(&mut self, _: Box<dyn EventHandler>) -> EventBusResult<()> {
+                Ok(())
+            }
+        }
+        let store = InMemoryEventStore::new();
+        let bus =
+            CommandBus::<CounterAggregate>::new(Box::new(store.clone()), Box::new(OfflineBus));
+        let result = bus
+            .dispatch(
+                CounterCommand {
+                    id: "recover".into(),
+                    increment: 7,
+                },
+                ctx(),
+            )
+            .await;
+        assert!(matches!(result, Err(CommandBusError::PublishFailed { .. })));
+        let events = store.load("recover").await.unwrap();
+        assert_eq!(events.len(), 1, "append survives publish failure");
+        let restored = CounterAggregate::from_events(events.clone());
+        assert_eq!(restored.value, 7);
+        assert_eq!(restored.version, 1);
+        // Recovery publishes persisted events, never redispatches the original command.
+        let recovered = Arc::new(TokioMutex::new(Vec::new()));
+        struct Recorder(Arc<TokioMutex<Vec<Event>>>);
+        #[async_trait]
+        impl EventHandler for Recorder {
+            fn handles(&self) -> Vec<String> {
+                vec!["CounterIncremented".into()]
+            }
+            async fn handle(
+                &self,
+                event: &Event,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                self.0.lock().await.push(event.clone());
+                Ok(())
+            }
+        }
+        let mut healthy = InProcessEventBus::new();
+        healthy
+            .subscribe(Box::new(Recorder(recovered.clone())))
+            .await
+            .unwrap();
+        healthy.publish(events.clone()).await.unwrap();
+        assert_eq!(recovered.lock().await[0].event_id, events[0].event_id);
+        assert_eq!(store.load("recover").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn test_command_bus_new() {
         let _bus = CommandBus::<CounterAggregate>::new(
             Box::new(InMemoryEventStore::new()),

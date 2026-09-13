@@ -558,12 +558,19 @@ dependencies = [
 name = "arc-auth-rbac"
 version = "0.8.6"
 dependencies = [
+ "actix",
  "actix-session 0.10.1",
  "actix-web",
  "arc-auth-core",
+ "arc-auth-db",
+ "arc-auth-session",
+ "arc-core",
  "arc-web",
  "async-trait",
  "futures-util",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

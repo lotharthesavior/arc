@@ -22,6 +22,8 @@
   * [arc-auth-rbac](auth-plugins.md#arc-auth-rbac)
 
 * Security
+  * [Threat Model](threat-model.md)
+  * [Release Security Checklist](release-security-checklist.md)
   * [Audit Metadata](audit-metadata.md)
   * [Access Logging](access-logging.md)
   * [Idle Timeout](idle-timeout.md)
@@ -45,3 +47,5 @@
   * [Published Packages](packages.md)
 
 * [GitHub](https://github.com/lotharthesavior/arc)
+
+- [Security test coverage](security-test-coverage.md)

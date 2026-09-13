@@ -179,7 +179,7 @@ and Benthos owns durable routing, retries, dedupe, dead-lettering, and HTTP/NATS
 - [x] NATS → Benthos → Arc-owned projection integration suite.
 - [x] Generated-pipeline freshness and Redpanda Connect lint CI gates.
 
-### Security and compliance foundations
+### Security foundations
 
 - [x] Event `AuditMetadata`, validated by command bus and event stores.
 - [x] Access logging primitives, sensitivity classification, and failure policies.
@@ -252,12 +252,15 @@ and Benthos owns durable routing, retries, dedupe, dead-lettering, and HTTP/NATS
 
 ### Phase 2 — Security hardening
 
-Core HIPAA-oriented foundations are complete. Remaining work:
+Security primitives are implemented; they do not establish legal compliance or production readiness.
+The source-grounded threat model identifies open controls and deployment decisions. Remaining work:
 
 - [ ] Security headers and a documented CSP posture.
 - [ ] Broader input sanitization and adversarial security coverage.
 - [ ] Production review of access-log persistence and operations.
-- [ ] Formal threat modeling and release security checklist.
+- [x] Source-grounded [threat model](docsify-docs/threat-model.md) and actionable
+  [release security checklist](docsify-docs/release-security-checklist.md) documented (2026-09-12).
+  Documentation is complete; identified risks, release gates and deployment validation remain open.
 
 ### Phase 3 — Plugin and hook system
 
@@ -342,3 +345,11 @@ When sources disagree:
 3. Current guides in `docsify-docs/`
 4. This file
 5. Historical plans, implementation notes, and QA reports
+
+## Threat-model coverage — 2026-09-13
+
+Added unit, real HTTP and Chromium security coverage, including explicit open-gap
+reproductions and separate desired-security probes. Fixed strict JWT missing-jti and
+missing-store bypasses. See [coverage matrix](docsify-docs/security-test-coverage.md).
+Durable audit storage, cached-session policy, room authorization and projection
+origin validation remain open; passing characterization tests does not close them.

@@ -90,3 +90,11 @@ once existing tokens have churned out.
   is fast enough for single-node, the SQLite variant fast enough for
   ~1k req/s. Bigger deployments add caching alongside Step 5's Postgres
   store.
+
+## Strict middleware wiring
+
+JWT middleware requires a configured `SessionStore`; missing wiring returns 503 before
+calling the protected service. Missing `jti` returns 401 by default. The explicit
+`JWT_GRANDFATHER_LEGACY` opt-in permits legacy tokens only when store wiring exists.
+Revoked or unknown sessions reject with 401; store failures reject with 503. See
+[security coverage](security-test-coverage.md) for real HTTP regression cases.
