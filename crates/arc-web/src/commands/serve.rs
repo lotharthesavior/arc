@@ -134,6 +134,7 @@ pub(crate) async fn run(
     plugin_app_data: Vec<Arc<AppDataFn>>,
     ui_registry: Option<Arc<UiRegistry>>,
 ) -> io::Result<()> {
+    let security_headers = crate::http::middlewares::security_headers::SecurityHeaders::from_env()?;
     crate::check_database_health();
 
     let secret_key = Key::from(
@@ -238,6 +239,8 @@ pub(crate) async fn run(
             .wrap(Compress::default())
             .wrap(session_middleware.build())
             .wrap(NormalizePath::trim())
+            // Outermost: also covers middleware redirects and rate-limit responses.
+            .wrap(security_headers.middleware())
             .app_data(web::Data::new(global_rate_limiter.clone()))
             .app_data(web::Data::new(login_rate_limiter.clone()))
             .app_data(web::Data::new(AppState {

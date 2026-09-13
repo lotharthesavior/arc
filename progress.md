@@ -254,7 +254,7 @@ and Benthos owns durable routing, retries, dedupe, dead-lettering, and HTTP/NATS
 
 Core HIPAA-oriented foundations are complete. Remaining work:
 
-- [ ] Security headers and a documented CSP posture.
+- [x] Security headers and a documented CSP posture: shared runtime defaults, explicit HTML MIME types, configurable enforced/report-only CSP and opt-in HSTS. Verified with focused Rust tests, generated auth/API/browser flows, and Vite/Turbo asset checks; see [Security Headers and CSP](docsify-docs/security-headers.md).
 - [ ] Broader input sanitization and adversarial security coverage.
 - [ ] Production review of access-log persistence and operations.
 - [ ] Formal threat modeling and release security checklist.

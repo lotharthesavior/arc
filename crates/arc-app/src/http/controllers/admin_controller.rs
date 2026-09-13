@@ -31,15 +31,17 @@ pub async fn dashboard(data: web::Data<AppState>, session: Session) -> HttpRespo
     let app_name = &data.app_name.lock().unwrap();
     let user_avatar = gravatar_url(&user.email);
 
-    HttpResponse::Ok().body(load_template(
-        "admin/pages/dashboard.html",
-        vec![
-            ("name", app_name),
-            ("user_name", &user.name),
-            ("user_avatar", &user_avatar),
-        ],
-        None,
-    ))
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(load_template(
+            "admin/pages/dashboard.html",
+            vec![
+                ("name", app_name),
+                ("user_name", &user.name),
+                ("user_avatar", &user_avatar),
+            ],
+            None,
+        ))
 }
 
 /// Renders the admin settings page.
@@ -56,15 +58,17 @@ pub async fn settings(data: web::Data<AppState>, session: Session) -> impl Respo
     let app_name = &data.app_name.lock().unwrap();
     let user_avatar = gravatar_url(&user.email);
 
-    HttpResponse::Ok().body(load_template(
-        "admin/pages/settings.html",
-        vec![
-            ("name", app_name),
-            ("user_name", &user.name),
-            ("user_avatar", &user_avatar),
-        ],
-        None,
-    ))
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(load_template(
+            "admin/pages/settings.html",
+            vec![
+                ("name", app_name),
+                ("user_name", &user.name),
+                ("user_avatar", &user_avatar),
+            ],
+            None,
+        ))
 }
 
 /// Renders the user profile edit page with the current user's data and a CSRF token.
@@ -82,17 +86,19 @@ pub async fn profile(data: web::Data<AppState>, session: Session) -> impl Respon
     let user_avatar = gravatar_url(&user.email);
     let csrf_token = get_csrf_token(&session);
 
-    HttpResponse::Ok().body(load_template(
-        "admin/pages/profile.html",
-        vec![
-            ("name", app_name),
-            ("user_name", &user.name),
-            ("user_email", &user.email),
-            ("user_avatar", &user_avatar),
-            ("csrf_token", &csrf_token),
-        ],
-        None,
-    ))
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(load_template(
+            "admin/pages/profile.html",
+            vec![
+                ("name", app_name),
+                ("user_name", &user.name),
+                ("user_email", &user.email),
+                ("user_avatar", &user_avatar),
+                ("csrf_token", &csrf_token),
+            ],
+            None,
+        ))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -377,6 +383,10 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
     }
 
     #[serial]
@@ -394,6 +404,10 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
     }
 
     #[serial]
@@ -412,6 +426,10 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), http::StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
         let body = test::read_body(resp).await;
         let body_str = String::from_utf8(body.to_vec()).unwrap();
         let csrf_token = extract_csrf_token(&body_str);
