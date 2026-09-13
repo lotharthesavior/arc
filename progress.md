@@ -256,7 +256,11 @@ Core HIPAA-oriented foundations are complete. Remaining work:
 
 - [ ] Security headers and a documented CSP posture.
 - [ ] Broader input sanitization and adversarial security coverage.
-- [ ] Production review of access-log persistence and operations.
+- [x] Production review of access-log persistence and operations (2026-09-13): see
+  [findings and operator runbook](docsify-docs/access-logging-production-review.md).
+  Wrapper bypasses and diagnostic disclosure fixed; focused Compose tests and
+  all-feature static analysis passed. Durable sink implementation, disclosure
+  coverage, and deployment-specific privacy/retention decisions remain open.
 - [ ] Formal threat modeling and release security checklist.
 
 ### Phase 3 — Plugin and hook system

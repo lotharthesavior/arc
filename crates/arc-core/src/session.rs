@@ -13,8 +13,8 @@
 //! revoked when the store is down. Middleware that consults this trait
 //! returns 503, never 200.
 //!
-//! Note this is the **opposite** of the `AccessLogger` policy where read
-//! audit failures fail open — different concerns, different defaults.
+//! Access logging has a separate sensitivity-based policy: PHI/PCI reads
+//! fail closed; other classifications warn and continue.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
