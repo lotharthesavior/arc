@@ -277,10 +277,10 @@ external handlers (HTTP/NATS) are **not** exercised in this mode — only in-pro
 
 **CI.** Pipeline configs are versioned artifacts. CI runs the generator tests,
 `make benthos-config-check`, and Redpanda Connect lint against `config/benthos/events.yaml` and
-`config/benthos/generated/events.yaml`. The remaining routing integration test should publish via
-`arc-es-nats`, let Benthos route, and assert an HTTP/NATS handler was invoked. Projection coverage
-should prove Benthos calls an Arc-owned projection endpoint/service, then assert Arc updated the
-read model through its own store. A forced failure should dead-letter.
+`config/benthos/generated/events.yaml`. The routing integration suite publishes through
+`arc-es-nats`, lets Benthos invoke an Arc-owned projection endpoint, and verifies the read model
+is updated through Arc's own store. It also covers retry and dead-letter behavior; Benthos never
+writes an Arc database directly.
 
 ## Checklist for a new handler
 

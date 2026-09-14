@@ -1,5 +1,9 @@
 # Published Packages
 
+The latest published package version is **0.8.6**. Source version **0.8.7** contains
+the merged security workstreams; a local Git tag does not publish crates. The
+installation examples below continue to target published packages.
+
 Generated applications use published crates; they do not depend on an Arc repository checkout.
 
 | Package | Purpose |
@@ -9,7 +13,7 @@ Generated applications use published crates; they do not depend on an Arc reposi
 | `arc-web` | Actix runtime, server builder, middleware, and application wiring |
 | `arc-es-sqlite` | SQLite event, read-model, snapshot, and session stores |
 | `arc-es-postgres` | Optional Postgres stores |
-| `arc-es-nats` | **Work in progress:** optional NATS JetStream event publishing; the complete NATS + Benthos distributed workflow is not ready for general use |
+| `arc-es-nats` | Optional NATS JetStream event publishing for Arc's distributed topology |
 | `arc-auth-core` | Identity and authorization contracts |
 | `arc-auth-db` | SQLite identity and role provider |
 | `arc-auth-session` | Browser session authentication protocol and guard |
@@ -17,7 +21,10 @@ Generated applications use published crates; they do not depend on an Arc reposi
 | `arc-auth-jwt` | API token issuance and JWT guard |
 | `arc-auth-rbac` | Role-based authorization policy and middleware |
 
-> **Work in progress:** NATS publishing and Benthos (Redpanda Connect) event routing are still being completed and documented. Use Arc's default in-process event bus for normal applications unless you are actively developing or testing the distributed event path.
+> The in-process event bus remains the zero-dependency default and is read-after-write
+> consistent. For distributed delivery, select `EVENT_BUS=nats`; Benthos (Redpanda Connect)
+> consumes `events.>` and routes generated handler pipelines. The routing generator, config
+> freshness check, lint gate, and projection-routing integration coverage are implemented.
 
 ## Installation model
 
@@ -25,8 +32,8 @@ The CLI writes normal Cargo dependencies:
 
 ```toml
 [dependencies]
-arc-core = "0.8.5"
-arc-web = "0.8.5"
+arc-core = "0.8.6"
+arc-web = "0.8.6"
 ```
 
 You may create the same application manually, but then you must also supply the environment bootstrap, migrations, aggregate, routes, and runtime entry point that the CLI normally generates.
