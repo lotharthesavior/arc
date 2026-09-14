@@ -266,10 +266,16 @@ and Benthos owns durable routing, retries, dedupe, dead-lettering, and HTTP/NATS
 ### Phase 2 — Security hardening
 
 Security primitives are implemented; they do not establish legal compliance or production readiness.
-The source-grounded threat model identifies open controls and deployment decisions. Remaining work:
+The four dispatched security workstreams below are complete, merged into `master`,
+and included in the local `v0.8.7` tag (2026-09-13). The source-grounded threat model
+continues to track open controls and deployment decisions.
 
 - [x] Security headers and a documented CSP posture: shared runtime defaults, explicit HTML MIME types, configurable enforced/report-only CSP and opt-in HSTS. Verified with focused Rust tests, generated auth/API/browser flows, and Vite/Turbo asset checks; see [Security Headers and CSP](docsify-docs/security-headers.md).
-- [ ] Broader input sanitization and adversarial security coverage.
+- [x] Input validation and adversarial security coverage for the dispatched scope:
+  generated resource names are limited to 1024 UTF-8 bytes, pagination arithmetic
+  saturates safely, and rejection/state-preservation/HTML-escaping cases are tested.
+  Unit, HTTP and browser threat-model coverage is recorded in the
+  [coverage matrix](docsify-docs/security-test-coverage.md).
 - [x] Production review of access-log persistence and operations (2026-09-13): see
   [findings and operator runbook](docsify-docs/access-logging-production-review.md).
   Wrapper bypasses and diagnostic disclosure fixed; focused Compose tests and
@@ -278,6 +284,12 @@ The source-grounded threat model identifies open controls and deployment decisio
 - [x] Source-grounded [threat model](docsify-docs/threat-model.md) and actionable
   [release security checklist](docsify-docs/release-security-checklist.md) documented (2026-09-12).
   Documentation is complete; identified risks, release gates and deployment validation remain open.
+
+Remaining security follow-ups:
+
+- [ ] Bound collection storage reads and extend adversarial coverage beyond the completed input-validation scope.
+- [ ] Implement durable audit persistence and resolve deployment-specific disclosure, privacy and retention policies.
+- [ ] Resolve cached-session invalidation, room authorization and projection-origin validation gaps identified by the threat model.
 
 ### Phase 3 — Plugin and hook system
 
