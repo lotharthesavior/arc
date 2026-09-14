@@ -15,7 +15,7 @@ fail=0
 
 require() {
   local pattern="$1" path="$2" description="$3"
-  if ! rg -q --fixed-strings "$pattern" "$path"; then
+  if ! grep -Fqr -- "$pattern" "$path"; then
     echo "STALE DOCUMENTATION: $description ($path must contain: $pattern)" >&2
     fail=1
   fi
@@ -23,7 +23,7 @@ require() {
 
 forbid() {
   local pattern="$1" path="$2" description="$3"
-  if rg -q --fixed-strings "$pattern" "$path"; then
+  if grep -Fqr -- "$pattern" "$path"; then
     echo "STALE DOCUMENTATION: $description ($path must not contain: $pattern)" >&2
     fail=1
   fi
