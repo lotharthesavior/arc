@@ -1,6 +1,7 @@
 # Security test coverage
 
-Verified 2026-09-13 in `security/threat-model-20260912`. This matrix supplements the
+Original coverage verified 2026-09-13 in `security/threat-model-20260912`; browser-session
+regressions added 2026-09-14 in `security/session-invalidation-20260914`. This matrix supplements the
 [threat model](threat-model.md). Passing a test named **GAP** confirms a reproducible
 weakness; it does not certify a mitigation or approve a release.
 
@@ -8,13 +9,14 @@ weakness; it does not certify a mitigation or approve a release.
 |---|---|---|
 | TM-03 JWT | `crates/arc-web/tests/security_http.rs::jwt_http_security_contract` | Real TCP HTTP: valid token; absent jti/store; revoked/unknown session; malformed, expired and wrong-key tokens; explicit legacy opt-in. Denials assert zero downstream calls and no protected body. Missing-jti/store defects reproduced before fix, then fixed (401/503). |
 | TM-04 object access | `crates/arc-app/src/http/controllers/profile_security_test.rs` | Real profile handler through JWT: caller cannot select another user's profile or obtain password fields. This covers the profile endpoint, not all application resources or tenants. |
-| TM-01/04 browser identities | `tests/security/browser.spec.mjs` | Chromium with real session/RBAC middleware and SQLite identities: fresh JWT roles reject role removal/disable; cached browser identities still accept them (GAP). Idle expiry purges identity; a saved pre-logout cookie remains replayable (GAP). |
+| TM-01/04 browser identities | `tests/security/browser.spec.mjs` | Chromium with real session/RBAC middleware and SQLite identities: fresh JWT roles reject role removal/disable; browser handles are revoked even after role/account restoration. Saved logout and idle-expiry cookies cannot replay; independent sessions remain valid; store outages deny access and recover. |
+| TM-01/04 store and middleware | `arc-auth-db::browser_tests::migration_upgrade_and_durable_invalidation`; `arc-auth-session::tests::cached_identity_cannot_authorize_without_a_validated_handle` | SQLite upgrade/idempotence, persisted handles across store instances, role/active/password invalidation, logout isolation and expiry; cached-only cookies and missing store wiring deny access. |
 | TM-07 projection | `crates/arc-app/tests/projection_security_http.rs` | Real TCP: absent/wrong credentials reject without projection mutation; duplicate event leaves the same row; valid bearer can inject an event absent from the event store (GAP). |
 | TM-08 delivery | `arc-core::command_bus::tests::publish_failure_preserves_event_for_explicit_recovery` | Unit fault injection proves append survives publish failure and explicit replay preserves event ID without another append. It is not automatic outbox recovery or crash durability. |
 | TM-08/09 distributed routing | `crates/arc-app/tests/benthos_projection_routing.rs` | Existing real NATS → Redpanda Connect → Arc projection test passed with actual binaries, without prerequisite skips. Broker crash/restart recovery remains untested by this check. |
 | TM-11 WebSockets | `tests/security/browser.spec.mjs` | Real Chromium WebSockets/Arc actors: user-targeted broadcasts isolate identities, but anonymous private-room subscriptions and cross-user room delivery succeed (GAP). |
 | TM-13 access audit | `crates/arc-web/tests/security_http.rs::audit_http_failures_and_stalled_sink_gap` | Real TCP with controlled sink: PHI/PCI errors return 503 without payload; PII fails open; stalled PHI request stays pending until released. The 100ms observation is not a production timeout policy. |
-| TM-13 durability | No shipped durable sink | BLOCKED: persistence, restart, restore and durable receipts cannot be proven using a fake/no-op sink. No sink or retention policy added. |
+| TM-13 durability | SQLite sink unit tests, `durable_access_http`, `tests/durable-audit/` browser fixture | Dedicated commit persistence, reopen, lock/disk PHI rejection, overload and bounded retention hook. Browser process-restart receipts are verified separately. Deployment backup restore, disclosure inventory and retention policies remain open. |
 
 ## Repeatable normal checks
 
@@ -94,3 +96,63 @@ Older API fixtures now register their JWT sessions before asserting authenticate
 profile and audit behavior. The E2E launcher honors `CARGO_TARGET_DIR` and an
 optional system Chromium executable. This is local integration evidence; it does
 not claim remote CI, package publication, or resolution of all threat-model risks.
+
+## Master integration validation — v0.8.8 (2026-09-14)
+
+Three further security workstreams — bounded collection reads, the durable SQLite
+read-audit journal, and durable browser-session invalidation — were merged one at a
+time, each with an explicit merge commit and a full cumulative verification pass in
+a project-scoped Docker Compose environment (Rust 1.90, PostgreSQL 16, a real NATS
+server and Redpanda Connect, Chromium).
+
+- `cargo test --locked --workspace --all-features`: 301 passed, 0 failed; the 12
+  existing documentation examples remain ignored. Postgres was configured and the
+  NATS/Benthos routing prerequisites were present, so no prerequisite skips applied.
+- `cargo test --locked --workspace --doc`: 20 passed, 12 existing ignored examples.
+- `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`,
+  `cargo fmt --all -- --check`, `cargo doc --locked --workspace --no-deps
+  --all-features`, and debug and release builds: passed.
+- Docsify freshness, the architecture drift guard, Benthos generator
+  tests/freshness/lint, the Vite production build and `npm audit`: passed.
+- Application Playwright suite: 14 passed. Fresh minimal and UI scaffolds passed
+  through `scripts/check-arc-scaffold.sh`.
+- Bounded-collections harness: 202 focused storage/doc tests, a freshly generated
+  application with its own tests and static checks, and the Chromium API/browser/
+  admin navigation suite.
+- Durable-audit harness: both real Chromium phases, proving a committed receipt
+  survives replacement of the serving process.
+- Threat-model Chromium suite: 11 passed. Nine are positive browser/real-TCP
+  session checks; the remaining two remain **characterizations of open WebSocket
+  gaps** and assert the current, unfixed behavior.
+- Dependency audit: exit 0 against the pre-existing workflow exceptions only.
+
+`tests/durable-audit/run-browser.sh` and `tests/security/run.sh` are now required
+CI jobs alongside the bounded-collections job, so these regressions are enforced
+rather than run by hand.
+
+Behavioral note for non-browser clients: signing in now clears and renews the
+session to defeat session fixation, so a CSRF token minted **before**
+authentication is no longer valid afterwards. Browsers handle this transparently
+because they store the refreshed session cookie. Scripted clients must read the
+CSRF token from a page fetched *after* signing in and must persist the updated
+session cookie from that response; `scripts/check-arc-scaffold.sh` was corrected
+to do so.
+
+This is local integration evidence plus the CI gates it installs. It does not claim
+package publication, nor resolution of the room-authorization, projection-origin or
+deployment disclosure/retention items, which remain open.
+
+## Bounded collection follow-up (2026-09-14)
+
+Storage and generated collection regression coverage is documented in
+[bounded collections](bounded-collections.md). Other known-gap characterization
+checks remain unchanged; collection hardening does not resolve session, socket,
+audit, or projection-origin gaps.
+
+## Dependency security gate (2026-09-14)
+
+All three 2026-09-14 security workstreams carried the same dependency fix: the
+audit detected RUSTSEC-2026-0285 in the existing `rustls` pin, and Cargo.lock now
+pins the fixed patch 0.23.45. Cargo Audit passes using only the pre-existing
+workflow exceptions (RUSTSEC-2026-0258 and RUSTSEC-2023-0071); no exception was
+added for this advisory.

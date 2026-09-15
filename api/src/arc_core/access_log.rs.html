@@ -25,8 +25,8 @@
 <a href=#25 id=25 data-nosnippet>25</a>//!
 <a href=#26 id=26 data-nosnippet>26</a>//! Default implementations in tests and non-regulated apps use
 <a href=#27 id=27 data-nosnippet>27</a>//! [`NoOpAccessLogger`] which validates inputs but discards them. Real
-<a href=#28 id=28 data-nosnippet>28</a>//! deployments requiring persistence must supply a durable implementation;
-<a href=#29 id=29 data-nosnippet>29</a>//! no JetStream- or DB-backed access logger is shipped.
+<a href=#28 id=28 data-nosnippet>28</a>//! deployments can select the dedicated `arc-es-sqlite::SqliteAccessLogger`.
+<a href=#29 id=29 data-nosnippet>29</a>//! Coverage remains opt-in at each disclosure boundary.
 <a href=#30 id=30 data-nosnippet>30</a>
 <a href=#31 id=31 data-nosnippet>31</a></span><span class="kw">use </span><span class="kw">crate</span>::audit::now_us;
 <a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>async_trait::async_trait;
@@ -222,7 +222,7 @@
 <a href=#222 id=222 data-nosnippet>222</a>/// - [`NoOpAccessLogger`] — validates and discards (default in tests, non-PHI apps)
 <a href=#223 id=223 data-nosnippet>223</a>/// - `RecordingAccessLogger` — keeps entries in memory for assertions (test-utils)
 <a href=#224 id=224 data-nosnippet>224</a>///
-<a href=#225 id=225 data-nosnippet>225</a>/// No durable implementation is shipped.
+<a href=#225 id=225 data-nosnippet>225</a>/// - `arc-es-sqlite::SqliteAccessLogger` — dedicated durable SQLite journal
 <a href=#226 id=226 data-nosnippet>226</a></span><span class="attr">#[async_trait]
 <a href=#227 id=227 data-nosnippet>227</a></span><span class="kw">pub trait </span>AccessLogger: Send + Sync {
 <a href=#228 id=228 data-nosnippet>228</a>    <span class="doccomment">/// Log a read. Implementations validate the input, record it (or not),

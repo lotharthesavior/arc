@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["AuthError"],"struct":["Identity"],"trait":["AuthorizationPolicy","IdentityStore"]};
+window.SIDEBAR_ITEMS = {"enum":["AuthError"],"struct":["CollectionPage","CollectionQuery","Identity"],"trait":["AuthorizationPolicy","IdentityStore"]};

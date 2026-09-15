@@ -124,4 +124,19 @@
 <a href=#124 id=124 data-nosnippet>124</a>
 <a href=#125 id=125 data-nosnippet>125</a>    (<span class="string">"success"</span>.to_string(), <span class="string">""</span>.to_string())
 <a href=#126 id=126 data-nosnippet>126</a>}
+<a href=#127 id=127 data-nosnippet>127</a>
+<a href=#128 id=128 data-nosnippet>128</a><span class="doccomment">/// Shared cookie lifetime and absolute browser-handle lifetime. This is an
+<a href=#129 id=129 data-nosnippet>129</a>/// authentication deadline, not an audit/privacy retention policy.
+<a href=#130 id=130 data-nosnippet>130</a></span><span class="kw">pub fn </span>browser_session_ttl_seconds() -&gt; std::io::Result&lt;u32&gt; {
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="kw">let </span>seconds = std::env::var(<span class="string">"ARC_BROWSER_SESSION_TTL_SECONDS"</span>)
+<a href=#132 id=132 data-nosnippet>132</a>        .unwrap_or_else(|<span class="kw">_</span>| <span class="string">"86400"</span>.into())
+<a href=#133 id=133 data-nosnippet>133</a>        .parse::&lt;u32&gt;()
+<a href=#134 id=134 data-nosnippet>134</a>        .map_err(|<span class="kw">_</span>| std::io::Error::other(<span class="string">"invalid browser session lifetime"</span>))<span class="question-mark">?</span>;
+<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">if </span>seconds == <span class="number">0 </span>{
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="kw">return </span><span class="prelude-val">Err</span>(std::io::Error::other(
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="string">"browser session lifetime must be positive"</span>,
+<a href=#138 id=138 data-nosnippet>138</a>        ));
+<a href=#139 id=139 data-nosnippet>139</a>    }
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="prelude-val">Ok</span>(seconds)
+<a href=#141 id=141 data-nosnippet>141</a>}
 </code></pre></div></section></main></body></html>

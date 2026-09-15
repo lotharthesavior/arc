@@ -13,6 +13,11 @@ open-gap reproductions. TM-03 missing-jti and missing-store paths are fixed in t
 branch and tested over HTTP; the source-pinned assessment below describes the
 original reviewed revision. Other risks remain open.
 
+Durable audit update (2026-09-14): TM-13 now has an opt-in SQLite journal with
+startup validation and commit acknowledgement. Noop remains the default; coverage,
+access control and deployment retention decisions remain open. See the
+[implementation and operations update](access-logging-production-review.md#durable-implementation-update--2026-09-14).
+
 ## Scope and assets
 
 Covers the reusable framework, thin app, optional auth plugins, generated apps, SQLite/Postgres,
@@ -47,6 +52,16 @@ compromise exceeds the protection offered by application-level HMACs.
 [ADR 0001](architecture-decisions/0001-benthos-only-event-routing.md) assigns routing to Benthos
 and prohibits direct Arc database outputs. [ADR 0002](architecture-decisions/0002-framework-upgrade-contract.md)
 defines framework versus application ownership. Current code takes precedence over older planning text.
+
+## Browser-session mitigation update (2026-09-14)
+
+The optional auth plugins now validate durable browser handles on protected HTTP
+requests. Role/active/password changes, logout and detected idle expiry revoke
+handles; replay remains denied after roles/accounts are restored. Store outages
+fail closed. See [configuration and boundaries](auth-plugins.md#browser-session-invalidation)
+and [coverage](security-test-coverage.md). TM-01/04 still require HTTPS, cookie scope,
+object/tenant authorization and review of application routes outside these plugins.
+The source-pinned observations below describe the earlier reviewed snapshot.
 
 ## Threats, controls and residual risks
 

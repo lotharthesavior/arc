@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["ReadModelError"],"struct":["InMemoryReadModelStore","Upsert"],"trait":["ReadModelStore"],"type":["ReadModelResult","Row"]};
+window.SIDEBAR_ITEMS = {"enum":["CollectionOrder","ReadModelError"],"struct":["CollectionPage","CollectionQuery","InMemoryReadModelStore","Upsert"],"trait":["ReadModelStore"],"type":["ReadModelResult","Row"]};
